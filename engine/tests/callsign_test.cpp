@@ -1429,7 +1429,9 @@ TEST(JoinedWords, GarbledTextGivesNoCall) {
         }
     }
     std::printf("noise words with a believed call: %d of %d\n", believed, words);
-    EXPECT_LE(believed, words / 100);
+    // Measured: 0 of 2 000 (the generator is seeded, so the count is exact for this code). The margin of 2 lets a change of costs
+    // move a word or two without failing; 3 or more (0.15%, the 95% upper bound "rule of three" gives for 0 in 2 000) fails.
+    EXPECT_LE(believed, 2);
 }
 
 TEST(JoinedWords, FormGains) {
@@ -1520,4 +1522,40 @@ TEST(JoinedWords, TheStageChoosesBetweenTheTwoReadingsByItsEvidence) {
     };
     EXPECT_EQ(run(0.0), std::make_pair(false, true));  // the segmentation's choice, 2 points, holds WN4AT's 1
     EXPECT_EQ(run(1.0), std::make_pair(true, false));  // WN4AT 0.5 + 0.5 + 1 against WN4ATI 0.5 + 0.5
+}
+
+TEST(JoinedWords, AnAlternativeEmitRefusesLeavesTheCallGlued) {
+    // N5AK less its K is N5A, of tiny pieces only, which no glued or stripped reading takes: N5AK stays one glued reading of 1
+    // point, not a stripped one alone. Likewise AA5UK (AA5U).
+    for (const auto& [text, call] : std::vector<std::pair<std::string, std::string>>{{"CQPOTADEN5AK", "N5AK"}, {"CQPOTADEAA5UK", "AA5UK"}}) {
+        const auto r = readings_with(text, 1, 1);
+        ASSERT_EQ(r.size(), 1u) << text;
+        EXPECT_EQ(r[0].base, call) << text;
+        EXPECT_EQ(r[0].reading, Reading::Glued) << text;
+        EXPECT_EQ(r[0].role, Role::Sender) << text;
+    }
+}
+
+TEST(JoinedWords, CopiesThatAreAPhaseOfPeriodicTextAreNoRepeat) {
+    // A grid square sent three times (EL98EL98EL98) cuts as E L98E L98E L98; L98E twice is a phase of the period, not a call
+    // repeated: widened by a character on each side the run still repeats every 4 characters. Likewise FN20FN20FN20 (N20F).
+    EXPECT_EQ(cut("EL98EL98EL98").find('*'), std::string::npos);
+    EXPECT_TRUE(readings_with("EL98EL98EL98", 1, 1).empty());
+    EXPECT_EQ(cut("FN20FN20FN20").find('*'), std::string::npos);
+    // A call that fills its word, or whose copies stand between other characters, is still a repeat.
+    EXPECT_EQ(cut("AB4CDAB4CDAB4CD"), "AB4CD* AB4CD* AB4CD*");
+    EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+}
+
+TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {
+    // K1ABC with its middle copy garbled (K1ABCK1ABK1ABC) cuts as K1ABC K1AB K1AB C: the last copy's first four characters repeat the
+    // garbled K1AB before them, so K1AB is twice side by side and K1ABC once, unframed. A known limitation (no repeat within one
+    // edit): the stage reports K1AB, not K1ABC.
+    EXPECT_EQ(cut("K1ABCK1ABK1ABC"), "K1ABC K1AB* K1AB* C");
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "K1ABCK1ABK1ABC ", 0.0);
+    s.search.advance(60.0);
+    EXPECT_NE(s.row("K1AB"), nullptr);
+    EXPECT_EQ(s.row("K1ABC"), nullptr);
 }

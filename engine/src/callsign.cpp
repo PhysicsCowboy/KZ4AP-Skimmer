@@ -485,10 +485,30 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
         for (const Segment& o : out)
             if (o.kind == Segment::Kind::Call && o.text == out[a].text) total[a] += o.evidence_nats;
     }
+    // A run of copies side by side that is a phase of periodic text is no repeat: widened by one character on each side the word
+    // has, it still repeats with the call's length (EL98EL98EL98 cut as E L98E L98E L98: a grid square sent three times, not L98E
+    // twice). A call that fills its word (W1AWW1AW) or stands between other characters (DEK8DXK8DXK) is not touched.
+    std::vector<std::size_t> starts_of(out.size() + 1, 0);
+    for (std::size_t a = 0; a < out.size(); ++a) starts_of[a + 1] = starts_of[a] + out[a].text.size();
+    std::vector<std::string> periodic_runs;
+    for (std::size_t a = 0; a < out.size();) {
+        std::size_t b = a + 1;
+        if (out[a].kind == Segment::Kind::Call)
+            while (b < out.size() && out[b].kind == Segment::Kind::Call && out[b].text == out[a].text) ++b;
+        if (b - a >= 2) {
+            const std::size_t p = out[a].text.size();
+            const std::size_t from = starts_of[a] > 0 ? starts_of[a] - 1 : 0, to = std::min(n, starts_of[b] + 1);
+            bool same = from < starts_of[a] || to > starts_of[b];
+            for (std::size_t i = from + p; i < to && same; ++i) same = w[i] == w[i - p];
+            if (same) periodic_runs.push_back(out[a].text);
+        }
+        a = b;
+    }
     for (std::size_t a = 0; a < out.size(); ++a) {
         if (out[a].kind != Segment::Kind::Call) continue;
         out[a].evidence_nats = total[a];
-        out[a].believed = protocol && total[a] >= costs.believe_nats;
+        const bool in_periodic = std::find(periodic_runs.begin(), periodic_runs.end(), out[a].text) != periodic_runs.end();
+        out[a].believed = protocol && !in_periodic && total[a] >= costs.believe_nats;
     }
     return out;
 }
@@ -639,15 +659,21 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 // (AK4J K, AK4JK). Each is a stripped reading, the segmentation's last, so that the stage's repeats choose and, on a
                 // tie, its rule for readings that begin together (the later made) leans to the segmentation's choice.
                 std::vector<std::string> readings;
+                // An alternative counts only if emit would take it: a call's form, not only tiny pieces (N5AK's N5A is refused, and
+                // N5AK then stays a glued reading at 1 point).
+                const auto takes = [](const std::string& text) {
+                    const auto p = parse_call(text);
+                    return p && !only_tiny_pieces(p->base);
+                };
                 if (options.segment_alternatives != 0) {
                     const char end = s.text.back();
-                    if ((end == 'E' || end == 'I' || end == 'K') && parse_call(std::string_view(s.text).substr(0, s.text.size() - 1)))
+                    if ((end == 'E' || end == 'I' || end == 'K') && takes(s.text.substr(0, s.text.size() - 1)))
                         readings.push_back(s.text.substr(0, s.text.size() - 1));
                     if (k + 1 < segs.size()) {
                         const Segment& after_it = segs[k + 1];
                         const bool stray = after_it.kind == Segment::Kind::Stray && (after_it.text[0] == 'E' || after_it.text[0] == 'I');
                         const bool sign_off = after_it.kind == Segment::Kind::Keyword && after_it.text == "K";
-                        if ((stray || sign_off) && parse_call(s.text + after_it.text[0])) readings.push_back(s.text + after_it.text[0]);
+                        if ((stray || sign_off) && takes(s.text + after_it.text[0])) readings.push_back(s.text + after_it.text[0]);
                     }
                 }
                 const Reading how = readings.empty() ? Reading::Glued : Reading::Stripped;

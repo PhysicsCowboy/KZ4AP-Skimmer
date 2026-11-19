@@ -127,7 +127,7 @@ struct SegmentationCosts {
     // a decoder reads from noise, heuristic). A keyword explains its characters: it gains their noise cost less its own, -ln of its
     // share of decoded words (measured, callsign.cpp's table): CQ 4.5 nats, DE 0.5, DX -1.0, K -0.7, AR -1.5.
     // nats: a new call: -ln P(a word is a call), measured: 3.32 (2026-11-17's decoded words) and 1.52 (2026-11-18's, the CWT contest),
-    // their mean. Its characters cost n ln 36 less the gain of its form and length (call_shape_nats), against their noise cost.
+    // their mean. Its characters cost n ln 36 less the gain of its form and length (call_form_nats, call_length_nats), against their noise cost.
     double call_nats = 2.4;
     // nats: a character no token explains (a stray or garbled one): -ln P(a stray). Heuristic: P = 1/10.
     double stray_nats = 2.3026;
