@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1283,4 +1285,281 @@ TEST(CallSearch, ANewKnownCallListMarksTheCallsHeld) {
     EXPECT_TRUE(s.row("K1ABC")->known);
     s.search.set_known(nullptr);
     EXPECT_FALSE(s.row("K1ABC")->known);  // the list taken away: the row stays, unlisted
+}
+
+// ---- Joined words: segment_word and the segment_joined variant (branch joined-words-1)
+
+namespace {
+
+std::vector<CallReading> readings_with(const std::string& text, int mode, int alternatives = 0) {
+    const std::vector<DecodedSymbol> s = symbols(text);
+    const std::vector<Word> w = words_of(s);
+    ReadOptions options;
+    options.segment_joined = mode;
+    options.segment_alternatives = alternatives;
+    return read_calls(w, 0, w.size(), s, options);
+}
+
+const CallReading* reading_of(const std::vector<CallReading>& r, const std::string& base) {
+    for (const CallReading& x : r)
+        if (x.base == base) return &x;
+    return nullptr;
+}
+
+// The segments' texts, a believed call marked with *.
+std::string cut(const std::string& word) {
+    std::string out;
+    for (const Segment& s : segment_word(word)) {
+        if (!out.empty()) out += ' ';
+        out += s.text;
+        if (s.kind == Segment::Kind::Call && s.believed) out += '*';
+    }
+    return out;
+}
+
+std::size_t count_of(const std::vector<CallReading>& r, const std::string& base) {
+    return static_cast<std::size_t>(std::count_if(r.begin(), r.end(), [&](const CallReading& x) { return x.base == base; }));
+}
+
+}  // namespace
+
+TEST(JoinedWords, EK8DXsTextsAreCutIntoKeywordsAndTheCall) {
+    // The defaults' text of EK8DX on 80 m (2026-11-17): word gaps from 3.5 dots, so the decoder joined every word.
+    EXPECT_EQ(cut("CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK"), "CQ CQ CQ DX CQ DX CQ DX DE K8DX* K8DX* K8DX* K");
+    EXPECT_EQ(cut("CQCQDXCQDXCQDXCQDXDEK8DXK8DX"), "CQ CQ DX CQ DX CQ DX CQ DX DE K8DX* K8DX*");
+    EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+    // A garbled last copy: the believed call is read, the other is not.
+    EXPECT_EQ(cut("CQCQDXCQDXCQDXDEK8DXK8DK"), "CQ CQ DX CQ DX CQ DX DE K8DX* K8DK");
+    const std::string text = "CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK CQCQDXCQDXCQDXCQDXDEK8DXK8DX KQDX K";
+    EXPECT_FALSE(has_base(readings(text), "K8DX"));  // split_glued alone cannot read it
+    for (int mode : {1, 2}) {
+        const auto r = readings_with(text, mode);
+        EXPECT_EQ(count_of(r, "K8DX"), 5u) << mode;
+        for (const CallReading& x : r) {
+            if (x.base != "K8DX") continue;
+            EXPECT_EQ(x.role, Role::Sender);
+            EXPECT_EQ(x.reading, Reading::Glued);
+            EXPECT_TRUE(x.doubled);
+        }
+    }
+    // Each copy has its own characters' times (0.1 s a character): the first K8DX is characters 18 to 21.
+    const auto r = readings_with(text, 1);
+    ASSERT_FALSE(r.empty());
+    EXPECT_NEAR(r.front().start_s, 1.8, 1e-9);
+    EXPECT_NEAR(r.front().end_s, 2.2, 1e-9);
+}
+
+TEST(JoinedWords, ACallDeACall) {
+    // A K after a call is likelier than a call ending in K (the lengths' shares and the K's bigram); a DE after a call (1.0 nats) is
+    // not enough alone, a DE before one (2.77) is.
+    EXPECT_EQ(cut("N5JJDEWA0QZK"), "N5JJ DE WA0QZ* K");
+    const auto r = readings_with("N5JJDEWA0QZK", 2);
+    EXPECT_FALSE(has_base(r, "N5JJ"));
+    EXPECT_TRUE(has(r, "WA0QZ", Role::Sender));
+    EXPECT_EQ(cut("N5JJDEWA0QZKK"), "N5JJ DE WA0QZK* K");
+    // A string that is a shorter one repeated is no call: periodic garbage would be its own repeat.
+    EXPECT_EQ(cut("ATTM3J3J3J3JIGS").find('*'), std::string::npos);
+    EXPECT_FALSE(has_base(readings_with("ATTM3J3J3J3JIGS", 1), "3J3J"));
+    // As 1, split_glued reads it first, as by default.
+    const auto first = readings_with("N5JJDEWA0QZK", 1);
+    EXPECT_TRUE(has(first, "N5JJ", Role::Named));
+    EXPECT_TRUE(has(first, "WA0QZK", Role::Sender));
+    EXPECT_EQ(cut("CQCQPOTADENA9M"), "CQ CQ POTA DE NA9M*");
+    EXPECT_EQ(cut("CQPOKDEKG5VNQ"), "CQ PO K DE KG5VNQ*");
+}
+
+TEST(JoinedWords, ACallThatIsThePrefixOfAnotherIsCutWhereTheRepeatsSay) {
+    EXPECT_EQ(cut("DEK1ABCK1ABC"), "DE K1ABC* K1ABC*");  // K1AB is a call too
+    EXPECT_EQ(cut("W1AWW1AWK"), "W1AW* W1AW* K");        // and W1AWW
+    EXPECT_EQ(cut("DEW4PMK"), "DE W4PM* K");
+}
+
+TEST(JoinedWords, PlainWordsReadAsByDefault) {
+    for (const std::string text : {"CQ CQ DE K1ABC K1ABC K", "W2XYZ DE K1ABC GM", "DEK1ABC", "N5JJDEWA0QZK", "CQCQTESTDEK9BGLK9BGLK",
+                                   "K1ABC5NN", "TNX FER CALL UR RST 599 599", "EIK0HBN", "DE K X 9 F K"}) {
+        const auto a = readings_with(text, 0), b = readings_with(text, 1);
+        ASSERT_EQ(a.size(), b.size()) << text;
+        for (std::size_t k = 0; k < a.size(); ++k) {
+            EXPECT_EQ(a[k].full, b[k].full) << text;
+            EXPECT_EQ(a[k].role, b[k].role) << text;
+            EXPECT_EQ(a[k].reading, b[k].reading) << text;
+        }
+    }
+    // Words of CW that are no call stay none.
+    for (const std::string text : {"TNXFERCALL", "CQCQCQDXCQDX", "GMOMTNXFB", "5NNTU73", "RRRTU73"}) {
+        if (std::getenv("JW_DEBUG")) std::printf("%s -> %s\n", text.c_str(), cut(text).c_str());
+        EXPECT_TRUE(readings_with(text, 2).empty()) << text;
+    }
+}
+
+TEST(JoinedWords, GarbledTextGivesNoCall) {
+    // A call's form alone, among strays, is not enough: no repeat, no DE beside it.
+    EXPECT_TRUE(readings_with("EITTEAK1ABCNIEMTS", 2).empty());
+    EXPECT_TRUE(readings_with("TEEHK3ZZTIMNAE", 2).empty());
+    // A sign-off alone is not enough either (0.39 + 1.5 nats).
+    EXPECT_TRUE(readings_with("ETTAK1ABCK", 1).empty());
+    // Noise text: characters drawn with weight 2^-(their count of dots and dashes), as a decoder reading noise favors short ones
+    // (E, T, I, A, N, M, ...), 12 to 40 characters a word. The rate of words with a believed call is printed and bounded.
+    std::uint64_t state = 12345;
+    const auto next = [&] {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<double>(state >> 11) / 9007199254740992.0;
+    };
+    const std::string alphabet = "ETIANMSURWDKGOHVFLPJBXCYZQ0123456789";
+    const int elements[] = {1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+    std::vector<double> cdf;
+    double sum = 0.0;
+    for (int e : elements) cdf.push_back(sum += std::pow(2.0, -e));
+    int believed = 0;
+    const int words = 2000;
+    for (int k = 0; k < words; ++k) {
+        const int length = 12 + static_cast<int>(next() * 29.0);
+        std::string w;
+        for (int c = 0; c < length; ++c) {
+            const double u = next() * sum;
+            const auto at = static_cast<std::size_t>(std::lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin());
+            w += alphabet[std::min(at, alphabet.size() - 1)];
+        }
+        for (const Segment& s : segment_word(w)) {
+            if (s.kind == Segment::Kind::Call && s.believed) {
+                ++believed;
+                if (std::getenv("JW_DEBUG")) std::printf("%s -> %s\n", w.c_str(), cut(w).c_str());
+                break;
+            }
+        }
+    }
+    std::printf("noise words with a believed call: %d of %d\n", believed, words);
+    // Measured: 0 of 2 000 (the generator is seeded, so the count is exact for this code). The margin of 2 lets a change of costs
+    // move a word or two without failing; 3 or more (0.15%, the 95% upper bound "rule of three" gives for 0 in 2 000) fails.
+    EXPECT_LE(believed, 2);
+}
+
+TEST(JoinedWords, FormGains) {
+    // call_form_nats is the grammar's: -ln of the share of random strings of letters and digits that parse_call takes (its table was
+    // made with 2 000 000 strings a length; 200 000 here, within 0.1 nats: about 4 standard errors at 9 characters, share 1%).
+    std::uint64_t state = 99;
+    const auto next = [&] {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<std::size_t>((state >> 33) % 36);
+    };
+    const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    for (std::size_t n = 3; n <= 9; ++n) {
+        int hits = 0;
+        const int draws = 200000;
+        for (int k = 0; k < draws; ++k) {
+            std::string w;
+            for (std::size_t c = 0; c < n; ++c) w += alphabet[next()];
+            if (parse_call(w)) ++hits;
+        }
+        EXPECT_NEAR(call_form_nats(n), -std::log(hits / static_cast<double>(draws)), 0.1) << n;
+    }
+    // The shares of call lengths sum to 1 (3 to 12 characters).
+    double sum = 0.0;
+    for (std::size_t n = 3; n <= 12; ++n) sum += std::exp(call_length_nats(n));
+    EXPECT_NEAR(sum, 1.0, 0.01);
+}
+
+TEST(JoinedWords, TheStageReportsEK8DXByDefaultAndNotWithTheSegmentationOff) {
+    const auto run = [](CallSearchConfig config) {
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK ", 0.0);
+        s.search.advance(60.0);
+        const CallRow* r = s.row("K8DX");
+        return r != nullptr && is_signed(*r) && r->count == 3;
+    };
+    EXPECT_EQ(CallSearchConfig{}.segment_joined, 1.0);
+    EXPECT_EQ(CallSearchConfig{}.segment_alternatives, 1.0);
+    EXPECT_TRUE(run(CallSearchConfig{}));
+    for (double mode : {0.0, 1.0, 2.0}) {
+        CallSearchConfig config;
+        config.segment_joined = mode;
+        EXPECT_EQ(run(config), mode != 0.0) << mode;
+    }
+}
+
+TEST(JoinedWords, ALastLetterTheSegmentationCannotPlaceGivesBothReadingsStripped) {
+    // A stray I behind a call after DE (73DEWN4ATI): WN4AT and WN4ATI, each stripped, the segmentation's choice (WN4ATI) last.
+    const auto off = readings_with("73DEWN4ATI", 1);
+    ASSERT_NE(reading_of(off, "WN4ATI"), nullptr);
+    EXPECT_EQ(reading_of(off, "WN4ATI")->reading, Reading::Glued);
+    EXPECT_EQ(reading_of(off, "WN4AT"), nullptr);
+    const auto on = readings_with("73DEWN4ATI", 1, 1);
+    ASSERT_EQ(on.size(), 2u);
+    EXPECT_EQ(on[0].base, "WN4AT");
+    EXPECT_EQ(on[1].base, "WN4ATI");
+    for (const CallReading& x : on) {
+        EXPECT_EQ(x.reading, Reading::Stripped);
+        EXPECT_EQ(x.role, Role::Sender);
+        EXPECT_NEAR(x.start_s, 0.4, 1e-9);
+    }
+    EXPECT_NEAR(on[0].end_s, 0.9, 1e-9);
+    EXPECT_NEAR(on[1].end_s, 1.0, 1e-9);
+    // A K after a call that is a call with it (K5NUDEAK4JK73): AK4JK and AK4J.
+    const auto k = readings_with("K5NUDEAK4JK73", 1, 1);
+    ASSERT_NE(reading_of(k, "AK4JK"), nullptr);
+    ASSERT_NE(reading_of(k, "AK4J"), nullptr);
+    EXPECT_EQ(reading_of(k, "AK4JK")->reading, Reading::Stripped);
+    // EK8DX: only the copy before the K has an alternative; the others stay glued.
+    const auto ek = readings_with("CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK", 1, 1);
+    EXPECT_EQ(count_of(ek, "K8DX"), 3u);
+    EXPECT_EQ(count_of(ek, "K8DXK"), 1u);
+    EXPECT_EQ(std::count_if(ek.begin(), ek.end(), [](const CallReading& x) { return x.reading == Reading::Glued; }), 2);
+    // A word with no such letter reads as without the option.
+    EXPECT_EQ(readings_with("CQCQPOTADENA9M", 1, 1).size(), readings_with("CQCQPOTADENA9M", 1).size());
+}
+
+TEST(JoinedWords, TheStageChoosesBetweenTheTwoReadingsByItsEvidence) {
+    const auto run = [](double alternatives) {
+        CallSearchConfig config;
+        config.segment_joined = 1.0;
+        config.segment_alternatives = alternatives;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "73DEWN4ATI 73DEWN4ATI DE WN4AT K ", 0.0);
+        s.search.advance(60.0);
+        return std::make_pair(s.row("WN4AT") != nullptr, s.row("WN4ATI") != nullptr);
+    };
+    EXPECT_EQ(run(0.0), std::make_pair(false, true));  // the segmentation's choice, 2 points, holds WN4AT's 1
+    EXPECT_EQ(run(1.0), std::make_pair(true, false));  // WN4AT 0.5 + 0.5 + 1 against WN4ATI 0.5 + 0.5
+}
+
+TEST(JoinedWords, AnAlternativeEmitRefusesLeavesTheCallGlued) {
+    // N5AK less its K is N5A, of tiny pieces only, which no glued or stripped reading takes: N5AK stays one glued reading of 1
+    // point, not a stripped one alone. Likewise AA5UK (AA5U).
+    for (const auto& [text, call] : std::vector<std::pair<std::string, std::string>>{{"CQPOTADEN5AK", "N5AK"}, {"CQPOTADEAA5UK", "AA5UK"}}) {
+        const auto r = readings_with(text, 1, 1);
+        ASSERT_EQ(r.size(), 1u) << text;
+        EXPECT_EQ(r[0].base, call) << text;
+        EXPECT_EQ(r[0].reading, Reading::Glued) << text;
+        EXPECT_EQ(r[0].role, Role::Sender) << text;
+    }
+}
+
+TEST(JoinedWords, CopiesThatAreAPhaseOfPeriodicTextAreNoRepeat) {
+    // A grid square sent three times (EL98EL98EL98) cuts as E L98E L98E L98; L98E twice is a phase of the period, not a call
+    // repeated: widened by a character on each side the run still repeats every 4 characters. Likewise FN20FN20FN20 (N20F).
+    EXPECT_EQ(cut("EL98EL98EL98").find('*'), std::string::npos);
+    EXPECT_TRUE(readings_with("EL98EL98EL98", 1, 1).empty());
+    EXPECT_EQ(cut("FN20FN20FN20").find('*'), std::string::npos);
+    // A call that fills its word, or whose copies stand between other characters, is still a repeat.
+    EXPECT_EQ(cut("AB4CDAB4CDAB4CD"), "AB4CD* AB4CD* AB4CD*");
+    EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+    // A run that ends its word is not tested: KE2EH on 40 m (2026-11-17), the H before it a garbled copy's tail.
+    EXPECT_NE(cut("GEHKE2EHKE2EH").find("KE2EH*"), std::string::npos);
+    // The cost of that: a shifted phase that starts its word is still a call repeated (a known limitation, A.12).
+    EXPECT_NE(cut("L98EL98EL98").find("L98E*"), std::string::npos);
+}
+
+TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {
+    // K1ABC with its middle copy garbled (K1ABCK1ABK1ABC) cuts as K1ABC K1AB K1AB C: the last copy's first four characters repeat the
+    // garbled K1AB before them, so K1AB is twice side by side and K1ABC once, unframed. A known limitation (no repeat within one
+    // edit): the stage reports K1AB, not K1ABC.
+    EXPECT_EQ(cut("K1ABCK1ABK1ABC"), "K1ABC K1AB* K1AB* C");
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "K1ABCK1ABK1ABC ", 0.0);
+    s.search.advance(60.0);
+    EXPECT_NE(s.row("K1AB"), nullptr);
+    EXPECT_EQ(s.row("K1ABC"), nullptr);
 }

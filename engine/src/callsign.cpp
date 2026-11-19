@@ -144,6 +144,32 @@ std::vector<std::string> split_glued(const std::string& w) {
     return out;
 }
 
+// The keywords a joined word is cut into (segment_word): is_keyword's list, each once, with its cost in nats, -ln of its share of
+// the decoded words (the tiny E, T, I, EE, ... left out): measured, the mean over the spare radio's 2026-11-17 recordings (127 036
+// words, general text) and 2026-11-18 recordings (366 101 words, mostly the CWT contest); SOTA, never seen, 11 (heuristic).
+struct SegmentKeyword {
+    std::string_view text;
+    double nats;
+};
+constexpr std::array<SegmentKeyword, 39> kSegmentKeywords = {{
+    {"CQ", 3.9},  {"DE", 5.1},  {"TEST", 6.1}, {"QRZ", 9.0},  {"TU", 4.5},  {"K", 4.2},   {"KN", 8.2},   {"BK", 6.2},  {"SK", 8.6},
+    {"AR", 7.8},  {"5NN", 6.6}, {"ENN", 9.5},  {"599", 10.1}, {"NR", 7.9},  {"UR", 6.7},  {"RST", 8.9},  {"R", 4.4},   {"UP", 8.5},
+    {"DX", 8.7},  {"GM", 6.9},  {"GA", 7.3},   {"GE", 7.7},   {"GN", 9.1},  {"OM", 8.1},  {"ES", 5.2},   {"FB", 7.5},  {"TNX", 8.0},
+    {"TKS", 9.6}, {"HW", 8.7},  {"73", 6.9},   {"QSL", 8.9},  {"AGN", 8.3}, {"SRI", 9.2}, {"QRL", 7.0},  {"POTA", 7.2}, {"SOTA", 11.0},
+    {"NA", 7.6},  {"SS", 6.9},  {"FD", 10.0},
+}};
+bool is_sign_off(std::string_view w) { return any_of_word(w, {"K", "KN"}); }
+// A string that is a shorter one twice or more (3J3J): periodic garbage, which would be its own repeat in a joined word.
+bool periodic(std::string_view s) {
+    for (std::size_t p = 1; p * 2 <= s.size(); ++p) {
+        if (s.size() % p != 0) continue;
+        bool same = true;
+        for (std::size_t i = p; i < s.size() && same; ++i) same = s[i] == s[i - p];
+        if (same) return true;
+    }
+    return false;
+}
+
 // The role a call has from the words outside it and its repeats. The word after says most: W1AW DE, W1AW 5NN.
 Role role_from(std::string_view prev, std::string_view next) {
     if (any_of_word(next, {"DE"})) return Role::Named;
@@ -154,6 +180,33 @@ Role role_from(std::string_view prev, std::string_view next) {
 }
 
 }  // namespace
+
+// nats: a character's cost in noise text, -ln p(c), with p(c) proportional to 2^-e, e its count of dots and dashes: what a decoder
+// reads from noise favors short characters (E, T, then I, A, N, M). A model, heuristic; over the 36 letters and digits and the
+// slash, the sum of 2^-e is 4.09375 (derived), so E and T cost 2.10 nats, a digit 4.87.
+double noise_char_nats(char c) {
+    static constexpr std::string_view one = "ET", two = "IANM", three = "SURWDKGO", four = "HVFLPJBXCYZQ";
+    int e = 5;  // digits and the slash
+    if (one.find(c) != std::string_view::npos) e = 1;
+    else if (two.find(c) != std::string_view::npos) e = 2;
+    else if (three.find(c) != std::string_view::npos) e = 3;
+    else if (four.find(c) != std::string_view::npos) e = 4;
+    return static_cast<double>(e) * std::log(2.0) + std::log(4.09375);
+}
+
+double call_form_nats(std::size_t n) {
+    // -ln of the share of random strings of n letters and digits parse_call takes (2 000 000 a length, JoinedWords.FormGains); 9 for more.
+    static constexpr std::array<double, 10> form = {0, 0, 0, 3.00, 1.63, 1.56, 1.77, 2.17, 3.23, 4.60};
+    return n >= 3 ? form[std::min(n, form.size() - 1)] : std::numeric_limits<double>::infinity();
+}
+
+double call_length_nats(std::size_t n) {
+    // ln of the share of calls of n characters: the 4 314 base calls three or more RBN skimmers spotted on 2026-11-17 (measured): 3
+    // characters 0.63%, 4 20.0%, 5 41.1%, 6 37.3%, 7 0.65%, 8 and more 0.35%, spread evenly over 8 to 12 (a heuristic).
+    static constexpr std::array<double, 8> length = {0, 0, 0, -5.07, -1.61, -0.89, -0.99, -5.04};
+    if (n < 3) return -std::numeric_limits<double>::infinity();
+    return n < length.size() ? length[n] : -7.26;
+}
 
 // ---- The grammar
 
@@ -281,6 +334,187 @@ int edit_distance(std::string_view a, std::string_view b, int limit) {
     return std::min(row[static_cast<std::size_t>(m)], limit + 1);
 }
 
+// ---- Joined words
+
+std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& costs) {
+    const std::size_t n = w.size();
+    if (n == 0 || n > costs.max_chars) return {};
+    const double ln36 = std::log(36.0);  // nats: a character of a call, uniform over letters and digits (derived)
+    // nats: what the characters [i, i + m) cost as noise text (noise_char_nats).
+    const auto noise = [&](std::size_t i, std::size_t m) {
+        double sum = 0.0;
+        for (std::size_t k = i; k < i + m; ++k) sum += noise_char_nats(w[k]);
+        return sum;
+    };
+    // The calls that start at each place: (length, id); the ids of the distinct strings.
+    struct Piece {
+        std::size_t length;
+        std::size_t id;
+    };
+    std::vector<std::vector<Piece>> calls_at(n);
+    std::vector<std::string> texts;
+    std::vector<std::vector<std::size_t>> starts;  // each distinct call's places
+    std::vector<std::vector<std::size_t>> keywords_at(n);  // the keywords (their index) that start at each place
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t k = 0; k < kSegmentKeywords.size(); ++k) {
+            const std::string_view t = kSegmentKeywords[k].text;
+            if (i + t.size() <= n && w.compare(i, t.size(), t) == 0) keywords_at[i].push_back(k);
+        }
+        bool digit = false;  // every call has a digit: parse_call need not see a string without one
+        for (std::size_t m = 3; m <= 12 && i + m <= n; ++m) {
+            const std::string_view s = w.substr(i, m);
+            digit = digit || std::any_of(s.begin(), s.end(), is_digit);
+            if (!digit) continue;
+            const auto p = parse_call(s);
+            if (!p || only_tiny_pieces(p->base) || periodic(s)) continue;
+            std::size_t id = 0;
+            while (id < texts.size() && texts[id] != s) ++id;
+            if (id == texts.size()) {
+                texts.emplace_back(s);
+                starts.emplace_back();
+            }
+            starts[id].push_back(i);
+            calls_at[i].push_back({m, id});
+        }
+    }
+    // A cache of one call, the last sent (a cache model, Kuhn and De Mori 1990): only a string found twice without overlap can repeat,
+    // so only those get a state of their own; any other call leaves the cache at 0.
+    std::vector<std::size_t> cache_of(texts.size(), 0);
+    std::size_t caches = 0;
+    for (std::size_t id = 0; id < texts.size(); ++id) {
+        std::size_t copies = 0, next_free = 0;
+        for (std::size_t s : starts[id]) {
+            if (s < next_free) continue;
+            ++copies;
+            next_free = s + texts[id].size();
+        }
+        if (copies >= 2) cache_of[id] = ++caches;
+    }
+    // The state after a token: (place, cache, what the token was: 0 other, 1 DE, 2 a call).
+    const std::size_t per_place = (caches + 1) * 3;
+    const auto at = [&](std::size_t i, std::size_t cache, int last) { return (i * (caches + 1) + cache) * 3 + static_cast<std::size_t>(last); };
+    struct Back {
+        std::size_t from = 0;
+        Segment::Kind kind = Segment::Kind::Stray;
+        std::size_t length = 0;
+        double gain = 0;          // nats: the token's own, the DE before a call included
+        double evidence = 0;      // nats: a call's: a repeat's gain and the DE before it (a new call's own gain is no evidence)
+        double to_previous = 0;   // nats: a DE or sign-off's gain for the call before it
+    };
+    const double none = -std::numeric_limits<double>::infinity();
+    std::vector<double> best((n + 1) * per_place, none);
+    std::vector<Back> back((n + 1) * per_place);
+    best[at(0, 0, 0)] = 0.0;
+    const auto relax = [&](std::size_t to, double score, const Back& b) {
+        if (score > best[to]) {
+            best[to] = score;
+            back[to] = b;
+        }
+    };
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t cache = 0; cache <= caches; ++cache) {
+            for (int last = 0; last < 3; ++last) {
+                const std::size_t from = at(i, cache, last);
+                const double s = best[from];
+                if (s == none) continue;
+                // A stray character; it ends a run of repeats (the cache empties), so that copies apart in garbled text do not count.
+                relax(at(i + 1, 0, 0), s - costs.stray_nats, {from, Segment::Kind::Stray, 1, -costs.stray_nats, 0.0, 0.0});
+                // A keyword.
+                for (const std::size_t index : keywords_at[i]) {
+                    const SegmentKeyword& kw = kSegmentKeywords[index];
+                    const std::string_view k = kw.text;
+                    const double own = noise(i, k.size()) - kw.nats;
+                    double to_previous = 0.0;
+                    if (last == 2 && k == "DE") to_previous = costs.de_after_nats;
+                    else if (last == 2 && is_sign_off(k)) to_previous = costs.sign_off_nats;
+                    relax(at(i + k.size(), cache, k == "DE" ? 1 : 0), s + own + to_previous,
+                          {from, Segment::Kind::Keyword, k.size(), own, 0.0, to_previous});
+                }
+                // A call: the cached one again, or a new one.
+                for (const Piece& p : calls_at[i]) {
+                    const std::size_t c = cache_of[p.id];
+                    // A repeat explains its characters; a new call's are as likely as any call's of their length against noise's.
+                    const bool repeat = c != 0 && c == cache;
+                    double own = repeat ? noise(i, p.length) - costs.repeat_nats
+                                        : noise(i, p.length) - static_cast<double>(p.length) * ln36 + call_form_nats(p.length) + call_length_nats(p.length) - costs.call_nats;
+                    double evidence = repeat ? own : 0.0;
+                    if (last == 1) {
+                        own += costs.de_before_nats;
+                        evidence += costs.de_before_nats;
+                    }
+                    relax(at(i + p.length, c, 2), s + own, {from, Segment::Kind::Call, p.length, own, evidence, 0.0});
+                }
+            }
+        }
+    }
+    std::size_t end = at(n, 0, 0);
+    for (std::size_t k = at(n, 0, 0); k < at(n, 0, 0) + per_place; ++k)
+        if (best[k] > best[end]) end = k;
+    if (best[end] == none) return {};
+    // The word as a whole must be likelier text of the protocol than noise by word_min_nats, or no call on it is believed.
+    const bool protocol = best[end] >= costs.word_min_nats;
+    std::vector<Back> path;
+    for (std::size_t k = end; k != at(0, 0, 0);) {
+        path.push_back(back[k]);
+        k = back[k].from;
+    }
+    std::reverse(path.begin(), path.end());
+    std::vector<Segment> out;
+    std::size_t offset = 0;
+    for (const Back& b : path) {
+        const std::string text(w.substr(offset, b.length));
+        offset += b.length;
+        if (b.kind == Segment::Kind::Stray && !out.empty() && out.back().kind == Segment::Kind::Stray) {
+            out.back().text += text;  // strays in a row are one segment
+            continue;
+        }
+        out.push_back({text, b.kind, false, b.kind == Segment::Kind::Call ? b.evidence : 0.0});
+        if (b.to_previous != 0.0 && out.size() >= 2) {
+            // A K or KN that would also end the call before it as a longer call (AK4J K, AK4JK) is no evidence: which it is, the
+            // segmentation's score decides by fractions of a nat (costs.ambiguous_sign_off).
+            Segment& call = out[out.size() - 2];
+            const bool ambiguous = b.kind == Segment::Kind::Keyword && text != "DE" && costs.ambiguous_sign_off == 0.0 &&
+                                   parse_call(call.text + text).has_value();
+            if (!ambiguous) call.evidence_nats += b.to_previous;
+        }
+    }
+    // A call's evidence: the gains of all its copies and of what frames them, the same on every copy.
+    std::vector<double> total(out.size(), 0.0);
+    for (std::size_t a = 0; a < out.size(); ++a) {
+        if (out[a].kind != Segment::Kind::Call) continue;
+        for (const Segment& o : out)
+            if (o.kind == Segment::Kind::Call && o.text == out[a].text) total[a] += o.evidence_nats;
+    }
+    // A run of copies side by side that is a phase of periodic text is no repeat: widened by one character on each side, it still
+    // repeats with the call's length (EL98EL98EL98 cut as E L98E L98E L98: a grid square sent three times, not L98E twice). Only a run
+    // with a character of the word on both sides is tested: one that starts or ends its word (W1AWW1AW, GEHKE2EHKE2EH, where the H
+    // before is a garbled copy's) is a call sent again, and a shift needs text on both sides; nor is one between other characters
+    // (DEK8DXK8DXK) touched.
+    std::vector<std::size_t> starts_of(out.size() + 1, 0);
+    for (std::size_t a = 0; a < out.size(); ++a) starts_of[a + 1] = starts_of[a] + out[a].text.size();
+    std::vector<std::string> periodic_runs;
+    for (std::size_t a = 0; a < out.size();) {
+        std::size_t b = a + 1;
+        if (out[a].kind == Segment::Kind::Call)
+            while (b < out.size() && out[b].kind == Segment::Kind::Call && out[b].text == out[a].text) ++b;
+        if (b - a >= 2) {
+            const std::size_t p = out[a].text.size();
+            const std::size_t from = starts_of[a] > 0 ? starts_of[a] - 1 : 0, to = std::min(n, starts_of[b] + 1);
+            bool same = from < starts_of[a] && to > starts_of[b];
+            for (std::size_t i = from + p; i < to && same; ++i) same = w[i] == w[i - p];
+            if (same) periodic_runs.push_back(out[a].text);
+        }
+        a = b;
+    }
+    for (std::size_t a = 0; a < out.size(); ++a) {
+        if (out[a].kind != Segment::Kind::Call) continue;
+        out[a].evidence_nats = total[a];
+        const bool in_periodic = std::find(periodic_runs.begin(), periodic_runs.end(), out[a].text) != periodic_runs.end();
+        out[a].believed = protocol && !in_periodic && total[a] >= costs.believe_nats;
+    }
+    return out;
+}
+
 // ---- Reading a text
 
 std::vector<Word> words_of(std::span<const DecodedSymbol> symbols) { return words_of(symbols, std::span<const char>()); }
@@ -336,6 +570,11 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, std::span<con
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to) { return read_calls(words, from, to, {}); }
 
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols) {
+    return read_calls(words, from, to, symbols, ReadOptions{});
+}
+
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols,
+                                    const ReadOptions& options) {
     std::vector<CallReading> out;
     to = std::min(to, words.size());
     // The word before index i, skipping the stray E and T a decoder scatters.
@@ -394,7 +633,67 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             emit(w, Reading::Whole, i, i + 1, role_of(w, i, i + 1), twice);
             direct = true;
         }
-        if (!direct) {
+        // A joined word cut by segment_word (ReadOptions::segment_joined): the copies of each believed call, each with the role its
+        // neighbors on the path give (past its other copies and stray E, T, I; the words around at the word's ends).
+        bool segmented = false;
+        if (!direct && options.segment_joined != 0 && w.size() >= options.segment_min_chars &&
+            (options.segment_joined == 2 || split_glued(w).empty())) {
+            const std::vector<Segment> segs = segment_word(w, options.costs);
+            const Word& word = words[i];
+            const bool timed = !symbols.empty() && word.last <= symbols.size() && word.last - word.first == w.size();
+            const auto skipped = [&](std::size_t k, const std::string& call) {
+                return (segs[k].kind == Segment::Kind::Call && segs[k].text == call) ||
+                       (segs[k].kind == Segment::Kind::Stray && tiny_word(segs[k].text));
+            };
+            std::size_t offset = 0;
+            for (std::size_t k = 0; k < segs.size(); offset += segs[k].text.size(), ++k) {
+                const Segment& s = segs[k];
+                if (s.kind != Segment::Kind::Call || !s.believed) continue;
+                std::size_t a = k;
+                while (a > 0 && skipped(a - 1, s.text)) --a;
+                std::size_t b = k + 1;
+                while (b < segs.size() && skipped(b, s.text)) ++b;
+                const std::string_view prev = a > 0 ? std::string_view(segs[a - 1].text) : before(i);
+                const std::string_view next = b < segs.size() ? std::string_view(segs[b].text) : after(i + 1);
+                const bool twice = (k > 0 && segs[k - 1].text == s.text) || (k + 1 < segs.size() && segs[k + 1].text == s.text);
+                // The readings the segmentation cannot tell apart (ReadOptions::segment_alternatives): a call ending in E, I or K
+                // that is a call without it (W3QRE, W3QR), and a call with a stray E or I or a K after it that is a call with it
+                // (AK4J K, AK4JK). Each is a stripped reading, the segmentation's last, so that the stage's repeats choose and, on a
+                // tie, its rule for readings that begin together (the later made) leans to the segmentation's choice.
+                std::vector<std::string> readings;
+                // An alternative counts only if emit would take it: a call's form, not only tiny pieces (N5AK's N5A is refused, and
+                // N5AK then stays a glued reading at 1 point).
+                const auto takes = [](const std::string& text) {
+                    const auto p = parse_call(text);
+                    return p && !only_tiny_pieces(p->base);
+                };
+                if (options.segment_alternatives != 0) {
+                    const char end = s.text.back();
+                    if ((end == 'E' || end == 'I' || end == 'K') && takes(s.text.substr(0, s.text.size() - 1)))
+                        readings.push_back(s.text.substr(0, s.text.size() - 1));
+                    if (k + 1 < segs.size()) {
+                        const Segment& after_it = segs[k + 1];
+                        const bool stray = after_it.kind == Segment::Kind::Stray && (after_it.text[0] == 'E' || after_it.text[0] == 'I');
+                        const bool sign_off = after_it.kind == Segment::Kind::Keyword && after_it.text == "K";
+                        if ((stray || sign_off) && takes(s.text + after_it.text[0])) readings.push_back(s.text + after_it.text[0]);
+                    }
+                }
+                const Reading how = readings.empty() ? Reading::Glued : Reading::Stripped;
+                readings.push_back(s.text);
+                for (const std::string& text : readings) {
+                    const std::size_t before_emit = out.size();
+                    emit(text, how, i, i + 1, role_from(prev, next), twice);
+                    if (out.size() > before_emit) {
+                        segmented = true;
+                        if (timed) {
+                            out.back().start_s = symbols[word.first + offset].start_s;
+                            out.back().end_s = symbols[word.first + offset + text.size() - 1].end_s;
+                        }
+                    }
+                }
+            }
+        }
+        if (!direct && !segmented) {
             // A word glued: its pieces, each with the role its neighbors in the word give.
             const std::vector<std::string> pieces = split_glued(w);
             const Word& word = words[i];
@@ -614,7 +913,12 @@ void CallSearch::read_track(TrackText& t, bool all) {
     if (to == from) return;
     const std::span<const DecodedSymbol> timed_by =
         config_.glued_pieces_timed != 0.0 ? std::span<const DecodedSymbol>(t.symbols) : std::span<const DecodedSymbol>();
-    for (CallReading& r : read_calls(words, from, to, timed_by)) {
+    ReadOptions options;
+    options.segment_joined = static_cast<int>(config_.segment_joined);
+    options.segment_min_chars = static_cast<std::size_t>(std::max(0.0, config_.segment_min_chars));
+    options.segment_alternatives = static_cast<int>(config_.segment_alternatives);
+    options.costs = config_.segmentation;
+    for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
         double least = std::numeric_limits<double>::infinity();
