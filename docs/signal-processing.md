@@ -5756,7 +5756,9 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   garble of a confirmed US call is an active license 38.1% of the time (measured over every one-edit variant of US form of the 284
   confirmed US calls of 2026-11-17); "never issued" is strong evidence that a US call is false as of the file's date (2026-11-15),
   not proof, since a license granted since or purged long ago reads the same. At the new defaults the seven 2026-11-17 recordings read
-  168 / 83 / 103, exact replays equal to the mode 1 and alternatives column call for call. The clean held-out set (the 2026-11-19
+  168 / 83 / 103, exact replays equal to the mode 1 and alternatives column call for call. After the review's fixes (an alternative
+  only where emit takes it; the periodic-run test), call for call the same on 2026-11-17 (168 / 83 / 103) and 2026-11-18
+  (576 / 310 / 214), and 2017 200 / 56 / 54, L99E gone, the old defaults' figures. The clean held-out set (the 2026-11-19
   recordings) waits for the RBN's day file, not posted at 14:03Z on 2026-11-19. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
   nothing at 2.5 nats on any of these sets. An earlier form (keywords equally likely, a call's first copy counted as evidence,
   repeats across strays, `believe_nats` 3) gave 168 / 90 / 106 on 2026-11-17: N0TAR lost as N0T AR, OO0O and W1BR from garbled
