@@ -45,4 +45,13 @@ private:
     std::uint64_t dropped_ = 0;  // samples already removed from the front of buffer_
 };
 
+// The first and last bin of a frame (bin i at (i - fft_size / 2) x sample_rate / fft_size Hz) whose centers lie within
+// [lo_hz, hi_hz], Hz from the span's center: a receiver's passband (EngineConfig::passband_lo_hz). The whole frame,
+// 0 to fft_size - 1, when hi_hz <= lo_hz; one bin, the nearest, when the band holds no bin's center.
+struct BinRange {
+    int first = 0;
+    int last = 0;
+};
+BinRange band_bins(double lo_hz, double hi_hz, int sample_rate, int fft_size);
+
 }  // namespace kz4ap

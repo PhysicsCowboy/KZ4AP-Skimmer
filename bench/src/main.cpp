@@ -6,9 +6,11 @@
 #include "labels.hpp"
 #include "report.hpp"
 #include "scoring.hpp"
+#include "audio_options.hpp"
 #include "viterbi_json.hpp"
 
 #include "kz4ap/engine.hpp"
+#include "kz4ap/recording_reader.hpp"
 #include "kz4ap/wav_reader.hpp"
 
 #include <nlohmann/json.hpp>
@@ -53,6 +55,8 @@ struct Args {
     std::vector<std::string> detector_settings;  // --detector NAME=VALUE: a variant of the detector (apply_detector_setting)
     std::optional<std::filesystem::path> stats;  // --stats: where the new decoder's statistics file goes
     int threads = 1;  // --threads: EngineConfig::worker_threads
+    AudioOptions audio;  // receiver audio (audio_options.hpp)
+    double label_shift_hz = 0.0;  // --label-shift-hz: added to every label's frequency, Hz (audio made from a labeled I/Q recording)
 };
 
 const char* decoder_name(FrontEnd d) {
@@ -74,6 +78,9 @@ constexpr const char* kUsage =
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   [--detector NAME=VALUE ...] (a field of DetectorConfig or dc_block_s, over the path's defaults)\n"
     "                   [--omega-bar-default-table FILE]\n"
+    "                   [--audio] [--audio-channel N] [--passband-hz LO,HI] [--sideband usb|lsb] [--label-shift-hz HZ]\n"
+    "                   (receiver audio, as a one-channel WAV is read: docs/signal-processing.md, section 1;\n"
+    "                   --label-shift-hz adds HZ to every label's frequency, for audio made from a labeled I/Q recording)\n"
     "                   (--decoder viterbi, whose oracle channels follow the labels' frequencies;\n"
     "                   NAME is a field of ViterbiConfig; --genie reads the labels;\n"
     "                   --genie and --stats need --oracle; --stats writes the decoder's search statistics: a summary\n"
@@ -142,6 +149,8 @@ Args parse_args(int argc, char** argv) {
             args.stats = value();
             args.viterbi_options.stats = true;
         }
+        else if (parse_audio_option(a, text, args.audio)) {}
+        else if (a == "--label-shift-hz") args.label_shift_hz = std::stod(text());
         else if (a == "--no-judge") args.judge_tracks = false;  // every track stays as the detector has it (track_evidence.hpp)
         else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
         else if (a == "--omega-bar-default-table") {  // the default Omega_bar table for other level bounds
@@ -269,12 +278,19 @@ void add_tracks(nlohmann::json& out, const std::vector<DecodedTrack>& tracks,
 }
 
 int run_engine(const Args& args) {
-    WavIqReader reader(*args.recording);
+    // I/Q at the file's own rate (no resampling: the labels' rate must match), or receiver audio as its analytic signal.
+    RecordingOptions reading = recording_options(args.audio, false);
+    reading.resample = false;
+    RecordingReader reader(*args.recording, reading);
+    check_audio_options(args.audio, reader);
+    if (reader.is_audio()) std::fprintf(stderr, "%s\n", describe_audio_input(reader, args.audio).c_str());
     std::optional<Labels> labels;
     if (args.labels) {
         labels = load_labels(*args.labels);
-        if (labels->sample_rate != reader.sample_rate())
+        // Receiver audio made from a labeled I/Q recording keeps the labels' times, not their rate.
+        if (!reader.is_audio() && labels->sample_rate != reader.sample_rate())
             throw std::runtime_error("labels sample rate does not match the recording");
+        for (LabeledSignal& s : labels->signals) s.freq_offset_hz += args.label_shift_hz;
     }
 
     EventBus bus;
@@ -313,6 +329,7 @@ int run_engine(const Args& args) {
 
     EngineConfig config;
     config.sample_rate = reader.sample_rate();
+    if (reader.is_audio()) apply_audio_passband(config, args.audio);
     if (args.front_end == FrontEnd::Envelope) config = with_envelope_path(config);
     config.decoder.front_end = args.front_end;
     config.worker_threads = args.threads;
@@ -390,6 +407,12 @@ int run_engine(const Args& args) {
 
     nlohmann::json out;
     out["recording"] = args.recording->filename().string();
+    if (reader.is_audio()) {
+        // Receiver audio: its frequencies audio tones (Hz; negated on the lower sideband) and its SNRs receiver-audio values.
+        out["input"] = {{"kind", "receiver audio"}, {"audio_rate", reader.file_rate()}, {"channel", reader.audio_channel()},
+                        {"passband_hz", {args.audio.passband_lo_hz, args.audio.passband_hi_hz}},
+                        {"sideband", args.audio.lower_sideband ? "lsb" : "usb"}, {"label_shift_hz", args.label_shift_hz}};
+    }
     out["duration_s"] = duration_s;
     out["front_end"] = decoder_name(args.front_end);  // the old key, read by stage 1's tooling
     out["decoder"] = decoder_name(args.front_end);

@@ -1,6 +1,7 @@
 add_library(kz4ap_bench_lib
   src/bank_json.cpp
   src/channel_recorder.cpp
+  src/audio_options.cpp
   src/labels.cpp
   src/noise_mask.cpp
   src/report.cpp

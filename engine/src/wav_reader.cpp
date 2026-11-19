@@ -138,83 +138,192 @@ std::optional<double> center_hz_from_file_name(std::string_view file_name, int s
     return std::nullopt;
 }
 
-WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::ios::binary) {
-    const std::string name = path_text(path);
-    if (!file_) throw std::runtime_error("cannot open " + name);
-    try {
-        if (read_tag(file_) != "RIFF") throw std::runtime_error("not a WAV file");
-        read_le<std::uint32_t>(file_);
-        if (read_tag(file_) != "WAVE") throw std::runtime_error("not a WAV file");
+namespace {
 
-        bool have_format = false;
-        while (true) {
-            if (file_.peek() == std::char_traits<char>::eof()) throw std::runtime_error("no data chunk");
-            const std::string id = read_tag(file_);
-            const auto size = read_le<std::uint32_t>(file_);
-            if (id == "fmt ") {
-                if (size < 16) throw std::runtime_error("malformed format chunk");
-                auto format = read_le<std::uint16_t>(file_);
-                const auto channels = read_le<std::uint16_t>(file_);
-                sample_rate_ = static_cast<int>(read_le<std::uint32_t>(file_));
-                read_le<std::uint32_t>(file_);  // byte rate
-                const auto block_align = read_le<std::uint16_t>(file_);
-                const auto bits = read_le<std::uint16_t>(file_);
-                std::uint32_t consumed = 16;
-                if (format == kFormatExtensible && size >= 26) {
-                    read_le<std::uint16_t>(file_);  // extension size
-                    read_le<std::uint16_t>(file_);  // valid bits: the values are left-justified in `bits`, so unused
-                    read_le<std::uint32_t>(file_);  // channel mask
-                    format = read_le<std::uint16_t>(file_);  // first two bytes of the sub-format GUID
-                    consumed = 26;
-                }
-                if (format != kFormatPcm && format != kFormatFloat)
-                    throw std::runtime_error("only integer PCM or 32-bit float WAV files are supported");
-                if (channels != 2)
-                    throw std::runtime_error("needs 2 channels (I and Q), found " + std::to_string(channels));
-                if (format == kFormatFloat) {
-                    if (bits != 32) throw std::runtime_error("needs 32-bit float samples, found " + std::to_string(bits) + "-bit");
-                    format_ = WavSampleFormat::Float32;
-                } else if (bits == 16) {
-                    format_ = WavSampleFormat::Int16;
-                } else if (bits == 24) {
-                    format_ = WavSampleFormat::Int24;
-                } else if (bits == 32) {
-                    format_ = WavSampleFormat::Int32;
-                } else {
-                    throw std::runtime_error("needs 16-, 24- or 32-bit samples, found " + std::to_string(bits) + "-bit");
-                }
-                frame_bytes_ = 2 * (bits / 8);
-                if (block_align != frame_bytes_)
-                    throw std::runtime_error("block align " + std::to_string(block_align) + " bytes does not match 2 channels of " +
-                                             std::to_string(bits) + " bits");
-                if (sample_rate_ <= 0) throw std::runtime_error("sample rate must be positive");
-                file_.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) - consumed + (size & 1)),
-                            std::ios::cur);
-                have_format = true;
-            } else if (id == "auxi" && size <= 4096) {
-                std::vector<unsigned char> body(size);
-                file_.read(reinterpret_cast<char*>(body.data()), static_cast<std::streamsize>(size));
-                if (!file_) throw std::runtime_error("WAV file ended unexpectedly");
-                info_ = parse_auxi(body);
-                if (size & 1) file_.seekg(1, std::ios::cur);
-            } else if (id == "data") {
-                if (!have_format) throw std::runtime_error("data chunk comes before format chunk");
-                const auto data_start = file_.tellg();
-                file_.seekg(0, std::ios::end);
-                const auto available = static_cast<std::uint64_t>(file_.tellg() - data_start);
-                file_.seekg(data_start);
-                data_start_ = static_cast<std::streamoff>(data_start);
-                total_samples_ = std::min<std::uint64_t>(size, available) / static_cast<std::uint64_t>(frame_bytes_);
-                return;
-            } else {
-                file_.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) + (size & 1)),
-                            std::ios::cur);
+// What a WAV header says, as far as the readers use it.
+struct WavLayout {
+    WavSampleFormat format = WavSampleFormat::Int16;
+    int channels = 0;
+    int sample_rate = 0;
+    int bits = 0;
+    int block_align = 0;
+    WavRecordingInfo info;
+    std::streamoff data_start = 0;
+    std::uint64_t data_bytes = 0;  // what the data chunk holds, cut to what the file holds
+};
+
+// Reads the header up to the data chunk's first byte, where it leaves the file. Takes integer PCM of 16, 24 or 32 bits and
+// 32-bit float, plain or extensible; any number of channels (the caller checks it).
+WavLayout read_layout(std::ifstream& file) {
+    WavLayout layout;
+    if (read_tag(file) != "RIFF") throw std::runtime_error("not a WAV file");
+    read_le<std::uint32_t>(file);
+    if (read_tag(file) != "WAVE") throw std::runtime_error("not a WAV file");
+    bool have_format = false;
+    while (true) {
+        if (file.peek() == std::char_traits<char>::eof()) throw std::runtime_error("no data chunk");
+        const std::string id = read_tag(file);
+        const auto size = read_le<std::uint32_t>(file);
+        if (id == "fmt ") {
+            if (size < 16) throw std::runtime_error("malformed format chunk");
+            auto format = read_le<std::uint16_t>(file);
+            layout.channels = read_le<std::uint16_t>(file);
+            layout.sample_rate = static_cast<int>(read_le<std::uint32_t>(file));
+            read_le<std::uint32_t>(file);  // byte rate
+            layout.block_align = read_le<std::uint16_t>(file);
+            layout.bits = read_le<std::uint16_t>(file);
+            std::uint32_t consumed = 16;
+            if (format == kFormatExtensible && size >= 26) {
+                read_le<std::uint16_t>(file);  // extension size
+                read_le<std::uint16_t>(file);  // valid bits: the values are left-justified in `bits`, so unused
+                read_le<std::uint32_t>(file);  // channel mask
+                format = read_le<std::uint16_t>(file);  // first two bytes of the sub-format GUID
+                consumed = 26;
             }
+            if (format != kFormatPcm && format != kFormatFloat)
+                throw std::runtime_error("only integer PCM or 32-bit float WAV files are supported");
+            if (format == kFormatFloat) {
+                if (layout.bits != 32) throw std::runtime_error("needs 32-bit float samples, found " + std::to_string(layout.bits) + "-bit");
+                layout.format = WavSampleFormat::Float32;
+            } else if (layout.bits == 16) {
+                layout.format = WavSampleFormat::Int16;
+            } else if (layout.bits == 24) {
+                layout.format = WavSampleFormat::Int24;
+            } else if (layout.bits == 32) {
+                layout.format = WavSampleFormat::Int32;
+            } else {
+                throw std::runtime_error("needs 16-, 24- or 32-bit samples, found " + std::to_string(layout.bits) + "-bit");
+            }
+            if (layout.sample_rate <= 0) throw std::runtime_error("sample rate must be positive");
+            if (layout.channels < 1) throw std::runtime_error("needs at least one channel");
+            file.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) - consumed + (size & 1)), std::ios::cur);
+            have_format = true;
+        } else if (id == "auxi" && size <= 4096) {
+            std::vector<unsigned char> body(size);
+            file.read(reinterpret_cast<char*>(body.data()), static_cast<std::streamsize>(size));
+            if (!file) throw std::runtime_error("WAV file ended unexpectedly");
+            layout.info = parse_auxi(body);
+            if (size & 1) file.seekg(1, std::ios::cur);
+        } else if (id == "data") {
+            if (!have_format) throw std::runtime_error("data chunk comes before format chunk");
+            const auto data_start = file.tellg();
+            file.seekg(0, std::ios::end);
+            const auto available = static_cast<std::uint64_t>(file.tellg() - data_start);
+            file.seekg(data_start);
+            layout.data_start = static_cast<std::streamoff>(data_start);
+            layout.data_bytes = std::min<std::uint64_t>(size, available);
+            return layout;
+        } else {
+            file.seekg(static_cast<std::streamoff>(static_cast<std::uint64_t>(size) + (size & 1)), std::ios::cur);
         }
+    }
+}
+
+// One channel's sample at p, FS, by WavIqReader's scaling.
+float sample_at(const unsigned char* p, WavSampleFormat format) {
+    switch (format) {
+        case WavSampleFormat::Int16: {
+            std::int16_t v;
+            std::memcpy(&v, p, 2);
+            return v / 32768.0f;
+        }
+        case WavSampleFormat::Int24: {
+            const std::uint32_t u = (static_cast<std::uint32_t>(p[0]) << 8) | (static_cast<std::uint32_t>(p[1]) << 16) |
+                                    (static_cast<std::uint32_t>(p[2]) << 24);
+            return static_cast<float>(static_cast<std::int32_t>(u) >> 8) * (1.0f / 8388608.0f);
+        }
+        case WavSampleFormat::Int32: {
+            std::int32_t v;
+            std::memcpy(&v, p, 4);
+            return static_cast<float>(v * (1.0 / 2147483648.0));
+        }
+        case WavSampleFormat::Float32: {
+            float v;
+            std::memcpy(&v, p, 4);
+            return v;
+        }
+    }
+    return 0.0f;
+}
+
+}  // namespace
+
+int wav_channels(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    const std::string name = path_text(path);
+    if (!file) throw std::runtime_error("cannot open " + name);
+    try {
+        return read_layout(file).channels;
     } catch (const std::runtime_error& e) {
         throw std::runtime_error(name + ": " + e.what());
     }
 }
+
+WavIqReader::WavIqReader(const std::filesystem::path& path) : file_(path, std::ios::binary) {
+    const std::string name = path_text(path);
+    if (!file_) throw std::runtime_error("cannot open " + name);
+    try {
+        const WavLayout layout = read_layout(file_);
+        if (layout.channels != 2)
+            throw std::runtime_error("needs 2 channels (I and Q), found " + std::to_string(layout.channels));
+        format_ = layout.format;
+        sample_rate_ = layout.sample_rate;
+        frame_bytes_ = 2 * (layout.bits / 8);
+        if (layout.block_align != frame_bytes_)
+            throw std::runtime_error("block align " + std::to_string(layout.block_align) + " bytes does not match 2 channels of " +
+                                     std::to_string(layout.bits) + " bits");
+        info_ = layout.info;
+        data_start_ = layout.data_start;
+        total_samples_ = layout.data_bytes / static_cast<std::uint64_t>(frame_bytes_);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error(name + ": " + e.what());
+    }
+}
+
+WavAudioReader::WavAudioReader(const std::filesystem::path& path, int channel) : file_(path, std::ios::binary), channel_(channel) {
+    const std::string name = path_text(path);
+    if (!file_) throw std::runtime_error("cannot open " + name);
+    try {
+        const WavLayout layout = read_layout(file_);
+        channels_ = layout.channels;
+        if (channel < 0 || channel >= channels_)
+            throw std::runtime_error("has " + std::to_string(channels_) + " channel" + (channels_ == 1 ? "" : "s") + ", no channel " +
+                                     std::to_string(channel) + " (0 is the first)");
+        format_ = layout.format;
+        sample_rate_ = layout.sample_rate;
+        sample_bytes_ = layout.bits / 8;
+        frame_bytes_ = channels_ * sample_bytes_;
+        if (layout.block_align != frame_bytes_)
+            throw std::runtime_error("block align " + std::to_string(layout.block_align) + " bytes does not match " +
+                                     std::to_string(channels_) + " channels of " + std::to_string(layout.bits) + " bits");
+        info_ = layout.info;
+        data_start_ = layout.data_start;
+        total_samples_ = layout.data_bytes / static_cast<std::uint64_t>(frame_bytes_);
+    } catch (const std::runtime_error& e) {
+        throw std::runtime_error(name + ": " + e.what());
+    }
+}
+
+std::size_t WavAudioReader::read(std::span<float> out) {
+    const auto n = static_cast<std::size_t>(std::min<std::uint64_t>(out.size(), total_samples_ - samples_read_));
+    if (n == 0) return 0;
+    const auto frame = static_cast<std::size_t>(frame_bytes_);
+    raw_.resize(frame * n);
+    file_.read(reinterpret_cast<char*>(raw_.data()), static_cast<std::streamsize>(raw_.size()));
+    const auto got = static_cast<std::size_t>(file_.gcount()) / frame;
+    const unsigned char* p = raw_.data() + static_cast<std::size_t>(channel_ * sample_bytes_);
+    for (std::size_t i = 0; i < got; ++i, p += frame) out[i] = sample_at(p, format_);
+    samples_read_ += got;
+    return got;
+}
+
+void WavAudioReader::seek(std::uint64_t sample) {
+    samples_read_ = std::min(sample, total_samples_);
+    file_.clear();
+    file_.seekg(data_start_ + static_cast<std::streamoff>(samples_read_ * static_cast<std::uint64_t>(frame_bytes_)));
+    if (!file_) throw std::runtime_error("cannot seek in the recording");
+}
+
 
 std::size_t WavIqReader::read(std::span<Sample> out) {
     const auto n = static_cast<std::size_t>(std::min<std::uint64_t>(out.size(), total_samples_ - samples_read_));

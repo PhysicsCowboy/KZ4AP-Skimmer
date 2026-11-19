@@ -18,7 +18,7 @@ const kz4ap::DetectorConfig& ValidatedConfig(const kz4ap::DetectorConfig& config
         !(config.prominence_db >= 0) || !(config.prominence_radius_hz >= 0) || !(config.dc_guard_hz >= 0) || !(config.follow_radius_hz >= 0) ||
         !(config.sideband_db >= 0) || !(config.sideband_mirror_db >= 0) || !(config.sideband_radius_hz >= 0) || config.fft_factor < 1 ||
         (config.fft_factor & (config.fft_factor - 1)) != 0 || !(config.skirt_exclusion_db >= 0) || !(config.skirt_exclusion_hz > 0) ||
-        !(config.skirt_exclusion_radius_hz >= 0))
+        !(config.skirt_exclusion_radius_hz >= 0) || !std::isfinite(config.band_lo_hz) || !std::isfinite(config.band_hi_hz))
         throw std::invalid_argument("invalid signal detector config");
     return config;
 }
@@ -40,6 +40,9 @@ SignalDetector::SignalDetector(const DetectorConfig& config)
     prominence_bins_ = static_cast<int>(std::lround(config_.prominence_radius_hz / bin_hz));
     sideband_bins_ = static_cast<int>(std::lround(config_.sideband_radius_hz / bin_hz));
     track_limit_ = config_.max_tracks;
+    const BinRange band = band_bins(config_.band_lo_hz, config_.band_hi_hz, config_.sample_rate, config_.fft_size);
+    band_first_ = band.first;
+    band_last_ = band.last;
 }
 
 DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
@@ -60,9 +63,11 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         for (std::size_t i = 0; i < n; ++i) average_[i] += a * (std::pow(10.0, frame.power_db[i] / 10.0) - average_[i]);
     }
     if ((frames_seen_ - 1) % static_cast<std::uint64_t>(config_.floor_every_frames) == 0) {
-        scratch_ = average_;
-        std::nth_element(scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(n / 2), scratch_.end());
-        floor_db_ = static_cast<float>(10.0 * std::log10(scratch_[n / 2] + 1e-30));
+        // The median of the passband's bins (the whole span unless DetectorConfig::band_hi_hz > band_lo_hz).
+        scratch_.assign(average_.begin() + band_first_, average_.begin() + band_last_ + 1);
+        const std::size_t middle = scratch_.size() / 2;
+        std::nth_element(scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(middle), scratch_.end());
+        floor_db_ = static_cast<float>(10.0 * std::log10(scratch_[middle] + 1e-30));
     }
     const float floor_db = floor_db_;
 
@@ -114,7 +119,7 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
     for (auto& c : candidates_) c.seen = false;
     // Below this linear power a bin cannot clear the threshold, dB rounded to float or not (the margin: 1e-3 dB).
     const double threshold_power = std::pow(10.0, (static_cast<double>(floor_db) + config_.threshold_db - 1e-3) / 10.0);
-    for (int i = 0; i <= last; ++i) {
+    for (int i = band_first_; i <= band_last_; ++i) {
         if (average_[static_cast<std::size_t>(i)] + 1e-30 < threshold_power) continue;
         const float snr = db_at(i) - floor_db;
         if (snr < config_.threshold_db) continue;
@@ -145,8 +150,8 @@ DetectorUpdate SignalDetector::process(const SpectrumFrame& frame) {
         if (local_floor_bins_ > 0) {
             // A carrier stands out from what is around it; a peak of a wide signal's spectrum does not, though it may stand
             // well above the band's median.
-            const auto lo = static_cast<std::ptrdiff_t>(std::max(0, i - local_floor_bins_));
-            const auto hi = static_cast<std::ptrdiff_t>(std::min(last, i + local_floor_bins_)) + 1;
+            const auto lo = static_cast<std::ptrdiff_t>(std::max(band_first_, i - local_floor_bins_));
+            const auto hi = static_cast<std::ptrdiff_t>(std::min(band_last_, i + local_floor_bins_)) + 1;
             scratch_.assign(average_.begin() + lo, average_.begin() + hi);
             const auto middle = scratch_.begin() + static_cast<std::ptrdiff_t>(scratch_.size() / 4);
             std::nth_element(scratch_.begin(), middle, scratch_.end());
@@ -323,12 +328,11 @@ void SignalDetector::follow_peaks(float floor_db) {
     const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
     const double radius_hz = config_.follow_radius_hz > 0.0 ? config_.follow_radius_hz : config_.attribution_distance_hz;
     const int reach = static_cast<int>(std::ceil(radius_hz / bin_hz)) + 1;
-    const int last = static_cast<int>(average_.size()) - 1;
     for (std::size_t index = 0; index < active_.size(); ++index) {
         Active& t = active_[index];
         int best = -1;
         double best_freq = 0;
-        for (int i = std::max(0, t.bin - reach); i <= std::min(last, t.bin + reach); ++i) {
+        for (int i = std::max(band_first_, t.bin - reach); i <= std::min(band_last_, t.bin + reach); ++i) {
             if (db_at(i) - floor_db < keep_alive_db || !is_peak(i)) continue;
             const double f = refined_freq(i);
             if (!(std::abs(f - t.track.freq_hz) < radius_hz)) continue;

@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--bandwidth-hz and --track-filter exclude each other: the track's filter has its own width");
         if (std::filesystem::exists(out) && std::filesystem::equivalent(in, out)) throw std::runtime_error("the clip would overwrite the recording");
 
-        RecordingReader reader(in, RecordingOptions{.mirror = mirror});
+        RecordingReader reader(in, RecordingOptions{.mirror = mirror, .input = RecordingInput::Iq});
         if (!center_hz) center_hz = reader.info().center_hz;
         if (!center_hz) center_hz = center_hz_from_file_name(path_text(std::filesystem::path(in).filename()), reader.file_rate());
         if (khz) {
