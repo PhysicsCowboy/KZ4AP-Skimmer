@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -25,6 +26,11 @@ struct ListenConfig {
     // The engine's own channel instead of the listening filter: the channelizer's stream (section 7) at the bin nearest
     // offset_hz, shifted by the rest of the offset, interpolated to audio_rate: what a track's decoder reads.
     bool track_filter = false;
+    // The audio frequency the listening filter is centered on, Hz, when it is not the tone: a receiver's filter, wider than the
+    // station's band and placed where the receiver puts it (an SSB filter of bandwidth_hz from about filter_center_hz -
+    // bandwidth_hz / 2 to + bandwidth_hz / 2), the station at tone_hz within it, its neighbors in it too. None: centered on the
+    // tone. Ignored with track_filter.
+    std::optional<double> filter_center_hz;
 };
 
 // The listening filter at audio_rate (samples/s), applied to the complex baseband with the station at 0 Hz: a Kaiser-windowed
@@ -32,9 +38,13 @@ struct ListenConfig {
 // passband at +/- bandwidth_hz / 2; its transition kListenTransitionRatio x bandwidth_hz wide, centered there, so the passband
 // is |f| <= 0.3 x bandwidth_hz and the stopband |f| >= 0.7 x bandwidth_hz (150 and 350 Hz at 500 Hz); Kaiser's estimates for
 // kListenAttenuationDb. Throws std::invalid_argument for a bandwidth outside [kListenMinBandwidthHz, audio_rate / 2].
-std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate);
+// transition_hz > 0: that transition instead, Hz (a receiver's filter, ListenConfig::filter_center_hz: kReceiverTransitionHz).
+std::vector<double> listen_filter_taps(double bandwidth_hz, int audio_rate, double transition_hz = 0.0);
 // Of the bandwidth: heuristic (the transition's width against the taps, 311 at 12 kHz and 500 Hz).
 inline constexpr double kListenTransitionRatio = 0.4;
+// A receiver's filter's transition (ListenConfig::filter_center_hz), Hz, centered on each edge: steep, as a transceiver's DSP or
+// crystal filter is, so that a 2400 Hz filter is flat within 0.01 dB re the passband over 2200 Hz (heuristic).
+inline constexpr double kReceiverTransitionHz = 200.0;
 // Kaiser's design value for the stopband, dB re the passband: 82 so that at least 80 dB is met, as the resampler's (heuristic).
 inline constexpr double kListenAttenuationDb = 82.0;
 // Narrower filters need more taps than are worth it (3097 at 12 kHz and 50 Hz); heuristic.

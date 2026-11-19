@@ -1,7 +1,7 @@
 // kz4ap-listen: one station of an I/Q recording as audio, to check a decoding by ear: the signal at one frequency, shifted to
 // an audio tone and filtered narrow, written as a mono 16-bit PCM WAV (docs/signal-processing.md, A.13).
 //   kz4ap-listen IN.wav OUT.wav (--khz KHZ | --offset-hz HZ) --start S --seconds S [--mirror] [--center-khz KHZ]
-//                [--tone-hz HZ] [--bandwidth-hz HZ] [--rate 8000|12000] [--track-filter] [--gain-db DB]
+//                [--tone-hz HZ] [--bandwidth-hz HZ] [--filter-center-hz HZ] [--rate 8000|12000] [--track-filter] [--gain-db DB]
 // It writes a file only; it plays nothing.
 #include "kz4ap/listen.hpp"
 #include "kz4ap/recording_reader.hpp"
@@ -26,7 +26,7 @@ constexpr double kPeakDbfs = -1.0;
 
 constexpr const char* kUsage =
     "usage: kz4ap-listen IN.wav OUT.wav (--khz KHZ | --offset-hz HZ) --start S --seconds S [--mirror] [--center-khz KHZ]\n"
-    "                    [--tone-hz HZ] [--bandwidth-hz HZ] [--rate 8000|12000] [--track-filter] [--gain-db DB]\n"
+    "                    [--tone-hz HZ] [--bandwidth-hz HZ] [--filter-center-hz HZ] [--rate 8000|12000] [--track-filter] [--gain-db DB]\n"
     "  --khz          the station's frequency, kHz (needs the recording's center: header, file name or --center-khz)\n"
     "  --offset-hz    the station's frequency as an offset from the recording's center, Hz\n"
     "                 (either way within the band the recording holds flat: +/-86 kHz of a 250 kHz recording, resampled)\n"
@@ -36,6 +36,8 @@ constexpr const char* kUsage =
     "  --tone-hz      the audio tone the station is heard at, Hz (default 600)\n"
     "  --bandwidth-hz the listening filter's width at -6 dB re the passband, Hz (default 500)\n"
     "  --rate         the audio's rate, samples/s (default 12000)\n"
+    "  --filter-center-hz the audio frequency the listening filter is centered on, Hz (default: the tone): a receiver's\n"
+    "                 filter, the station at --tone-hz within it (--bandwidth-hz 2400 --filter-center-hz 1500: 300 to 2700 Hz)\n"
     "  --track-filter the engine's own channel filter instead (+/-150 Hz at -6 dB re the passband): what a track's decoder reads\n"
     "  --gain-db      a fixed gain, dB re unity (1 FS in, 1 FS out), instead of setting the clip's peak to -1 dBFS\n";
 
@@ -80,6 +82,7 @@ int main(int argc, char** argv) {
             else if (a == "--seconds") seconds = value();
             else if (a == "--center-khz") center_hz = 1000.0 * value();
             else if (a == "--tone-hz") config.tone_hz = value();
+            else if (a == "--filter-center-hz") config.filter_center_hz = value();
             else if (a == "--bandwidth-hz") {
                 config.bandwidth_hz = value();
                 bandwidth_given = true;
@@ -134,7 +137,8 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, " (%04d-%02d-%02d %02d:%02d:%02d.%03d UTC)", c.year, c.month, c.day, c.hour, c.minute, c.second, c.millisecond);
         }
         if (config.track_filter) std::fprintf(stderr, "\n  the track's channel filter (+/-150 Hz at -6 dB re the passband)");
-        else std::fprintf(stderr, "\n  listening filter %.0f Hz wide at -6 dB re the passband", config.bandwidth_hz);
+        else std::fprintf(stderr, "\n  listening filter %.0f Hz wide at -6 dB re the passband, centered on %.0f Hz of the audio",
+                          config.bandwidth_hz, config.filter_center_hz ? *config.filter_center_hz : config.tone_hz);
         std::fprintf(stderr, ", tone %.0f Hz, %d samples/s\n", config.tone_hz, config.audio_rate);
         std::fprintf(stderr, "  power in the band %.2f dBFS (re 1 FS^2, the recording's scale); gain %+.2f dB re unity (%s)\n",
                      db(clip.band_power_fs2), 20.0 * std::log10(gain), gain_db ? "fixed" : "the clip's peak to -1 dBFS");
