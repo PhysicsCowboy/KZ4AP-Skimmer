@@ -115,12 +115,74 @@ struct CallReading {
 // nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
 double margin_of(float probability);
 
+// ---- Joined words: a segmentation into keywords and calls (docs/signal-processing.md, section 11; appendix A.12)
+//
+// A word the decoder joined across short word spaces (CQDXCQDXDEK8DXK8DX) is cut into tokens by dynamic programming: the most
+// probable sequence (Viterbi over the split points) of keywords, calls and stray characters, under a model of tokens whose log
+// probabilities are scored in nats against noise text, in which every character costs ln 36. Then a call on that path is believed
+// only on the evidence noise does not give: its repeats, a DE beside it, a sign-off after it.
+struct SegmentationCosts {
+    // Gains are log probability ratios in nats against noise text, whose characters cost -ln p(c) each, p(c) proportional to
+    // 2^-(the character's count of dots and dashes): E and T 2.10 nats, I A N M 2.80, a digit 4.87 (noise_char_nats; a model of what
+    // a decoder reads from noise, heuristic). A keyword explains its characters: it gains their noise cost less its own, -ln of its
+    // share of decoded words (measured, callsign.cpp's table): CQ 4.5 nats, DE 0.5, DX -1.0, K -0.7, AR -1.5.
+    // nats: a new call: -ln P(a word is a call), measured: 3.32 (2026-11-17's decoded words) and 1.52 (2026-11-18's, the CWT contest),
+    // their mean. Its characters cost n ln 36 less the gain of its form and length (call_shape_nats), against their noise cost.
+    double call_nats = 2.4;
+    // nats: a character no token explains (a stray or garbled one): -ln P(a stray). Heuristic: P = 1/10.
+    double stray_nats = 2.3026;
+    // nats: the call just sent, again, with nothing but keywords between: -ln P(a repeat); its characters are explained (K8DX again
+    // gains 14.4 nats). Heuristic: P = 1/5.
+    double repeat_nats = 1.6094;
+    // nats: a DE right before a call, ln P(a call after DE) / P(a call); right after it (call DE call), ln P(DE after a call) / P(DE);
+    // a K or KN right after it, likewise. Heuristic, of the size measured on 2026-11-17's decoded words (2.72, 1.22, 1.54 nats; the
+    // CWT text of 2026-11-18 gives 1.06, -1.34, -0.03).
+    double de_before_nats = 2.7726;
+    double de_after_nats = 1.0;
+    double sign_off_nats = 1.5;
+    // nats: a call on the path is believed when its evidence (its copies after the first, the DE beside them, the K after them;
+    // a call's first copy is none, since noise text has many call forms) reaches this, and the whole path's gain (the word against
+    // noise) reaches word_min_nats. A DE before it is enough, a DE after it only with a K, a repeat always. Heuristic.
+    double believe_nats = 2.5;
+    double word_min_nats = 0.0;
+    // Words longer than this are not cut (CPU; heuristic).
+    std::size_t max_chars = 64;
+};
+
+// One token of a segmented word, in order; their texts make up the word.
+struct Segment {
+    enum class Kind { Keyword, Call, Stray };
+    std::string text;
+    Kind kind = Kind::Stray;
+    bool believed = false;  // a call whose evidence reaches SegmentationCosts::believe_nats
+    double evidence_nats = 0;  // a call's: the gains of its copies on the path and of the DE and sign-off beside them
+};
+
+// nats: a character's cost as noise text (SegmentationCosts).
+double noise_char_nats(char c);
+// nats: the gain of a call's form among strings of n characters, -ln of the share of them parse_call takes (derived from the grammar).
+double call_form_nats(std::size_t n);
+// nats: ln of the share of calls that have n characters (measured on the RBN; negative).
+double call_length_nats(std::size_t n);
+// The most probable segmentation of a word (upper case) into keywords, calls (parse_call; not only tiny pieces) and strays.
+std::vector<Segment> segment_word(std::string_view word, const SegmentationCosts& costs = {});
+
+// How read_calls reads a word that is not a call by itself.
+struct ReadOptions {
+    // 0: split_glued only (the defaults); 1: segment_word when split_glued finds no split; 2: segment_word in place of split_glued.
+    int segment_joined = 0;
+    std::size_t segment_min_chars = 6;  // words shorter than this are not segmented (heuristic)
+    SegmentationCosts costs;
+};
+
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to);
 // As read_calls; given the symbols the words were made of (words_of), each piece of a glued word has its own characters' times
 // (CallSearchConfig::glued_pieces_timed); with an empty span, the word's.
 std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols);
+std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t from, std::size_t to, std::span<const DecodedSymbol> symbols,
+                                    const ReadOptions& options);
 
 // ---- A known-call list
 
@@ -229,6 +291,12 @@ struct CallSearchConfig {
     // counts readings that overlap in time within same_place_hz once (copy-2, review 18; appendix A.12). 25 ms is the duplicate rule's.
     double skip_neighbors_text = 0.0;
     double neighbor_twin_s = 0.025;
+    // Joined words read by segmentation (segment_word): 0 off, the default; 1 for a word split_glued cannot split; 2 for every word
+    // of segment_min_chars or more that is not a call by itself, in place of split_glued. A believed call's copies are Glued
+    // readings with the roles their neighbors on the path give. A variant (branch joined-words-1; appendix A.12).
+    double segment_joined = 0.0;
+    double segment_min_chars = 6.0;
+    SegmentationCosts segmentation;
 };
 
 // One line of the list.

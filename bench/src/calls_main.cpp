@@ -14,6 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -62,6 +63,11 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"known_margin_nats", &c.known_margin_nats},
         {"pool_places", &c.pool_places}, {"glued_pieces_timed", &c.glued_pieces_timed},
         {"skip_neighbors_text", &c.skip_neighbors_text}, {"neighbor_twin_s", &c.neighbor_twin_s},
+        {"segment_joined", &c.segment_joined}, {"segment_min_chars", &c.segment_min_chars},
+        {"segment_stray_nats", &c.segmentation.stray_nats}, {"segment_call_nats", &c.segmentation.call_nats},
+        {"segment_repeat_nats", &c.segmentation.repeat_nats}, {"segment_de_before_nats", &c.segmentation.de_before_nats},
+        {"segment_de_after_nats", &c.segmentation.de_after_nats}, {"segment_word_min_nats", &c.segmentation.word_min_nats},
+        {"segment_sign_off_nats", &c.segmentation.sign_off_nats}, {"segment_believe_nats", &c.segmentation.believe_nats},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);
@@ -201,12 +207,16 @@ int main(int argc, char** argv) {
             std::unique_ptr<std::ofstream> log;
             if (!o.log.empty()) log = std::make_unique<std::ofstream>(o.log);
             double next_mark = 0.0;
+            double logged_second = -1.0;  // s: the whole second of the last frame logged
             EventBus bus;
             bus.subscribe([&](const Event& e) {
                 if (const auto* f = std::get_if<SpectrumFrame>(&e)) {
                     stream_s = f->time_s;
-                    if (stream_s >= next_mark) {
-                        next_mark = stream_s + 0.5;  // s: the log's clock, twice the stage's reading rate
+                    // s: the log's clock, twice the stage's reading rate, and every frame that starts a whole second, where the stage
+                    // reads (CallSearch::advance), so that --replay reads the same text at the same point of the events as the run did.
+                    if (stream_s >= next_mark || std::floor(stream_s) > logged_second) {
+                        if (stream_s >= next_mark) next_mark = stream_s + 0.5;
+                        logged_second = std::floor(stream_s);
                         if (log) *log << nlohmann::json{{"k", "a"}, {"t", stream_s}}.dump() << '\n';
                     }
                     timed([&] { stage.advance(stream_s); });

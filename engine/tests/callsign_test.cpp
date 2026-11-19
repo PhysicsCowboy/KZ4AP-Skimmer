@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1283,4 +1285,183 @@ TEST(CallSearch, ANewKnownCallListMarksTheCallsHeld) {
     EXPECT_TRUE(s.row("K1ABC")->known);
     s.search.set_known(nullptr);
     EXPECT_FALSE(s.row("K1ABC")->known);  // the list taken away: the row stays, unlisted
+}
+
+// ---- Joined words: segment_word and the segment_joined variant (branch joined-words-1)
+
+namespace {
+
+std::vector<CallReading> readings_with(const std::string& text, int mode) {
+    const std::vector<DecodedSymbol> s = symbols(text);
+    const std::vector<Word> w = words_of(s);
+    ReadOptions options;
+    options.segment_joined = mode;
+    return read_calls(w, 0, w.size(), s, options);
+}
+
+// The segments' texts, a believed call marked with *.
+std::string cut(const std::string& word) {
+    std::string out;
+    for (const Segment& s : segment_word(word)) {
+        if (!out.empty()) out += ' ';
+        out += s.text;
+        if (s.kind == Segment::Kind::Call && s.believed) out += '*';
+    }
+    return out;
+}
+
+std::size_t count_of(const std::vector<CallReading>& r, const std::string& base) {
+    return static_cast<std::size_t>(std::count_if(r.begin(), r.end(), [&](const CallReading& x) { return x.base == base; }));
+}
+
+}  // namespace
+
+TEST(JoinedWords, EK8DXsTextsAreCutIntoKeywordsAndTheCall) {
+    // The defaults' text of EK8DX on 80 m (2026-11-17): word gaps from 3.5 dots, so the decoder joined every word.
+    EXPECT_EQ(cut("CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK"), "CQ CQ CQ DX CQ DX CQ DX DE K8DX* K8DX* K8DX* K");
+    EXPECT_EQ(cut("CQCQDXCQDXCQDXCQDXDEK8DXK8DX"), "CQ CQ DX CQ DX CQ DX CQ DX DE K8DX* K8DX*");
+    EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+    // A garbled last copy: the believed call is read, the other is not.
+    EXPECT_EQ(cut("CQCQDXCQDXCQDXDEK8DXK8DK"), "CQ CQ DX CQ DX CQ DX DE K8DX* K8DK");
+    const std::string text = "CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK CQCQDXCQDXCQDXCQDXDEK8DXK8DX KQDX K";
+    EXPECT_FALSE(has_base(readings(text), "K8DX"));  // split_glued alone cannot read it
+    for (int mode : {1, 2}) {
+        const auto r = readings_with(text, mode);
+        EXPECT_EQ(count_of(r, "K8DX"), 5u) << mode;
+        for (const CallReading& x : r) {
+            if (x.base != "K8DX") continue;
+            EXPECT_EQ(x.role, Role::Sender);
+            EXPECT_EQ(x.reading, Reading::Glued);
+            EXPECT_TRUE(x.doubled);
+        }
+    }
+    // Each copy has its own characters' times (0.1 s a character): the first K8DX is characters 18 to 21.
+    const auto r = readings_with(text, 1);
+    ASSERT_FALSE(r.empty());
+    EXPECT_NEAR(r.front().start_s, 1.8, 1e-9);
+    EXPECT_NEAR(r.front().end_s, 2.2, 1e-9);
+}
+
+TEST(JoinedWords, ACallDeACall) {
+    // A K after a call is likelier than a call ending in K (the lengths' shares and the K's bigram); a DE after a call (1.0 nats) is
+    // not enough alone, a DE before one (2.77) is.
+    EXPECT_EQ(cut("N5JJDEWA0QZK"), "N5JJ DE WA0QZ* K");
+    const auto r = readings_with("N5JJDEWA0QZK", 2);
+    EXPECT_FALSE(has_base(r, "N5JJ"));
+    EXPECT_TRUE(has(r, "WA0QZ", Role::Sender));
+    EXPECT_EQ(cut("N5JJDEWA0QZKK"), "N5JJ DE WA0QZK* K");
+    // A string that is a shorter one repeated is no call: periodic garbage would be its own repeat.
+    EXPECT_EQ(cut("ATTM3J3J3J3JIGS").find('*'), std::string::npos);
+    EXPECT_FALSE(has_base(readings_with("ATTM3J3J3J3JIGS", 1), "3J3J"));
+    // As 1, split_glued reads it first, as by default.
+    const auto first = readings_with("N5JJDEWA0QZK", 1);
+    EXPECT_TRUE(has(first, "N5JJ", Role::Named));
+    EXPECT_TRUE(has(first, "WA0QZK", Role::Sender));
+    EXPECT_EQ(cut("CQCQPOTADENA9M"), "CQ CQ POTA DE NA9M*");
+    EXPECT_EQ(cut("CQPOKDEKG5VNQ"), "CQ PO K DE KG5VNQ*");
+}
+
+TEST(JoinedWords, ACallThatIsThePrefixOfAnotherIsCutWhereTheRepeatsSay) {
+    EXPECT_EQ(cut("DEK1ABCK1ABC"), "DE K1ABC* K1ABC*");  // K1AB is a call too
+    EXPECT_EQ(cut("W1AWW1AWK"), "W1AW* W1AW* K");        // and W1AWW
+    EXPECT_EQ(cut("DEW4PMK"), "DE W4PM* K");
+}
+
+TEST(JoinedWords, PlainWordsReadAsByDefault) {
+    for (const std::string text : {"CQ CQ DE K1ABC K1ABC K", "W2XYZ DE K1ABC GM", "DEK1ABC", "N5JJDEWA0QZK", "CQCQTESTDEK9BGLK9BGLK",
+                                   "K1ABC5NN", "TNX FER CALL UR RST 599 599", "EIK0HBN", "DE K X 9 F K"}) {
+        const auto a = readings_with(text, 0), b = readings_with(text, 1);
+        ASSERT_EQ(a.size(), b.size()) << text;
+        for (std::size_t k = 0; k < a.size(); ++k) {
+            EXPECT_EQ(a[k].full, b[k].full) << text;
+            EXPECT_EQ(a[k].role, b[k].role) << text;
+            EXPECT_EQ(a[k].reading, b[k].reading) << text;
+        }
+    }
+    // Words of CW that are no call stay none.
+    for (const std::string text : {"TNXFERCALL", "CQCQCQDXCQDX", "GMOMTNXFB", "5NNTU73", "RRRTU73"}) {
+        if (std::getenv("JW_DEBUG")) std::printf("%s -> %s\n", text.c_str(), cut(text).c_str());
+        EXPECT_TRUE(readings_with(text, 2).empty()) << text;
+    }
+}
+
+TEST(JoinedWords, GarbledTextGivesNoCall) {
+    // A call's form alone, among strays, is not enough: no repeat, no DE beside it.
+    EXPECT_TRUE(readings_with("EITTEAK1ABCNIEMTS", 2).empty());
+    EXPECT_TRUE(readings_with("TEEHK3ZZTIMNAE", 2).empty());
+    // A sign-off alone is not enough either (0.39 + 1.5 nats).
+    EXPECT_TRUE(readings_with("ETTAK1ABCK", 1).empty());
+    // Noise text: characters drawn with weight 2^-(their count of dots and dashes), as a decoder reading noise favors short ones
+    // (E, T, I, A, N, M, ...), 12 to 40 characters a word. The rate of words with a believed call is printed and bounded.
+    std::uint64_t state = 12345;
+    const auto next = [&] {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<double>(state >> 11) / 9007199254740992.0;
+    };
+    const std::string alphabet = "ETIANMSURWDKGOHVFLPJBXCYZQ0123456789";
+    const int elements[] = {1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+    std::vector<double> cdf;
+    double sum = 0.0;
+    for (int e : elements) cdf.push_back(sum += std::pow(2.0, -e));
+    int believed = 0;
+    const int words = 2000;
+    for (int k = 0; k < words; ++k) {
+        const int length = 12 + static_cast<int>(next() * 29.0);
+        std::string w;
+        for (int c = 0; c < length; ++c) {
+            const double u = next() * sum;
+            const auto at = static_cast<std::size_t>(std::lower_bound(cdf.begin(), cdf.end(), u) - cdf.begin());
+            w += alphabet[std::min(at, alphabet.size() - 1)];
+        }
+        for (const Segment& s : segment_word(w)) {
+            if (s.kind == Segment::Kind::Call && s.believed) {
+                ++believed;
+                if (std::getenv("JW_DEBUG")) std::printf("%s -> %s\n", w.c_str(), cut(w).c_str());
+                break;
+            }
+        }
+    }
+    std::printf("noise words with a believed call: %d of %d\n", believed, words);
+    EXPECT_LE(believed, words / 100);
+}
+
+TEST(JoinedWords, FormGains) {
+    // call_form_nats is the grammar's: -ln of the share of random strings of letters and digits that parse_call takes (its table was
+    // made with 2 000 000 strings a length; 200 000 here, within 0.1 nats: about 4 standard errors at 9 characters, share 1%).
+    std::uint64_t state = 99;
+    const auto next = [&] {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<std::size_t>((state >> 33) % 36);
+    };
+    const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    for (std::size_t n = 3; n <= 9; ++n) {
+        int hits = 0;
+        const int draws = 200000;
+        for (int k = 0; k < draws; ++k) {
+            std::string w;
+            for (std::size_t c = 0; c < n; ++c) w += alphabet[next()];
+            if (parse_call(w)) ++hits;
+        }
+        EXPECT_NEAR(call_form_nats(n), -std::log(hits / static_cast<double>(draws)), 0.1) << n;
+    }
+    // The shares of call lengths sum to 1 (3 to 12 characters).
+    double sum = 0.0;
+    for (std::size_t n = 3; n <= 12; ++n) sum += std::exp(call_length_nats(n));
+    EXPECT_NEAR(sum, 1.0, 0.01);
+}
+
+TEST(JoinedWords, TheStageReportsEK8DXOnlyWithTheVariant) {
+    const auto run = [](double mode) {
+        CallSearchConfig config;
+        config.segment_joined = mode;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK ", 0.0);
+        s.search.advance(60.0);
+        const CallRow* r = s.row("K8DX");
+        return r != nullptr && is_signed(*r) && r->count == 3;
+    };
+    EXPECT_FALSE(run(0.0));
+    EXPECT_TRUE(run(1.0));
+    EXPECT_TRUE(run(2.0));
 }
