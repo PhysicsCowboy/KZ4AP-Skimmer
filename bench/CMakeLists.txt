@@ -89,6 +89,7 @@ else()
 endif()
 
 add_executable(kz4ap_bench_tests
+  tests/audio_options_test.cpp
   tests/bank_json_test.cpp
   tests/bench_run_test.cpp
   tests/channel_recorder_test.cpp
