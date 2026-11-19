@@ -40,19 +40,27 @@ struct ParsedCall {
     // Four letters after its one digit (VK3FABC, 8N3ACAF): a form RR 19.68 allows but few administrations issue, CW Skimmer's
     // "unusual pattern"; by default spotted from a list only (CallSearchConfig::unusual_listed_only).
     bool unusual = false;
+    // No digit but the prefix's (C6AGU, E7DX, J6M, P3X): a letter-digit prefix whose digit is the call's, as administrations issue
+    // outside the letter of RR 19.68; by default spotted from a list only (CallSearchConfig::prefix_digit_listed_only).
+    bool prefix_digit = false;
+    // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN): spotted from a list only, always.
+    bool cw_word = false;
 };
 
 // A call, or nothing. The form is the ITU's for amateur stations (Radio Regulations 19.68): an allocated prefix of one or two
 // characters, or three in a half series (19.68.1: 3DA0RU, three letters at most after its digit), one digit, then one to four
-// letters. A call of the United States' series (K, N, W, AA to AL) has the FCC's forms: one to three letters after the digit, two
-// at most after AA to AL and NA to NZ (the FEMA stations AF#EMA and NF#EMA excepted), and a 1x1 never ends in X. A slash adds /P,
-// /M, /MM, /AM, /QRP, a digit or a prefix on either side. Words of CW that have this form are refused (is_cw_word). Upper case.
-// docs/signal-processing.md, A.12, "Form", has the sources.
+// letters; or a prefix of a letter and a digit (outside the whole-letter series) directly followed by one to four letters, the
+// prefix's digit being the call's (prefix_digit). A call of the United States' series (K, N, W, AA to AL) has the FCC's forms: one
+// to three letters after the digit, two at most after AA to AL and NA to NZ (the FEMA stations AF#EMA and NF#EMA excepted), and a
+// 1x1 never ends in X. A slash adds /P, /M, /MM, /AM, /QRP, a digit or a prefix on either side; when both sides are base calls
+// (VP2V/K1ABC, K1ABC/VP2V), the longer is the base, and on a tie the right one. Words of CW that have this form are marked
+// (is_cw_word), not refused. Upper case. docs/signal-processing.md, A.12, "Form", has the sources.
 std::optional<ParsedCall> parse_call(std::string_view word);
-// The form alone, before the refusal of words of CW.
+// The form alone, without the mark of words of CW.
 std::optional<ParsedCall> parse_form(std::string_view word);
-// A word with a call's form that in CW text is something else: rigs, antennas, software, and a word glued to 5NN (R5NN, UR5NN). Exact
-// matches only, since real calls contain them: DJ5NN stays a call. A heuristic list (manta's practice of exact matches).
+// A word with a call's form that in CW text is mostly something else: rigs, antennas, software (N1MM, K9AY, G5RV), exact; and any
+// one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN, W5NN), the contest report run onto a word. Real calls among them (K9AY,
+// N1MM, K5NN, DJ5NN, W5NN are issued) are spotted from a known-call list only. A heuristic (manta's practice of exact matches).
 bool is_cw_word(std::string_view base);
 // A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
 // such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
@@ -61,8 +69,6 @@ bool is_locator(std::string_view word);
 
 // A call made only of E, T, I, S, H, A, N, M, U and 5: what noise and a wide signal's fragments read as (track_evidence.hpp). The stage
 // takes it only as a whole word and reports it at CallSearchConfig::tiny_points whole words, with or without a known-call list. A heuristic.
-// A list helps nothing beyond that: a call with no digit after a letter-digit prefix (D4C, E7DX, C6AGU) has no form here and is
-// never read, listed or not (docs/backlog.md).
 bool only_tiny_pieces(std::string_view base);
 
 // Levenshtein distance, stopping once it exceeds `limit` (it then returns limit + 1).
@@ -105,6 +111,8 @@ struct CallReading {
     std::string full;
     bool special = false;
     bool unusual = false;  // ParsedCall::unusual
+    bool prefix_digit = false;  // ParsedCall::prefix_digit
+    bool cw_word = false;  // ParsedCall::cw_word
     Reading reading = Reading::Whole;
     Role role = Role::Unknown;
     bool doubled = false;  // the same word is right before or after it
@@ -328,6 +336,9 @@ struct CallSearchConfig {
     // skimmers spotted on 2026-11-17, 11 of 4 366 (0.25%) have this form, most of them busts (SD6MCWT, IK4EATX, W0RAUW), while on
     // the seven 2026-11-17 recordings all 8 such calls the stage reported were false (EE4EEEE, TE7TTTD, GA5NNON).
     double unusual_listed_only = 1.0;
+    // A call whose only digit is its prefix's (ParsedCall::prefix_digit: C6AGU, E7DX) is reported only from a list, when not 0.
+    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, DJ5NN) is always, and a special form too.
+    double prefix_digit_listed_only = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
 };
