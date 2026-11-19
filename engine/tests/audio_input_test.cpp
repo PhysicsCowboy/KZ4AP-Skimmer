@@ -2,6 +2,7 @@
 // the engine on its output with the receiver's passband (EngineConfig::passband_lo_hz). docs/signal-processing.md, section 1.
 #include "kz4ap/audio_input.hpp"
 #include "kz4ap/engine.hpp"
+#include "kz4ap/file_iq_source.hpp"
 #include "kz4ap/recording_reader.hpp"
 #include "kz4ap/spectrum.hpp"
 #include "kz4ap/viterbi/hiss.hpp"
@@ -118,7 +119,7 @@ std::vector<Sample> analytic_of(const std::vector<float>& audio, int rate, std::
 }  // namespace
 
 // A real tone a cos(2 pi f t + phi) comes out as the complex tone a exp(j (2 pi f t + phi)) at 48 kHz, the delays taken out
-// exactly, and its image at -f is more than 80 dB below it: every input rate, tones across the receiver's band.
+// exactly, and its image at -f is more than 80 dB below it (dB re the tone): every input rate, tones across the receiver's band.
 TEST(AudioAnalytic, ARealToneBecomesItsAnalyticSignal) {
     for (const int rate : {8000, 12000, 44100, 48000}) {
         for (const int f : {100, 300, 600, 1500, 2900}) {
@@ -138,7 +139,7 @@ TEST(AudioAnalytic, ARealToneBecomesItsAnalyticSignal) {
             }
             plus /= kAudioEngineRate;
             minus /= kAudioEngineRate;
-            // Measured (2026-11-19): within 0.0007 dB re the input, the image at most -84.1 dB re it (at 100 Hz; -95 dB from 300 Hz),
+            // Measured (2026-11-19): within 0.0007 dB re the input, the image at most -84.1 dB re it (at 100 Hz; -95 dB re it from 300 Hz),
             // the phase within 4e-7 rad.
             EXPECT_NEAR(20.0 * std::log10(std::abs(plus) / a), 0.0, 0.002);  // dB re the input's amplitude
             EXPECT_LT(20.0 * std::log10(std::abs(minus) / a), -80.0);
@@ -199,6 +200,8 @@ TEST(RecordingReaderAudio, AMonoFileIsReceiverAudioAndAStereoOneNeedsToBeSaid) {
     EXPECT_FALSE(RecordingReader(stereo).is_audio());  // a stereo file is I/Q unless said
     RecordingReader lower(mono, RecordingOptions{.mirror = true});  // a lower sideband: the 700 Hz tone at -700 Hz
     EXPECT_THROW(RecordingReader(mono, RecordingOptions{.input = RecordingInput::Iq}), std::runtime_error);
+    // The app's form (I/Q only) refuses a one-channel file, as before receiver audio.
+    EXPECT_THROW(FileIqSource(mono, 0.0, std::nullopt, RecordingOptions{.input = RecordingInput::Iq}), std::runtime_error);
     EXPECT_THROW(RecordingReader(stereo, RecordingOptions{.input = RecordingInput::Audio, .audio_channel = 2}), std::runtime_error);
 
     // The tone's level at f in a read of the whole file, dB re 1 FS of amplitude.
@@ -274,7 +277,8 @@ struct AudioRun {
 };
 
 // The segmental decoder on the detector's path over receiver audio read from a WAV file, with the receiver's passband.
-AudioRun decode_audio(const std::filesystem::path& path, double lo_hz, double hi_hz) {
+// lower: the lower sideband, the signal conjugated (RecordingOptions::mirror); lo_hz and hi_hz are then given negated.
+AudioRun decode_audio(const std::filesystem::path& path, double lo_hz, double hi_hz, bool lower = false) {
     AudioRun r;
     EventBus bus;
     std::map<std::uint32_t, std::vector<std::string>> symbols;
@@ -289,7 +293,7 @@ AudioRun decode_audio(const std::filesystem::path& path, double lo_hz, double hi
             }
         }
     });
-    RecordingReader reader(path);
+    RecordingReader reader(path, RecordingOptions{.mirror = lower});
     EngineConfig config;
     config.sample_rate = reader.sample_rate();
     config.decoder.front_end = FrontEnd::Segmental;
@@ -348,4 +352,35 @@ TEST(RecordingReaderAudio, NoStationOutsideThePassband) {
     const AudioRun wide = decode_audio(path, 300.0, 4000.0);
     ASSERT_FALSE(wide.freq_hz.empty());
     EXPECT_NEAR(wide.freq_hz.begin()->second, 3500.0, 6.0);
+}
+
+// The lower sideband (RecordingOptions::mirror on receiver audio, the passband negated): the station at 1200 Hz of the audio
+// decodes as on the upper sideband, read at -1200 Hz.
+TEST(RecordingReaderAudio, AStationOnTheLowerSidebandDecodesAtTheNegatedTone) {
+    const std::string text = "CQ TEST DE K1ABC K1ABC K";
+    const auto path = station_audio("lower.wav", 12000, 1200.0, 10.0, text, 13);
+    const AudioRun r = decode_audio(path, -3000.0, -300.0, true);
+    ASSERT_EQ(r.text.size(), 1u);
+    EXPECT_NEAR(r.freq_hz.begin()->second, -1200.0, 6.0);  // Hz: within a detector bin (5.86 Hz)
+    EXPECT_NE(r.text.begin()->second.find("TEST DE K1ABC K1ABC K"), std::string::npos) << r.text.begin()->second;
+}
+
+// band_bins: the bins whose centers lie within the band, on either side of 0 Hz (bin i at (i - N / 2) x 23.4375 Hz at 48 kHz
+// and 2 048 bins); the whole frame without a band; the nearest bin for a band between two centers; clipped at the span's edge.
+TEST(BandBins, TakesTheBinsWithinTheBandOnEitherSide) {
+    const BinRange upper = band_bins(300.0, 3000.0, 48000, 2048);
+    EXPECT_EQ(upper.first, 1024 + 13);  // 13 x 23.4375 = 304.7 Hz, the first center at or above 300 Hz
+    EXPECT_EQ(upper.last, 1024 + 128);  // 128 x 23.4375 = 3000 Hz exactly, included
+    const BinRange lower = band_bins(-3000.0, -300.0, 48000, 2048);
+    EXPECT_EQ(lower.first, 1024 - 128);
+    EXPECT_EQ(lower.last, 1024 - 13);
+    const BinRange whole = band_bins(0.0, 0.0, 48000, 2048);
+    EXPECT_EQ(whole.first, 0);
+    EXPECT_EQ(whole.last, 2047);
+    const BinRange between = band_bins(-300.0, -290.0, 48000, 2048);  // no center within it: the nearest to -295 Hz, -304.7 Hz
+    EXPECT_EQ(between.first, 1024 - 13);
+    EXPECT_EQ(between.last, 1024 - 13);
+    const BinRange beyond = band_bins(-40000.0, -30000.0, 48000, 2048);
+    EXPECT_EQ(beyond.first, 0);
+    EXPECT_EQ(beyond.last, 0);
 }

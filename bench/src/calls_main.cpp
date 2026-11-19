@@ -98,6 +98,8 @@ Options parse(int argc, char** argv) {
         else throw std::runtime_error("unknown argument: " + a);
     }
     if (o.wav.empty() == o.replay.empty()) throw std::runtime_error("give one recording, or --replay with a log");
+    if (!o.replay.empty() && o.audio.given)
+        throw std::runtime_error("--replay takes receiver audio's RF center from the log's \"input\" line: give no receiver-audio options");
     return o;
 }
 
@@ -182,6 +184,9 @@ int main(int argc, char** argv) {
                         }
                     }
                     timed([&] { stage.apply(e); });
+                } else if (kind == "input") {
+                    // Receiver audio: the RF center its run used (dial and pitch), unless --center-khz overrides it.
+                    if (!o.center_hz && j.contains("center_hz")) center_hz = j["center_hz"].get<double>();
                 } else if (kind == "end") {
                     channel_seconds = j["channel_seconds"];
                 }

@@ -65,7 +65,8 @@ public:
     // Where the center frequency came from: the caller, the recording's header (auxi), its file name, or nowhere.
     enum class CenterOrigin { Given, Header, FileName, Unknown };
 
-    // Throws std::runtime_error if the file cannot be opened or is not a form WavIqReader reads.
+    // Throws std::runtime_error if the file cannot be opened or is not a form RecordingReader reads with these options: with
+    // options.input RecordingInput::Iq (the app's), a form WavIqReader reads; under Auto a one-channel file is receiver audio.
     // start_s: where the stream begins in the recording, s, clipped to its end: a seek is a new stream from there.
     // center_hz: the radio's frequency at 0 Hz in the samples, Hz, overriding what the header or the name says.
     // options: mirroring and resampling (RecordingReader).

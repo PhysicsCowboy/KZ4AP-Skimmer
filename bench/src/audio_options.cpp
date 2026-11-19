@@ -49,9 +49,11 @@ bool parse_audio_option(const std::string& a, const std::function<std::string()>
             throw std::runtime_error("--passband-hz wants 0 <= LO < HI, Hz: " + v);
     } else if (a == "--dial-khz") {
         o.dial_hz = 1000.0 * number(a, next());
+        o.rf_given = true;
     } else if (a == "--pitch-hz") {
         o.pitch_hz = number(a, next());
         if (!(o.pitch_hz > 0.0)) throw std::runtime_error("--pitch-hz wants a positive audio frequency, Hz");
+        o.rf_given = true;
     } else if (a == "--sideband") {
         const std::string v = next();
         if (v == "usb") o.lower_sideband = false;

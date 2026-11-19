@@ -17,7 +17,7 @@ std::vector<Sample> analytic_filter_taps(int rate, double center_fraction, doubl
     if (rate < 1 || !(transition_hz > 0.0 && transition_hz < rate / 4.0) || !(attenuation_db >= 50.0) ||
         !(center_fraction >= 0.0 && center_fraction < 1.0))
         throw std::invalid_argument("analytic filter: a rate of at least 1 sample/s, a transition within (0, rate / 4) Hz, an "
-                                    "attenuation of at least 50 dB and a center fraction in [0, 1)");
+                                    "attenuation of at least 50 dB re the passband and a center fraction in [0, 1)");
     // Kaiser's estimates (as the resampler's): beta for the attenuation, the length for the transition.
     const double beta = 0.1102 * (attenuation_db - 8.7);
     const double length = (attenuation_db - 7.95) / (2.285 * 2.0 * std::numbers::pi * transition_hz / rate);

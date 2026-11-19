@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -150,7 +151,17 @@ Args parse_args(int argc, char** argv) {
             args.viterbi_options.stats = true;
         }
         else if (parse_audio_option(a, text, args.audio)) {}
-        else if (a == "--label-shift-hz") args.label_shift_hz = std::stod(text());
+        else if (a == "--label-shift-hz") {
+            const std::string v = text();
+            std::size_t used = 0;
+            try {
+                args.label_shift_hz = std::stod(v, &used);
+            } catch (const std::exception&) {
+                used = 0;
+            }
+            if (used == 0 || used != v.size() || !std::isfinite(args.label_shift_hz))
+                throw std::runtime_error("--label-shift-hz wants a number of Hz: " + v);
+        }
         else if (a == "--no-judge") args.judge_tracks = false;  // every track stays as the detector has it (track_evidence.hpp)
         else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
         else if (a == "--omega-bar-default-table") {  // the default Omega_bar table for other level bounds
@@ -187,6 +198,8 @@ Args parse_args(int argc, char** argv) {
         return args;
     }
     if (!args.recording) throw std::runtime_error(kUsage);
+    if (args.audio.rf_given)
+        throw std::runtime_error("kz4ap-bench reports no RF: --dial-khz and --pitch-hz are kz4ap-calls' (receiver audio's frequencies here are audio Hz)");
     if (args.oracle && !args.labels) throw std::runtime_error("--oracle needs --labels");
     return args;
 }
@@ -290,7 +303,15 @@ int run_engine(const Args& args) {
         // Receiver audio made from a labeled I/Q recording keeps the labels' times, not their rate.
         if (!reader.is_audio() && labels->sample_rate != reader.sample_rate())
             throw std::runtime_error("labels sample rate does not match the recording");
-        for (LabeledSignal& s : labels->signals) s.freq_offset_hz += args.label_shift_hz;
+        for (LabeledSignal& s : labels->signals) {
+            s.freq_offset_hz += args.label_shift_hz;
+            if (reader.is_audio() && args.audio.lower_sideband) {
+                // The lower sideband reads a tone at f at -f (audio_options.hpp): so are the labels' frequencies, offsets and drifts.
+                s.freq_offset_hz = -s.freq_offset_hz;
+                s.drift_hz_per_s = -s.drift_hz_per_s;
+                for (auto& tx : s.transmissions) tx.offset_hz = -tx.offset_hz;
+            }
+        }
     }
 
     EventBus bus;

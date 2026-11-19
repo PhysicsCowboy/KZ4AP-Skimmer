@@ -64,8 +64,7 @@ The input is the radio's whole band, 192 kHz wide, or a receiver's audio made an
 its DC removed on segmental's path. The **spectrum analyzer and detector** look at it every 21.33 ms
 (segmental's detector: 85.3 ms) and make each station a *track* with a frequency; for each track the
 **channelizer** cuts a stream about ±150 Hz wide at 1500 samples/s, and a **decoder** per channel
-turns it into characters. Five decoders: **segmental** (the app's default), **Matched** (the
-bench's), **Envelope** (the baseline), the **bank** (the frozen reference) and **viterbi**. Matched
+turns it into characters (five decoders, section 8). Matched
 and the bank are given the detector's frequency (the *anchor*); viterbi's and segmental's channels
 follow it (section 7) and get N₀ from a hiss estimator reading the spectrum.
 
@@ -81,13 +80,13 @@ name) only labels them (A.1).
 `kz4ap-listen` makes one frequency audible (A.13).
 
 **Receiver audio** (a sound card's: a one-channel WAV, or `--audio`). One channel, resampled to
-48 kHz as above, is filtered to its analytic signal, h(t) = w(t)[sinc t + j(1 − cos πt)/(πt)]
-(1240 taps, Kaiser, 200 Hz transitions at 0 Hz and 24 kHz; heuristic), delays taken out exactly:
-a cos 2πft becomes a e^(j2πft) at 48 000 complex samples/s. Frequencies are audio tones (Hz); a
+48 kHz (derived: the decoders' lowest rate) as above, is filtered to its analytic signal, h(t) = w(t)[sinc t + j(1 − cos πt)/(πt)]
+(1240 taps, Kaiser, 82 dB re the passband, 200 Hz transitions at 0 Hz and 24 kHz; heuristics), delays taken out exactly:
+a cos 2πft becomes a e^(j2πft). Frequencies are audio tones (Hz); a
 full-scale sine reads 0 dBFS. The receiver's **passband**, default **300–3000 Hz** (heuristic),
 bounds the detector's floor and peaks and the hiss estimator's bins: outside it lie near-silence and
-no station. With dial F and pitch p (default 600 Hz), RF = F + (f − p) on the upper sideband,
-F − (f − p) on the lower. SNRs are receiver-audio values (A.1).
+no station. With dial F and pitch p (600 Hz, heuristic), RF = F + (f − p) on the upper sideband;
+on the lower, the signal conjugated and the passband negated, F − (f − p). SNRs are receiver-audio values (A.1).
 
 ## 2. The FFT size N and bin width Δf
 
@@ -229,8 +228,8 @@ one sample in 128: **r = 1500 samples/s**.
 
 **Following the detector (viterbi and segmental only).** The channelizer
 follows the detector's frequency for the track,
-f_det (oracle channels: the label's, drifting or switching at a QSO's
-overs), so the decoder receives its station near 0 Hz (owner, plan D17).
+f_det (oracle channels: the label's, drifting or switching at a QSO's overs),
+so the decoder receives its station near 0 Hz (owner).
 Two steps, before each
 32-sample block: the block, cut at bin f_bin, is multiplied by a
 phase-continuous oscillator at −(f_det − f_bin), f_det held over the
@@ -521,7 +520,7 @@ Other decoders: A.9.
 ## 10. Live operation
 
 The app, `kz4ap-skimmer`, runs segmental by default. All below holds on its detector path, not in
-oracle mode. Values are heuristics unless marked. Appendix: A.9b.
+oracle mode; other decoders keep the detector their results were measured with. Values are heuristics unless marked. Appendix: A.9b.
 
 **Pipeline.** A source fills a ring of at least 4 s, 5.46 s at every radio rate
 (power-of-two capacity, derived). On overflow the ring empties at once: one gap.
@@ -834,6 +833,8 @@ A receiver's audio output, as a sound card records it, decoded by the same chain
    is F − p on the upper sideband and F + p on the lower, so that **RF = F + (f − p)** (upper) and **RF = F − (f − p)**
    (lower) (derived: on the upper sideband the audio rises with RF and a station at F is heard at p). Without F the list's
    kHz column is empty and its Hz are audio frequencies. `--center-khz` and `--mirror` are refused for audio (they name I/Q's).
+   `kz4ap-calls --replay` takes the center from the log's `"input"` line and refuses these options; `kz4ap-bench` reports audio
+   Hz only, refuses `--dial-khz` and `--pitch-hz`, and on `--sideband lsb` negates the labels' frequencies, offsets and drifts.
 8. **Levels.** A real tone a cos 2πft (power a²/2 FS²) becomes a complex tone of amplitude a, a² FS² in its bin: a
    full-scale sine reads 0 dBFS re the sound card's full scale (derived). Real noise of variance σ² FS² per sample, white
    to f_a/2, has the one-sided density 2σ²/f_a and the analytic signal N₀ = 4σ²/f_a FS²/Hz in the band, so S₅₀₀ = a²/(N₀ ·
@@ -844,9 +845,9 @@ A receiver's audio output, as a sound card records it, decoded by the same chain
 **Provenance.** 48 kHz: derived (the decoders' lowest rate, `decoder_rate_for`; no audio rate needs more). The Hilbert
 filter form: standard (the FIR Hilbert transformer, Oppenheim and Schafer; sourced); chosen over mixing the passband's center
 to 0 Hz and low-passing (the same filter, shifted) because it leaves frequencies as audio tones. Δ = 200 Hz: heuristic, below
-any receiver's audio passband (which starts at 200 Hz or more). A = 82 dB: as the resampler's (heuristic). Measured
+any receiver's audio passband (which starts at 200 Hz or more). A = 82 dB re the passband: as the resampler's (heuristic). Measured
 (`AudioAnalytic.ARealToneBecomesItsAnalyticSignal`, 2026-11-19, at 8, 12, 44.1 and 48 kHz): gain within 0.0007 dB re the input
-from 100 Hz to 2.9 kHz, the image at −f at most −84.1 dB re the tone at 100 Hz and −95 dB from 300 Hz. The passband default
+from 100 Hz to 2.9 kHz, the image at −f at most −84.1 dB re the tone at 100 Hz and −95 dB re the tone from 300 Hz. The passband default
 300–3000 Hz: heuristic, a typical SSB receiver's audio (2.7 kHz); the median holds the in-band noise while the receiver's
 filter covers more than half of it (derived for a median). The pitch default 600 Hz: heuristic, a common CW pitch.
 
@@ -859,7 +860,12 @@ filter covers more than half of it (derived for a median). The pitch default 600
 - A carrier's sideband whose mirror falls outside the passband passes the sideband test (section 6).
 - Resampling costs about 3.5 ms per s of stream at 8, 12 and 44.1 kHz (the resampler on complex samples with zero imaginary
   parts); at 48 kHz none. The analytic filter, with the file's reading, about 1.85 ms per s of stream (measured, the desktop,
-  one thread, 60 s of noise).
+  one thread, 60 s of noise). One channel's whole cost, against the bar (at most 40 ms per channel-second required, about 8 ms
+  the goal): about 10 to 13 ms per channel-second at 48 kHz and about 12 to 17 ms at 8, 12 and 44.1 kHz, of which the fixed
+  per-stream part is 6.19 ms per s of stream at 48 kHz and 9.6 to 10.0 ms at the resampled rates and the track's own 2.5 to
+  6.8 ms (measured, the desktop, one thread: four 60 s clips at 12 kHz and the review's runs, 2026-11-19). Within the
+  requirement, above the goal: at one channel the per-stream stages (spectrum about 3.1 ms, the source, the channelizer's FFT
+  about 1.05 ms) outweigh the decoder.
 
 ## A.2 The FFT size N and bin width Δf
 

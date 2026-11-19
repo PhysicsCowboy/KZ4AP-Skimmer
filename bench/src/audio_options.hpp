@@ -21,6 +21,7 @@ namespace kz4ap::bench {
 struct AudioOptions {
     bool audio = false;          // --audio or --audio-channel given
     bool given = false;          // any of these options given
+    bool rf_given = false;       // --dial-khz or --pitch-hz given
     int channel = 0;
     double passband_lo_hz = kAudioPassbandLoHz;
     double passband_hi_hz = kAudioPassbandHiHz;

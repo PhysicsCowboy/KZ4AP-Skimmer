@@ -36,7 +36,7 @@ inline constexpr double kAudioPassbandHiHz = 3000.0;
 // I0(beta), beta = 0.1102 (A - 8.7), D = ceil(Kaiser's length estimate / 2) for transition_hz and A = attenuation_db. center
 // is D + center_fraction, center_fraction in [0, 1): a fractional delay, so that a delay before the filter can be made a whole
 // number of samples. A real tone of amplitude a FS comes out as a complex tone of amplitude a FS. Throws std::invalid_argument
-// for a rate below 1, a transition outside (0, rate / 4), an attenuation below 50 dB or a fraction outside [0, 1).
+// for a rate below 1, a transition outside (0, rate / 4), an attenuation below 50 dB re the passband or a fraction outside [0, 1).
 std::vector<Sample> analytic_filter_taps(int rate, double center_fraction = 0.0, double transition_hz = kAnalyticTransitionHz,
                                          double attenuation_db = kAnalyticAttenuationDb);
 
