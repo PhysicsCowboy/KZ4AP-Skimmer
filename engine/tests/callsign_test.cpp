@@ -1545,6 +1545,8 @@ TEST(JoinedWords, CopiesThatAreAPhaseOfPeriodicTextAreNoRepeat) {
     // A call that fills its word, or whose copies stand between other characters, is still a repeat.
     EXPECT_EQ(cut("AB4CDAB4CDAB4CD"), "AB4CD* AB4CD* AB4CD*");
     EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+    // A run that ends its word is not tested: KE2EH on 40 m (2026-11-17), the H before it a garbled copy's tail.
+    EXPECT_NE(cut("GEHKE2EHKE2EH").find("KE2EH*"), std::string::npos);
 }
 
 TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {

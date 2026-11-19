@@ -485,9 +485,11 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
         for (const Segment& o : out)
             if (o.kind == Segment::Kind::Call && o.text == out[a].text) total[a] += o.evidence_nats;
     }
-    // A run of copies side by side that is a phase of periodic text is no repeat: widened by one character on each side the word
-    // has, it still repeats with the call's length (EL98EL98EL98 cut as E L98E L98E L98: a grid square sent three times, not L98E
-    // twice). A call that fills its word (W1AWW1AW) or stands between other characters (DEK8DXK8DXK) is not touched.
+    // A run of copies side by side that is a phase of periodic text is no repeat: widened by one character on each side, it still
+    // repeats with the call's length (EL98EL98EL98 cut as E L98E L98E L98: a grid square sent three times, not L98E twice). Only a run
+    // with a character of the word on both sides is tested: one that starts or ends its word (W1AWW1AW, GEHKE2EHKE2EH, where the H
+    // before is a garbled copy's) is a call sent again, and a shift needs text on both sides; nor is one between other characters
+    // (DEK8DXK8DXK) touched.
     std::vector<std::size_t> starts_of(out.size() + 1, 0);
     for (std::size_t a = 0; a < out.size(); ++a) starts_of[a + 1] = starts_of[a] + out[a].text.size();
     std::vector<std::string> periodic_runs;
@@ -498,7 +500,7 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
         if (b - a >= 2) {
             const std::size_t p = out[a].text.size();
             const std::size_t from = starts_of[a] > 0 ? starts_of[a] - 1 : 0, to = std::min(n, starts_of[b] + 1);
-            bool same = from < starts_of[a] || to > starts_of[b];
+            bool same = from < starts_of[a] && to > starts_of[b];
             for (std::size_t i = from + p; i < to && same; ++i) same = w[i] == w[i - p];
             if (same) periodic_runs.push_back(out[a].text);
         }
