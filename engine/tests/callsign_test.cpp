@@ -1547,6 +1547,8 @@ TEST(JoinedWords, CopiesThatAreAPhaseOfPeriodicTextAreNoRepeat) {
     EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
     // A run that ends its word is not tested: KE2EH on 40 m (2026-11-17), the H before it a garbled copy's tail.
     EXPECT_NE(cut("GEHKE2EHKE2EH").find("KE2EH*"), std::string::npos);
+    // The cost of that: a shifted phase that starts its word is still a call repeated (a known limitation, A.12).
+    EXPECT_NE(cut("L98EL98EL98").find("L98E*"), std::string::npos);
 }
 
 TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {

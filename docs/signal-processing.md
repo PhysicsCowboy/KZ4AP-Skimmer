@@ -4843,7 +4843,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
 | Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
 | Callsign stage: a neighbor's text | every symbol read (default); a variant skips a stretch with `heard_from` that is whole words and whose neighbor's track holds every symbol of it within 25 ms | `skip_neighbors_text` 0, `neighbor_twin_s` 0.025 s | chosen by measurement: the variant changed 12 calls' fields, no call (A.12) |
-| Callsign stage: joined words segmented | on (1): a word of 6 characters or more that rule 2 cannot split (2, a variant: every such word; 0 off); a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 1, `segment_min_chars` 6, `segment_alternatives` 1 (both readings, stripped, of a call whose last E, I or K the segmentation cannot place; 0 the segmentation's alone), `CallSearchConfig::segmentation` (`SegmentationCosts`) | on by measurement and a license check: +8 window-confirmed calls for +1 RBN misreading on the 2026-11-17 recordings, none the RBN can see held out (it spots CQ only), the calls added checked in the FCC's license file, about 12 real for 2 false (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
+| Callsign stage: joined words segmented | on (1): a word of 6 characters or more that rule 2 cannot split (2, a variant: every such word; 0 off); a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 1, `segment_min_chars` 6, `segment_alternatives` 1 (both readings, stripped, of a call whose last E, I or K the segmentation cannot place; 0 the segmentation's alone), `CallSearchConfig::segmentation` (`SegmentationCosts`) | on by measurement and a license check: +8 window-confirmed calls for +1 RBN misreading on the 2026-11-17 recordings, none the RBN can see held out (it spots CQ only), the calls added checked in the FCC's license file, about 12 likely real for 2 false (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived for 3 to 9 characters, the rest heuristic |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
@@ -5427,7 +5427,7 @@ track. A rereading after a correction is triggered by a change of text only, not
    - a stray character: G = −`stray_nats` (2.30);
    - a new call C of m characters (`parse_call`, not tiny, not a shorter string twice or more, 3 to 12 characters):
      G = Σ ν(c) − m ln 36 + φ(m) + ln π(m) − `call_nats` (2.4), φ(m) = −ln of the share of random strings of m letters and digits that
-     parse (`call_form_nats`: 3.00, 1.63, 1.56, 1.77, 2.17, 3.23 and 4.60 nats for m = 3 to 9 and more), π(m) the share of calls of m
+     parse (`call_form_nats`: 3.00, 1.63, 1.56, 1.77, 2.17, 3.23 and 4.60 nats for m = 3 to 9, derived; 10 to 12 reuse 9's, a heuristic), π(m) the share of calls of m
      characters (`call_length_nats`: 0.63%, 20.0%, 41.1%, 37.3%, 0.65% for 3 to 7, 0.07% each for 8 to 12): K8DX gains −0.68 nats,
      NA9M −3.45;
    - the call in the cache again: G = Σ ν(c) − `repeat_nats` (1.61): K8DX 14.4 nats;
@@ -5667,22 +5667,24 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   contacts, where a station signs without calling CQ; (2) every call the variant adds or changes was looked up in the FCC's amateur
   license file (l_amat.zip of 2026-11-15, HD.dat: 822 120 active calls, 1 607 238 ever issued): active licenses are the 8
   window-confirmed calls gained, KD5Z (judged a misreading by the RBN, from S73DEKD5ZCQ), WA7WKY, KC4HCH, AC0BU, AK4JK, WA9TOP,
-  WN4AT, AK4J and KB3FW; never issued are W7Q, W3QRE and WN4ATI (the last two gone with the alternatives), and L99E is a grid square.
-  Net against the old defaults, about 12 likely real calls for 2 false ones (W7Q, L99E). "Active" is weak evidence alone: a one-edit
+  WN4AT, AK4J and KB3FW; never issued are W7Q, W3QRE and WN4ATI (the last two gone with the alternatives), and L99E is a grid square (gone since the periodic-run test, below).
+  Net against the old defaults, about 12 likely real calls for 2 false ones (W7Q, L99E; 1, W7Q, after the review's fixes). "Active" is weak evidence alone: a one-edit
   garble of a confirmed US call is an active license 38.1% of the time (measured over every one-edit variant of US form of the 284
-  confirmed US calls of 2026-11-17); "never issued" is conclusive. At the new defaults the seven 2026-11-17 recordings read
+  confirmed US calls of 2026-11-17); "never issued" is strong evidence that a US call is false as of the file's date (2026-11-15),
+  not proof, since a license granted since or purged long ago reads the same. At the new defaults the seven 2026-11-17 recordings read
   168 / 83 / 103, exact replays equal to the mode 1 and alternatives column call for call. The clean held-out set (the 2026-11-19
   recordings) waits for the RBN's day file, not posted at 14:03Z on 2026-11-19. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
   nothing at 2.5 nats on any of these sets. An earlier form (keywords equally likely, a call's first copy counted as evidence,
   repeats across strays, `believe_nats` 3) gave 168 / 90 / 106 on 2026-11-17: N0TAR lost as N0T AR, OO0O and W1BR from garbled
   repeats; and until strings repeated within themselves were refused, 3J3J from periodic garbage. On 2 000 words of noise text (12 to
-  40 characters drawn with p(c) ∝ 2^−e) no call is believed (the first form, its noise characters uniform at ln 36, DE after a call
+  40 characters drawn with p(c) ∝ 2^−e) 0 words hold a believed call (the test allows 2: 3 or more is 0.15%, the 95% upper bound
+  that 0 in 2 000 gives) (the first form, its noise characters uniform at ln 36, DE after a call
   at 2.77 nats and no test of the word: 52). The stage's CPU: 0.00423 ms per channel-second at the defaults, 0.00424 with mode 1
   (exact replays over 819 447 channel-seconds, the keywords matched once a place); on the dense CWT recordings of 2026-11-18 the stage
   costs 1.2 to 2.7 ms per channel-second whether mode 1 is on or off (566 219 and 607 817 channel-seconds a recording; the wall clock
   there varied by more than the variant's effect between runs of the same text). Classes: ν(c) a model, heuristic; λ_κ measured, the
   mean of −ln shares over the 2026-11-17 recordings' 127 036 decoded words (general text) and the 2026-11-18 recordings' 366 101
-  (mostly the CWT contest), SOTA unseen at 11 (heuristic); φ(m) derived from the grammar (2 000 000 random strings a length; a test
+  (mostly the CWT contest), SOTA unseen at 11 (heuristic); φ(m) derived from the grammar for 3 to 9 characters, 10 to 12 reusing 9's (heuristic) (2 000 000 random strings a length; a test
   checks it within 0.1 nats); π(m) measured, the 4 314 base calls three or more RBN skimmers spotted on 2026-11-17 (8 to 12
   characters share their 0.35% evenly: heuristic); `call_nats` measured, the mean of 3.32 and 1.52 nats on those two days;
   `stray_nats`, `repeat_nats`, the bigram gains, `believe_nats`, `word_min_nats`, `segment_min_chars` and the 64-character limit
@@ -5704,7 +5706,11 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   less than a stray; a call before DE with nothing after it is not believed (N5JJ DE ...); a repeat with a garbled copy (K3BFQK3BF)
   does not count, nor a single copy with two strays behind (AB9CAEE, read 19 times); a single copy after DE is believed on 2.77 nats
   alone, so the stage's two points are what keeps a call's form after a chance DE in noise off the list; the keyword shares come from
-  two days' text, one mostly a contest, and the noise model is not measured.
+  two days' text, one mostly a contest, and the noise model is not measured. A run of copies side by side that is a phase of
+  periodic text (a grid square sent over and over: EL98EL98EL98 cuts as E L98E L98E L98) is refused only when its word has a
+  character on both sides of it; a shifted phase that starts or ends its word (L98EL98EL98, the last copy cut short) is still read
+  as a call repeated, since a real call sent again is the same there (GEHKE2EHKE2EH, KE2EH confirmed, the H before a garbled
+  copy's tail). A garbled middle copy (K1ABCK1ABK1ABC) gives the shorter call twice (K1AB), not the call: no repeat within one edit.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
