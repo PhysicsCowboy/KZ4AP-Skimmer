@@ -45,3 +45,10 @@ RBN. Items 1 and 2 below are done, both rejected (decision log 2026-11-18).
    seeds (CER and its fist cells) before any default changes, with its CPU against the bar.
 2. `gap_stretch_prior` 0.02 or 0.1 on the development set: it changes the plain decoder's text too, so the test set decides.
 3. The 2026-11-18 CWT recordings (judged when the RBN posts the day) as a second, held-out check of whatever wins.
+
+**Done (2026-11-19).** The segmentation is merged into `main` (b62425f) and is the call reader's default
+(`segment_joined` 1, `segment_alternatives` 1); section 11 and A.12 of `docs/signal-processing.md` describe it. On the
+seven 2026-11-17 recordings it gives 168 window-confirmed calls against the old defaults' 160; on 2026-11-18 (CWT) and
+on the 2017 set it is flat (576 and 200). The RBN spots only stations calling CQ, so the FCC license file was the
+second check: about 12 calls likely real for 2 likely false. Item 3 is done (flat). The 2026-11-19 recordings are the
+next held-out check, once the RBN posts that day.
