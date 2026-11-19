@@ -1601,6 +1601,10 @@ purpose.
   decoder-only mode is not that product; the plain decoder is a separate, spartan window on receiver audio (section 3
   above), one or a few signals. GUI work stays after the decoder's quality in the priorities; testing on a sound device
   needs the owner's say each time.
+- **Receiver audio for the skimmer too (owner, 2026-11-19).** "I guess we should implement the same kind of '3-kHz
+  Radio' receiver in skimmer mode, too": the skimmer runs on a radio's audio as on SDR I/Q, as CW Skimmer's 3-kHz
+  receiver does (the user sets the CW pitch; the dial frequency from CAT, or entered), every signal in the passband
+  decoded and its calls listed at RF = dial + (audio − pitch) in upper sideband.
 
 ### Input to the design session: manta's callsign acceptance rules
 
