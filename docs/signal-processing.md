@@ -571,7 +571,7 @@ listed; /P or a prefix keep the base call. 1 point: a whole word, or one glued t
 itself. 0.75: short words joined (K X 9 F), not periodic text. 0.5: a stray E, T, I
 before or E, T, K after. Refused: CW words of this form (G5RV; exact), locators (EL96UD). A
 Viterbi cuts unsplit words (DEK8DXK8DXK8DXK) into keywords, calls and strays; a call there
-(1 point) needs a repeat (not after a joinable K), a DE before, or DE after and K; an
+(1 point) needs a repeat (not after a keyword it joins), a DE before, or DE after and K; an
 unplaceable last E, I or K gives both readings, 0.5 each (A.12).
 
 **Role.** Before DE or 5NN: *named*. After DE, CQ or TEST, or before K: *signed*. Else *bare*.
@@ -5810,7 +5810,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   no other digit-letter-letter-digit call than 3DA0GY and 3DA0PA, and the base calls three or more RBN skimmers spotted on
   2026-11-17, 2026-11-18 and 2017-08-21 none but the bust 8RN8RN. *Unusual forms, measured:* of those base calls 11 of 4 366
   (0.25%), 9 of 4 835 and 3 of 3 468 have four letters after one digit, most of them busts by inspection (SD6MCWT, IK4EATX,
-  W0RAUW, KE4COHK) beside a few specials (8N3ACAF, 8N5JAZZ); MASTER.SCP holds 61 of 50 034 (0.12%: YOTA and IARU stations,
+  W0RAUW, KE4COHK) beside a few specials (8N3ACAF, 8N5JAZZ); MASTER.SCP holds 65 of 50 034 (0.13%: YOTA and IARU stations,
   VK5FBIC). The rule's form (list only, not more points) is a choice; 5 points did not refuse EE4EEEE (5.25). *Measured* (exact
   replays of the defaults' logged events; RBN judge with MASTER.SCP and HD.dat; tables in `build/cf-1/judge/`, git-ignored),
   window-confirmed / misread / unknown, never-issued US calls in brackets: 2026-11-17 168 / 83 / 103 (14) to 170 / 85 / 90 (13);
@@ -5852,11 +5852,12 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   as a call repeated, since a real call sent again is the same there (GEHKE2EHKE2EH, KE2EH confirmed, the H before a garbled
   copy's tail). A garbled middle copy (K1ABCK1ABK1ABC) gives the shorter call twice (K1AB), not the call: no repeat within one edit.
 - Call forms (`call-form-1`): only the United States' national rules are taken, since only the FCC's file proves a rule against
-  every call issued; other administrations' suffix rules (the UK's, Spain's) are not, so GA5NNON-like strings of three letters
-  pass. A run of dots read as a whole word (SH5SHI, three times on 20 m, 2026-11-17) has a real call's form, and real calls of
+  every call issued; other administrations' suffix rules (the UK's, Spain's) are not, so a string of three letters after its digit that
+  breaks another country's rules (GA5NNO) passes. A run of dots read as a whole word (SH5SHI, three times on 20 m, 2026-11-17) has a real call's form, and real calls of
   dots alone exist (EE5E and SE5S, listed and spotted), so no form rule refuses it. A joined phase at the call's own period (EN5X
   in N5 X E N5 X E, FK0X in K 0 X F K 0 X) is not refused. A call and 5NN glued (FN5NN, NN5NN) passes when the longer string that
-  held it back is refused; NN5NN is an active license. `is_cw_word` refuses K5NN and N5NN, active licenses too. Without a list,
+  held it back is refused; NN5NN is an active license. A call that repeats within itself (9A9A, 9K9K, 4K4K, 3Z3Z; 11 in
+  MASTER.SCP) is refused when read joined (9 A9A) by `joined_periodic`, though not as a whole word. `is_cw_word` refuses K5NN and N5NN, active licenses too. Without a list,
   a real call of four letters after its digit (Australia's foundation calls, VK3FABC; Japan's specials, 8N3ACAF) is not reported.
   The derived rules hold as of their sources' dates: a new US call system or a new half series needs the code changed.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
