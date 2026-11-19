@@ -92,3 +92,37 @@ def test_main(tmp_path, capsys):
                            "--center-khz", "7096", "--run", f"ours={ours}", "--out", str(out)]) == 0
     assert "r ours: calls 2, confirmed 1, unconfirmed 1, rbn_window 1, rbn_day 0, misread_window 1" in capsys.readouterr().out
     assert out.read_text(encoding="utf-8").splitlines()[0] == "recording,role,call,class,rbn_skimmers_in_window,one_edit_from,ours"
+
+
+def test_known_list_splits_the_unspotted_calls_one_sided(tmp_path):
+    # MASTER.SCP's form: a header, comments, a /P entry by its base call. In the list = likely real; not in it = undecided.
+    scp = tmp_path / "MASTER.SCP"
+    scp.write_text("!!Order,1,1\r\n#\r\n# Super Check Partial\r\nDL1ABC\r\nK9BGM/P\r\nW1AW\r\n", encoding="utf-8")
+    known = rbn_judge.read_known(scp)
+    assert known == {"DL1ABC", "K9BGM", "W1AW"}
+    spots = _day(tmp_path, [_spot("W2AXR", 7042.1, "K9BGL", "18:01:00")])
+    runs = {"ours": {"K9BGL", "K9BGM", "DL1ABC", "JA1XYZ"}}
+    table = rbn_judge.rows("rec", "test", runs, spots, WINDOW, known=known)
+    out = tmp_path / "calls.csv"
+    rbn_judge.write_rows(out, list(runs), table, known=True)
+    got = list(csv.DictReader(out.open(encoding="utf-8")))
+    assert list(got[0]) == ["recording", "role", "call", "class", "rbn_skimmers_in_window", "one_edit_from", "in_known_list", "ours"]
+    by_call = {r["call"]: (r["class"], r["in_known_list"]) for r in got}
+    assert by_call == {"DL1ABC": ("unknown", "1"), "JA1XYZ": ("unknown", "0"), "K9BGL": ("rbn_window", "0"),
+                       "K9BGM": ("misread_window", "1")}   # membership leaves every class as it was
+    c = rbn_judge.counts(got, "ours")
+    assert (c["unknown"], c["unknown_listed"], c["unknown_unlisted"], c["misread_window"], c["misread_listed"]) == (2, 1, 1, 1, 1)
+
+
+def test_main_with_a_known_list(tmp_path, capsys):
+    day = tmp_path / "day.csv"
+    day.write_text(HEADER + _spot("W2AXR", 7042.1, "K9BGL", "18:01:00") + "\n", encoding="utf-8")
+    ours = tmp_path / "ours.csv"
+    ours.write_text("call,base\nK9BGL,K9BGL\nDL1ABC,DL1ABC\n", encoding="utf-8")
+    scp = tmp_path / "MASTER.SCP"
+    scp.write_text("DL1ABC\n", encoding="utf-8")
+    out = tmp_path / "calls.csv"
+    assert rbn_judge.main([str(day), "--recording", "r", "--start", "2017-08-21T18:00:00Z", "--seconds", "600", "--center-khz", "7096",
+                           "--run", f"ours={ours}", "--known", str(scp), "--out", str(out)]) == 0
+    assert "unknown 1, unknown_listed 1, unknown_unlisted 0, misread_listed 0" in capsys.readouterr().out
+    assert out.read_text(encoding="utf-8").splitlines()[0].endswith("one_edit_from,in_known_list,ours")

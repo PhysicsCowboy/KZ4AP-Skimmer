@@ -1,7 +1,7 @@
 """The RBN judge of checkpoints 3 and 4: sorts the calls a skimmer reported from a recording by what the Reverse Beacon Network spotted.
 
     python -m kz4ap_proto.rbn_judge RBN_DAY.csv --recording NAME --role ROLE --start UTC --seconds S --center-khz KHZ
-        --run LABEL=FILE [--run LABEL=FILE ...] [--na-window] [--out CALLS.csv] [--append]
+        --run LABEL=FILE [--run LABEL=FILE ...] [--na-window] [--known MASTER.SCP] [--out CALLS.csv] [--append]
 
 A heuristic, and results analysis only (CLAUDE.md, Languages); the product never matches calls against the RBN (design spec, section 6).
 Each reported base call (calls_score.base_call: /P and prefixes dropped) gets one class:
@@ -23,6 +23,12 @@ distinct RBN skimmers spotting it in the window, for `rbn_window`), one_edit_fro
 from, in the window for `misread_window` and that day for `misread_day`, joined by "/"), then one 0/1 column per run: whether that run
 reported the call. With `--na-window` the calls North American skimmers (`de_cont` NA) spotted in the window are rows too, reported or
 not, so that a call no run reported can be counted.
+
+With `--known FILE` (a list of calls, one per line, in MASTER.SCP's form: lines starting with `#` or `!!` skipped, each entry by its
+base call) the table gains the column `in_known_list` (1 or 0, every row) after one_edit_from, and the counts split the calls the RBN did
+not spot at all: `unknown_listed` and `unknown_unlisted`, and `misread_listed` (a misreading class, but in the list). The evidence is
+one-sided (owner, 2026-11-19): a call in the list is likely a real station, since MASTER.SCP is built from contest logs; a call not in
+it is undecided, never a misreading, since many hams never contest. Membership leaves every class as it was.
 
 A spotted word with no base call's form (the RBN's own busts, W6SSEQP; S5S) is matched as spotted. With the windows of checkpoint 4's
 `windows.csv` this reproduces every class, skimmer count and one-edit list of checkpoint 3's `calls.csv` (1 020 rows).
@@ -46,6 +52,8 @@ SPAN_KHZ = 192.0
 ONE_EDIT_SHOWN = 3   # the table's one_edit_from holds the first three partners in alphabetical order, as checkpoint 3's did
 CLASSES = ("rbn_window", "rbn_day", "misread_window", "misread_day", "unknown")
 COLUMNS = ("recording", "role", "call", "class", "rbn_skimmers_in_window", "one_edit_from")
+KNOWN_COLUMN = "in_known_list"
+MISREADS = ("misread_window", "misread_day")
 _SPOT_LINE = re.compile(r"^\s*(?:\d\d:\d\d:\d\d(?:\.\d+)?\s+)?DX\s+de\s+\S*\s+(-?\d+(?:\.\d+)?)\s+(\S+)", re.IGNORECASE)
 
 
@@ -131,6 +139,22 @@ def judge(bases, spots: list[Spot], window: Window) -> dict[str, Verdict]:
     return out
 
 
+def read_known(path: str | Path) -> set[str]:
+    """The base calls of a known-call list in MASTER.SCP's form; an entry with no base call's form is kept as written."""
+    calls = set()
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").lstrip("﻿").splitlines():
+        word = line.strip().upper()
+        if not word or word.startswith("#") or word.startswith("!!"):
+            continue
+        calls.add(base_call(word) or word)
+    return calls
+
+
+def columns(run_labels: list[str], known: bool = False) -> list[str]:
+    """The table's header: with a known-call list, `in_known_list` after one_edit_from."""
+    return list(COLUMNS) + ([KNOWN_COLUMN] if known else []) + list(run_labels)
+
+
 def north_american_window_calls(spots: list[Spot], window: Window) -> set[str]:
     return {s.base for s in spots if s.continent == "NA" and window.holds(s)}
 
@@ -151,8 +175,8 @@ def read_run(path: str | Path) -> set[str]:
 
 
 def rows(recording: str, role: str, runs: dict[str, set[str]], spots: list[Spot], window: Window,
-         na_window: bool = False) -> list[list]:
-    """The table's rows for one recording, sorted by call."""
+         na_window: bool = False, known: set[str] | None = None) -> list[list]:
+    """The table's rows for one recording, sorted by call; with `known`, each row's membership after one_edit_from."""
     bases = set().union(*runs.values()) if runs else set()
     if na_window:
         bases |= north_american_window_calls(spots, window)
@@ -161,29 +185,40 @@ def rows(recording: str, role: str, runs: dict[str, set[str]], spots: list[Spot]
     for b, v in verdicts.items():
         out.append([recording, role, b, v.kind, v.skimmers if v.kind == "rbn_window" else "",
                     "/".join(v.one_edit_from[:ONE_EDIT_SHOWN])]
+                   + ([int(b in known)] if known is not None else [])
                    + [int(b in calls) for calls in runs.values()])
     return out
 
 
-def write_rows(path: str | Path, run_labels: list[str], table: list[list], append: bool = False) -> None:
+def write_rows(path: str | Path, run_labels: list[str], table: list[list], append: bool = False, known: bool = False) -> None:
     path = Path(path)
     new = not (append and path.exists())
     with path.open("w" if new else "a", encoding="utf-8", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
         if new:
-            w.writerow(list(COLUMNS) + run_labels)
+            w.writerow(columns(run_labels, known))
         w.writerows(table)
 
 
 def counts(table_rows: list[dict], column: str) -> dict[str, int]:
-    """calls, confirmed (rbn_window), unconfirmed and each class, over the rows whose `column` is 1."""
+    """calls, confirmed (rbn_window), unconfirmed and each class, over the rows whose `column` is 1; with an `in_known_list` column
+    also unknown_listed, unknown_unlisted and misread_listed."""
+    listed = bool(table_rows) and KNOWN_COLUMN in table_rows[0]
     c = {"calls": 0, "confirmed": 0, "unconfirmed": 0, **{k: 0 for k in CLASSES}}
+    if listed:
+        c.update(unknown_listed=0, unknown_unlisted=0, misread_listed=0)
     for r in table_rows:
         if str(r[column]) != "1":
             continue
         c["calls"] += 1
         c[r["class"]] += 1
         c["confirmed" if r["class"] == "rbn_window" else "unconfirmed"] += 1
+        if listed:
+            in_list = str(r[KNOWN_COLUMN]) == "1"
+            if r["class"] == "unknown":
+                c["unknown_listed" if in_list else "unknown_unlisted"] += 1
+            elif r["class"] in MISREADS and in_list:
+                c["misread_listed"] += 1
     return c
 
 
@@ -197,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--center-khz", type=float, required=True, help="the recording's center, kHz")
     p.add_argument("--run", action="append", default=[], metavar="LABEL=FILE", help="a run's calls (repeatable, in column order)")
     p.add_argument("--na-window", action="store_true", help="add North American skimmers' window calls as rows")
+    p.add_argument("--known", type=Path, help="a known-call list (MASTER.SCP's form): adds in_known_list and splits the counts")
     p.add_argument("--out", type=Path)
     p.add_argument("--append", action="store_true", help="append to --out without a header if it exists")
     a = p.parse_args(argv)
@@ -207,10 +243,11 @@ def main(argv: list[str] | None = None) -> int:
             p.error(f"--run {item!r}: expected LABEL=FILE")
         runs[label] = read_run(path)
     window = Window(parse_utc(a.start), a.seconds, a.center_khz)
-    table = rows(a.recording, a.role, runs, read_rbn(a.rbn), window, a.na_window)
+    known = read_known(a.known) if a.known else None
+    table = rows(a.recording, a.role, runs, read_rbn(a.rbn), window, a.na_window, known)
     if a.out:
-        write_rows(a.out, list(runs), table, a.append)
-    named = [dict(zip(list(COLUMNS) + list(runs), map(str, r))) for r in table]
+        write_rows(a.out, list(runs), table, a.append, known is not None)
+    named = [dict(zip(columns(list(runs), known is not None), map(str, r))) for r in table]
     for label in runs:
         c = counts(named, label)
         print(f"{a.recording} {label}: " + ", ".join(f"{k} {v}" for k, v in c.items()))
