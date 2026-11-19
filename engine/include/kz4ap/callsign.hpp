@@ -210,8 +210,8 @@ struct ReadOptions {
     // call, as in segment_word. A call sent twice (N 5 JJ N 5 JJ) has the call's own period and stays. Heuristic (call-form-1).
     int joined_periodic = 0;
     // When not 0, an X in front of a call is also read as TU run onto it, a stripped reading (XW3RJ: W3RJ, 0.5 point), as a stray
-    // E, T or I is: T (-) and U (..-) with their letter space lost are X (-..-), and TU before his own call ends a runner's every QSO
-    // in a contest. Derived from the code; the rule's value chosen by measurement (call-arb-1).
+    // E, T or I is: T (-) and U (..-) with their letter space lost are X (-..-) (derived), and TU before his own call ends a
+    // runner's every QSO in a contest. The half point is stripped_points, a heuristic; chosen by measurement (call-arb-1).
     int x_as_tu = 0;
 };
 
@@ -354,14 +354,17 @@ struct CallSearchConfig {
     double prefix_digit_listed_only = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
-    // ReadOptions::x_as_tu.
-    double x_as_tu = 0.0;
+    // ReadOptions::x_as_tu; on since call-arb-1: on the 2026-11-18 CWT W3RJ (116 RBN skimmers) was withdrawn for XW3RJ (2), its
+    // TU W3RJ run together, and listed again only at 3 455 s on 40 m.
+    double x_as_tu = 1.0;
     // A transmission read both as a fragment's whole word and as a joined reading that starts with it (K4VR T: K4VR at 1 point,
-    // K4VRT at joined_points; CallReading::covers) counts, in the comparison of the two calls as near variants (held_at), 1: for the
-    // longer only, the fragment's occurrence left out; 2: for neither, unless neither then has any points, when both count as
-    // before; 0: for both, each at its points, as before (the fragment wins every such transmission, 1 against 0.75). The report
-    // test is unchanged. A variant (call-arb-1).
-    double joined_covers = 0.0;
+    // K4VRT at joined_points; CallReading::covers) counts, in the comparison of the two calls as near variants (held_at), 3, the
+    // default: for the longer only, the fragment's occurrence left out, when the longer has points of its own at this place
+    // outside the transmissions it covers, else for both; 1: for the longer only, always; 2: for neither, unless neither then has
+    // any points, when both count; 0: for both, each at its points (the fragment wins every such transmission, 1 against 0.75).
+    // The report test is unchanged. Heuristic, chosen by measurement (call-arb-1): 1 lost window-confirmed calls read with a stray
+    // letter after them (W6SX E, HC5A M), and covering a shorter joined reading too (K 4VR T) lost more (HB9T, KZ8R, K8BZ).
+    double joined_covers = 3.0;
 };
 
 // One line of the list.

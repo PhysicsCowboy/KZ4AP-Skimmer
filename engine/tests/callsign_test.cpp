@@ -1881,6 +1881,7 @@ TEST(Arbitration, ACallSignedAfterTuRunTogetherIsNotLostToTheMisreading) {
     const auto after = run(1.0);
     EXPECT_NE(after->row("W3RJ"), nullptr);  // 4 + 5 x 0.5 = 6.5 against 5
     EXPECT_EQ(after->row("XW3RJ"), nullptr);
+    EXPECT_EQ(CallSearchConfig{}.x_as_tu, 1.0);  // the default since call-arb-1
 }
 
 TEST(Arbitration, AJoinedReadingCoversTheWholeWordItStartsWith) {
@@ -1917,6 +1918,7 @@ TEST(Arbitration, ATransmissionAJoinedReadingCoversCountsForTheLongerCallWhenItH
     EXPECT_NE(after->row("K4VRT"), nullptr);
     EXPECT_EQ(after->row("K4VR"), nullptr);
     EXPECT_NE(run(1.0)->row("K4VRT"), nullptr);
+    EXPECT_EQ(CallSearchConfig{}.joined_covers, 3.0);  // the default since call-arb-1
 }
 
 // KC2LRC-2's W6SX (RBN-confirmed), read W6SX E twice: the E is a stray, and W6SXE, read only so, has no points of its own.
