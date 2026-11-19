@@ -1,4 +1,4 @@
-// A recording as an IqSource: a stereo I/Q WAV file (wav_reader.hpp), mirrored and resampled as RecordingReader does
+// A recording as an IqSource: a stereo I/Q WAV file (wav_reader.hpp), or receiver audio made analytic (audio_input.hpp), mirrored and resampled as RecordingReader does
 // (recording_reader.hpp), delivered at a chosen pace (design section 4.1, step 1: real time, faster, or as fast as possible),
 // or paused.
 #pragma once
