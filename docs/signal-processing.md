@@ -39,7 +39,6 @@ dits where the text says so.
 | r | the rate of one station's channel, fs/128 | 1500 samples/s |
 | dit | 1.2 s / WPM (the PARIS convention) | 48 ms at 25 WPM |
 | S₅₀₀ | key-down carrier power over the noise power in 500 Hz | |
-| d_k | nominal dit of the bank decoder's branch k, fixed: L_k / 0.8 (A.8c), not the station's dit | 12 ms (branch 1) to 230 ms (branch 32) |
 | N₀ | density of the noise, FS²/Hz: σ² / fs for white noise of σ² FS² per sample | 8.33 × 10⁻⁹ FS²/Hz for σ = 0.02 FS at 48 kHz |
 | Δ | the envelope sample interval of viterbi and segmental, 4/r | 2.667 ms |
 | σ_y² | noise power at their front filter's output, N₀ × 74.50 Hz | FS² |
@@ -61,16 +60,13 @@ I/Q (fs) ─┬─► spectrum analyzer ─┬─► signal detector ─► trac
                                                 callsign stage ─► list of calls
 ```
 
-The input is the radio's whole band, 192 kHz wide, its DC removed on segmental's path;
-two things happen in parallel. The **spectrum analyzer and detector** look at the band every
-21.33 ms (segmental's detector: 85.3 ms) and decide where stations are: each station becomes
-a *track* with a frequency. For every track the **channelizer** cuts a
-narrow stream out of the band, about ±150 Hz around the station, at 1500
-samples/s. A **decoder** per channel turns that stream into characters.
-Five decoders: **segmental** (the app's default), **Matched** (the bench's), **Envelope** (the
-baseline), the **bank** (the frozen reference) and **viterbi**. Matched and the
-bank are told the detector's frequency before each block (the *anchor*); viterbi's and segmental's
-channels follow it (section 7), and those two get N₀ from a hiss estimator reading the spectrum.
+The input is the radio's whole band, 192 kHz wide, or a receiver's audio made analytic (section 1),
+its DC removed on segmental's path. The **spectrum analyzer and detector** look at it every 21.33 ms
+(segmental's detector: 85.3 ms) and make each station a *track* with a frequency; for each track the
+**channelizer** cuts a stream about ±150 Hz wide at 1500 samples/s, and a **decoder** per channel
+turns it into characters (five decoders, section 8). Matched
+and the bank are given the detector's frequency (the *anchor*); viterbi's and segmental's channels
+follow it (section 7) and get N₀ from a hiss estimator reading the spectrum.
 
 ## 1. Input
 
@@ -80,8 +76,17 @@ other rates go exactly to the largest decoder rate below (250 to
 192 kHz: × 96/125, flat to ±86 kHz); `--mirror` conjugates a mirrored receiver's samples. On
 segmental's path a 10 s DC blocker comes first (section 6). Frequencies are offsets from the
 center (Hz); the center (`--center-khz`, header or file
-name) only labels them (A.1). Blocks of N/2 samples (section 3) keep the
-output independent of a caller's splitting. `kz4ap-listen` makes one frequency audible (A.13).
+name) only labels them (A.1).
+`kz4ap-listen` makes one frequency audible (A.13).
+
+**Receiver audio** (a sound card's: a one-channel WAV, or `--audio`). One channel, resampled to
+48 kHz (derived: the decoders' lowest rate) as above, is filtered to its analytic signal, h(t) = w(t)[sinc t + j(1 − cos πt)/(πt)]
+(1240 taps, Kaiser, 82 dB re the passband, 200 Hz transitions at 0 Hz and 24 kHz; heuristics), delays taken out exactly:
+a cos 2πft becomes a e^(j2πft). Frequencies are audio tones (Hz); a
+full-scale sine reads 0 dBFS. The receiver's **passband**, default **300–3000 Hz** (heuristic),
+bounds the detector's floor and peaks and the hiss estimator's bins: outside it lie near-silence and
+no station. With dial F and pitch p (600 Hz, heuristic), RF = F + (f − p) on the upper sideband;
+on the lower, the signal conjugated and the passband negated, F − (f − p). SNRs are receiver-audio values (A.1).
 
 ## 2. The FFT size N and bin width Δf
 
@@ -98,8 +103,7 @@ Appendix: A.2.
 Input arrives in blocks of N/2 samples (the hop); each FFT covers the
 newest block and the one before it, so consecutive FFTs overlap by half. With
 the Hann window (section 4) the overlapping windows add up to a constant
-(derived). The hop
-also fixes the channel filter's length (section 7).
+(derived).
 
 Appendix: A.3.
 
@@ -113,8 +117,7 @@ complex tone of amplitude A on a bin reads A² FS², is
 
 with Σw = N/2 the window's sum. White noise of σ² FS² per sample reads as
 the noise in one *equivalent noise bandwidth* (ENBW), 1.5 bins = 35.2 Hz
-(derived). The segmental path's detector has its own analyzer, four times
-finer (section 6).
+(derived).
 
 Appendix: A.4.
 
@@ -122,8 +125,7 @@ Appendix: A.4.
 
 **S₅₀₀** is the key-down carrier power over the noise power in 500 Hz, the
 convention of CW Skimmer and the Reverse Beacon Network. The synthetic
-recordings add complex white noise of σ = 0.02 FS; a station's S₅₀₀ is set
-by its carrier amplitude. Per bin the noise bandwidth is one ENBW, 35.2 Hz
+recordings add complex white noise of σ = 0.02 FS. Per bin the noise bandwidth is one ENBW, 35.2 Hz
 (8.79 Hz on the detector's fine bins), so a carrier reads
 **11.5 dB** (17.6 dB) higher as an SNR per bin than as S₅₀₀ (derived, white
 noise; a keyed signal less, A.5).
@@ -148,7 +150,7 @@ bins a station's main lobe reaches ±47 Hz).
 
 **Averaging and floor.** Each bin's power is averaged with a one-pole
 average of **τ = 1 s**, in linear power. The floor is the median of all
-averaged bins, every second frame.
+averaged bins (receiver audio: the passband's), every second frame.
 
 **Finding a station.** A bin is a candidate when its average stands
 **7 dB** above the floor (dB SNR per fine bin), is the highest within
@@ -185,9 +187,7 @@ its leading filter per 21.33 ms block (FS²), x the last **6 s** of it less
 its 0.5 s moving mean: ρ = Σx_W x_S / √(Σx_W² Σx_S²), β = Σx_W x_S / Σx_S².
 W is S's copy, retired with its place open, when ρ ≥ **0.5**,
 β ≤ 1 and W's own power (ē_W − E)/E, E = β ē_S + σ_W² (leak and hiss), is
-at most **0.25**. Derived: an independent station's ρ tends to 0 within
-about 1/√N; a copy's ρ is S/(S + 2) at key-down SNR S, its β |H(Δf)|² ≤ 1,
-own power ≈ 0.
+at most **0.25** (chosen by measurement; the forms derived, A.6).
 
 **A neighbor's text.** A track not a copy still prints a neighbor's over
 between its own (a caller's, its runner's exchange). Each symbol of W's but a word
@@ -228,8 +228,8 @@ one sample in 128: **r = 1500 samples/s**.
 
 **Following the detector (viterbi and segmental only).** The channelizer
 follows the detector's frequency for the track,
-f_det (oracle channels: the label's, drifting or switching at a QSO's
-overs), so the decoder receives its station near 0 Hz (owner, plan D17).
+f_det (oracle channels: the label's, drifting or switching at a QSO's overs),
+so the decoder receives its station near 0 Hz (owner).
 Two steps, before each
 32-sample block: the block, cut at bin f_bin, is multiplied by a
 phase-continuous oscillator at −(f_det − f_bin), f_det held over the
@@ -271,7 +271,7 @@ shared back end makes characters. Appendix A.8b.
 No speed loop: 32 moving averages of 9.6 ms × 1.1^(k−1) (k = 1 … 32; 100 to
 5 WPM; owner), each *branch* keying its own text with a Rician likelihood; a
 selector publishes the best-fitting branch, correcting text up to 20 s back
-(owner). Frozen at its defaults as the reference (design spec §5.2). Appendix A.8c.
+(owner). Frozen at its defaults as the reference. Appendix A.8c.
 
 ## 8d. The story model and the viterbi decoder (selectable)
 
@@ -284,7 +284,7 @@ key-up, an *element* either; an *over* is one continuous transmission; a
 at a speed, at a node of the Morse tree, with its own text.
 
 **N₀, the hiss.** Each bin's power is averaged as the detector does (one-pole,
-1 s; heuristic). Of the 171 bins within ±1 992 Hz of the channel the 43rd
+1 s; heuristic). Of the 171 bins within ±1 992 Hz of the channel (receiver audio: within its passband) the 43rd
 smallest, the 25th percentile (placeholders), is divided by its bias on noise,
 β (0.288 after one frame, 0.927 in steady state; derived), and by one bin's
 ENBW, 35.16 Hz (derived). A frame of exact zeros is not counted. The engine
@@ -515,13 +515,12 @@ Scores are not probabilities: a MAP search under a real prior, the likelihood ap
 | Segmental | text every 0.25 s, corrected as it firms up; the evidence lags at most 0.387 s at m = 1, 0.46 s at m = 3; the final text's error rate is reached about 0.75 s behind (measured at m = 1 alone; A.8e) |
 | Track removal | about 6–7 s for the average to decay (S₅₀₀ = 20 dB), plus the 10 s timeout |
 
-Envelope, Matched and bank: A.9; see also A.6, A.8d, A.8e, A.10.
+Other decoders: A.9.
 
 ## 10. Live operation
 
-The app, `kz4ap-skimmer`, runs segmental by default. All below holds on segmental's
-detector path, not in oracle mode; other decoders keep the detector their results
-were measured with. Values are heuristics unless marked. Appendix: A.9b.
+The app, `kz4ap-skimmer`, runs segmental by default. All below holds on its detector path, not in
+oracle mode; other decoders keep the detector their results were measured with. Values are heuristics unless marked. Appendix: A.9b.
 
 **Pipeline.** A source fills a ring of at least 4 s, 5.46 s at every radio rate
 (power-of-two capacity, derived). On overflow the ring empties at once: one gap.
@@ -796,6 +795,78 @@ measured on the 2017 recordings, cause of the first two not traced (a
 nominal center, a receiver's clock about 30 ppm off; conjecture). No
 decision depends on it: the center only labels.
 
+### Receiver audio (`audio_input.hpp`, `RecordingReader`, `bench/src/audio_options.hpp`)
+
+A receiver's audio output, as a sound card records it, decoded by the same chain: the plain decoder's input (owner,
+2026-11-19: "paired with audiocard decoding instead of SDR"), and the skimmer's too, like CW Skimmer's "3-kHz Radio" receiver
+(an ordinary radio's audio, CW mode, at least 2 kHz wide, AGC off; owner, 2026-11-19). Files only so far: no sound device.
+
+**Exact form, in order.**
+1. **Which files.** `RecordingInput::Auto` (the default) reads a one-channel WAV as receiver audio and a two-channel one as
+   I/Q; `RecordingInput::Audio` (`--audio`, `--audio-channel N`) reads channel N (0 the first) of any file as audio.
+   `WavAudioReader` takes the forms and scaling of `WavIqReader` (integers over 2^(b−1), floats as stored), any number of
+   channels, block align = channels × b/8.
+2. **Resampling.** Unless f_a = 48 000 samples/s, `RationalResampler(f_a, 48 000)` as above, on the real samples (as complex
+   with zero imaginary parts; real taps keep them zero): stopband from half the lower rate, transition (10/192) f_a below it
+   (417 Hz at 8 kHz: passband to 3 583 Hz; 625 Hz at 12 kHz: to 5 375 Hz; 2 297 Hz at 44.1 kHz). 100 taps per phase at 8, 12
+   and 44.1 kHz (ratios 6/1, 4/1, 160/147). Its delay d_r = (n − 1)/(2M) output samples for n = taps × L taps in all (299.5 at
+   8 kHz).
+3. **Analytic filter** (`analytic_filter_taps`), at fs = 48 000 samples/s: the ideal response 2 for 0 < f < fs/2 and 0 for
+   −fs/2 < f < 0 has the impulse response h(t) = sinc t + j(1 − cos πt)/(πt), t in samples (derived: the real part a delay,
+   the imaginary part its Hilbert transform, 2/(πt) at odd t, 0 at even). Taps m = 0 … 2D + 1 at t = m − c, c = D + μ,
+   windowed by Kaiser's w(t) = I₀(β√(1 − (t/(D + 1))²))/I₀(β), β = 0.1102 (A − 8.7) = 8.078 for A = 82 dB re the passband,
+   D = ⌈L_K/2⌉ with Kaiser's length L_K = (A − 7.95)/(2.285 · 2π Δ/fs) = 1 237.8 for transitions Δ = **200 Hz**: D = 619,
+   **1 240 taps**. μ = ⌈d_r⌉ − d_r carries the resampler's fraction of a sample (0.5 at 8 and 12 kHz, 0 at 48 kHz), so that
+   the whole delay, d_r + c = ⌈d_r⌉ + D samples, is whole and is dropped: output k stands for the audio's time k / 48 000 s
+   exactly (derived; measured within 4 × 10⁻⁷ rad of a tone's phase at 100 Hz to 2.9 kHz). Applied by overlap-save with
+   FFTs of 4 096 points, 2 857 new samples a block (60 ms; heuristic, the smallest power of two at least three times the taps).
+   Output count ⌈n_a × 48 000 / f_a⌉ for n_a audio samples; the audio after its end counts as zero.
+4. **Lower sideband** (`--sideband lsb`, `RecordingOptions::mirror` on audio): the output conjugated, a tone at f read at −f.
+5. **The engine** at 48 000 complex samples/s, as for I/Q: N = 2 048, Δf = 23.44 Hz, r = 1 500 samples/s (sections 2, 7).
+6. **Passband** (`EngineConfig::passband_lo_hz`, `passband_hi_hz`; `--passband-hz LO,HI`, default 300,3000; on the lower
+   sideband −HI to −LO). `band_bins` takes the bins whose centers lie within it; the detector's floor is the median of those
+   bins only, its candidates and followed peaks lie among them, and its local floor (the lower quartile within ±1 kHz) is
+   clipped to them; the hiss estimator's neighborhood (A.8d) is clipped to them, or is the passband itself for a channel
+   wholly outside it. Both 0 (I/Q): the whole span, as before (bit for bit: the same median index n/2, the same loops).
+7. **Frequencies.** The engine's are audio tone frequencies f, Hz (−f on the lower sideband). With the dial frequency F
+   (`--dial-khz`) and the pitch p (`--pitch-hz`, default 600 Hz), the center the call list adds (`CallRow::freq_hz` + center)
+   is F − p on the upper sideband and F + p on the lower, so that **RF = F + (f − p)** (upper) and **RF = F − (f − p)**
+   (lower) (derived: on the upper sideband the audio rises with RF and a station at F is heard at p). Without F the list's
+   kHz column is empty and its Hz are audio frequencies. `--center-khz` and `--mirror` are refused for audio (they name I/Q's).
+   `kz4ap-calls --replay` takes the center from the log's `"input"` line and refuses these options; `kz4ap-bench` reports audio
+   Hz only, refuses `--dial-khz` and `--pitch-hz`, and on `--sideband lsb` negates the labels' frequencies, offsets and drifts.
+8. **Levels.** A real tone a cos 2πft (power a²/2 FS²) becomes a complex tone of amplitude a, a² FS² in its bin: a
+   full-scale sine reads 0 dBFS re the sound card's full scale (derived). Real noise of variance σ² FS² per sample, white
+   to f_a/2, has the one-sided density 2σ²/f_a and the analytic signal N₀ = 4σ²/f_a FS²/Hz in the band, so S₅₀₀ = a²/(N₀ ·
+   500 Hz), the usual real-signal SNR in 500 Hz (derived). These are receiver-audio values: after the receiver's gain, filter
+   and any AGC, not comparable with SDR I/Q's even in the same bandwidth. The bench tools say so (kz4ap-calls on stderr and as an
+   `"input"` line in `--log`; kz4ap-bench as `"input"` in its result file).
+
+**Provenance.** 48 kHz: derived (the decoders' lowest rate, `decoder_rate_for`; no audio rate needs more). The Hilbert
+filter form: standard (the FIR Hilbert transformer, Oppenheim and Schafer; sourced); chosen over mixing the passband's center
+to 0 Hz and low-passing (the same filter, shifted) because it leaves frequencies as audio tones. Δ = 200 Hz: heuristic, below
+any receiver's audio passband (which starts at 200 Hz or more). A = 82 dB re the passband: as the resampler's (heuristic). Measured
+(`AudioAnalytic.ARealToneBecomesItsAnalyticSignal`, 2026-11-19, at 8, 12, 44.1 and 48 kHz): gain within 0.0007 dB re the input
+from 100 Hz to 2.9 kHz, the image at −f at most −84.1 dB re the tone at 100 Hz and −95 dB re the tone from 300 Hz. The passband default
+300–3000 Hz: heuristic, a typical SSB receiver's audio (2.7 kHz); the median holds the in-band noise while the receiver's
+filter covers more than half of it (derived for a median). The pitch default 600 Hz: heuristic, a common CW pitch.
+
+**Limitations.**
+- A filter narrower than half the stated passband (a 500 Hz CW filter within 300–3000 Hz) leaves the median and the hiss
+  percentile in the near-silence: the floor reads low, the decoder's N₀ too. Set `--passband-hz` to the filter.
+- The receiver's filter shape colors the noise: within the passband the floor and the hiss read the median and the 25th
+  percentile of a sloped floor, low near the edges; a station near an edge is attenuated with its noise.
+- AGC (gain changing within and between elements) is not modeled; nothing has been measured with it.
+- A carrier's sideband whose mirror falls outside the passband passes the sideband test (section 6).
+- Resampling costs about 3.5 ms per s of stream at 8, 12 and 44.1 kHz (the resampler on complex samples with zero imaginary
+  parts); at 48 kHz none. The analytic filter, with the file's reading, about 1.85 ms per s of stream (measured, the desktop,
+  one thread, 60 s of noise). One channel's whole cost, against the bar (at most 40 ms per channel-second required, about 8 ms
+  the goal): about 10 to 13 ms per channel-second at 48 kHz and about 12 to 17 ms at 8, 12 and 44.1 kHz, of which the fixed
+  per-stream part is 6.19 ms per s of stream at 48 kHz and 9.6 to 10.0 ms at the resampled rates and the track's own 2.5 to
+  6.8 ms (measured, the desktop, one thread: four 60 s clips at 12 kHz and the review's runs, 2026-11-19). Within the
+  requirement, above the goal: at one channel the per-stream stages (spectrum about 3.1 ms, the source, the channelizer's FFT
+  about 1.05 ms) outweigh the decoder.
+
 ## A.2 The FFT size N and bin width Δf
 
 ### Exact form
@@ -990,6 +1061,10 @@ The rules of this section as the code implements them (moved verbatim from the b
 
 All neighborhoods are stated in Hz and converted to bins at the point of
 use with lround(Hz/Δf): 47 Hz → 2 bins, 23 Hz → 1 bin at 23.44 Hz.
+
+Receiver audio (A.1, "Receiver audio", step 6): with a passband (`DetectorConfig::band_lo_hz`, `band_hi_hz`, from
+`EngineConfig::passband_lo_hz`) the floor's median, the candidates, the followed peaks and the local floor read only the bins
+whose centers lie within it; everything below holds within it. Without one (I/Q), the whole span.
 
 - **Averaging.** Per bin, in linear power (FS²), one update per frame:
   P̄ ← P̄ + a·(P − P̄), a = max(α, 1/m), α = 1 − exp(−t_hop/τ) = 0.0211,
@@ -4102,6 +4177,10 @@ truth; `symbol_prior_on_air` off.
   quantile and the neighboring bins' correlation (4/9 in power) adds about +0.6%.
 - **Per hertz.** One bin of the Hann window has the equivalent noise bandwidth N·Σw²/(Σw)² = 1.5 bins = 35.16 Hz at the
   engine's bins (section 4).
+- **Receiver audio** (`HissEstimator::set_band`, A.1): the neighborhood is also clipped to the passband's bins, so that the
+  near-silence outside a receiver's filter (below 300 Hz, above 3 kHz and every negative frequency) is not counted; a channel
+  whose neighborhood lies wholly outside it reads the passband's bins. On noise within 300–3000 Hz at 12 kHz the test requires
+  the estimate at 700 Hz within 8% of 4σ²/f_a with the clip and below a tenth of it without (`RecordingReaderAudio.TheHissInThePassbandIsTheReceiversNoise`).
 - **Exact zeros** are missing data, as the bank treats them (A.8c): a receiver's output always carries noise, so a frame
   of exact zeros is padding or a dead channel. The −200 dBFS of an exact zero follows from the analyzer's 10·log₁₀(power +
   10⁻²⁰).
@@ -4643,12 +4722,17 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Center from a file name | span edges when 0.8–1.001 fs apart, else the first `<f>Hz/kHz/MHz` word that is not fs | `center_hz_from_file_name` | heuristic |
 | Listening filter (`kz4ap-listen`) | Kaiser sinc on the complex baseband, width B = 500 Hz at −6 dB re the passband, transition 0.4 B: passband ±0.3 B (150 Hz), stopband from ±0.7 B (350 Hz), at least 80 dB re the passband (design value 82 dB re the passband); 311 taps at 12 kHz, 209 at 8 kHz | `listen_filter_taps`, `kListenTransitionRatio`, `kListenAttenuationDb` | heuristic (B, the transition; Kaiser's formulas sourced; 80 dB re the passband tested) |
 | Listening tone, rate, level (`kz4ap-listen`) | 600 Hz; 12 000 samples/s (or 8000); one gain per clip, its peak to −1 dBFS | `ListenConfig`; `kPeakDbfs` (listen_main.cpp) | heuristic |
+| Listening filter as a receiver's (`kz4ap-listen --filter-center-hz`) | centered on that audio frequency instead of the tone, transitions 200 Hz wide (2400 Hz at 1500 Hz: −6 dB re the passband at 300 and 2700 Hz, within 0.01 dB of it from 400 to 2600 Hz) | `ListenConfig::filter_center_hz`, `kReceiverTransitionHz` | heuristic |
+| Receiver audio's rate | 48 000 complex samples/s | `kAudioEngineRate` | derived (the decoders' lowest rate) |
+| Analytic filter | h(t) = w(t)[sinc t + j(1 − cos πt)/(πt)], Kaiser β = 8.078, 1 240 taps, transitions 200 Hz wide at 0 Hz and 24 kHz, design value 82 dB re the passband; center D + μ, μ the resampler's fraction of a sample; overlap-save, FFT 4 096 | `analytic_filter_taps`, `kAnalyticTransitionHz`, `kAnalyticAttenuationDb`, `AudioAnalytic` | form standard (sourced); Δ, A and the FFT size heuristic; the delay's removal derived |
+| Receiver's passband | 300–3000 Hz unless `--passband-hz`; bounds the detector's floor, peaks and local floor and the hiss estimator's bins | `kAudioPassbandLoHz`, `kAudioPassbandHiHz`; `EngineConfig::passband_lo_hz`, `passband_hi_hz` | heuristic |
+| CW pitch, sideband | 600 Hz, upper; RF = dial + (f − pitch), lower: dial − (f − pitch) | `AudioOptions` (bench) | heuristic (the pitch); the formula derived |
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
 | Power average τ | 1 s (≈ 94-frame boxcar on the band's 21.33 ms frames; ≈ 23 frames on segmental's path's 85.3 ms) | `DetectorConfig::average_s` | heuristic |
 | Detection threshold / hysteresis, band's spectrum (not segmental's path) | 6 dB / 3 dB SNR per bin (35.2 Hz) | `DetectorConfig` | heuristic |
-| Noise floor | median of all bins | signal_detector.cpp | heuristic |
+| Noise floor | median of all bins (receiver audio: of the passband's) | signal_detector.cpp | heuristic |
 | Detection warm-up | 1 s from the first frame (equal to the average's τ) | `DetectorConfig::average_s` | heuristic |
 | Persistence before a track | 0.5 s | `DetectorConfig::birth_s` | heuristic |
 | Candidate tracking, band's spectrum (not segmental's path) | may move ±23 Hz (1 bin at 23.4 Hz) between frames | `DetectorConfig::candidate_step_hz` | heuristic |
@@ -5651,6 +5735,11 @@ nothing.
      passband**. Kaiser's estimates for a design value A = 82 dB re the passband (as the resampler's, to meet 80 dB): β = 0.1102 (A − 8.7) = 8.078,
      L = ⌈(A − 7.95) / (2.285 · 2π · 0.4B / f_a)⌉ + 1, made odd: **311 taps at 12 kHz** (25.9 ms, delay 12.92 ms), 209 at 8 kHz.
      Taps normalized to a sum of 1 (unity gain at 0 Hz). B from 50 Hz (3097 taps at 12 kHz; heuristic) to f_a/2.
+  4. *A receiver's filter* (`--filter-center-hz C`): the same path for the frequency that comes out at C, mixed by
+     f_o + (C − f_t) and heard at C, so that the station comes out at f_t (derived) with its neighbors from C − B/2 to C + B/2
+     in the audio; transitions 200 Hz wide (`kReceiverTransitionHz`, heuristic: a transceiver's steep DSP or crystal filter):
+     `--bandwidth-hz 2400 --filter-center-hz 1500 --tone-hz 600` gives −6 dB re the passband at 300 and 2700 Hz, within
+     0.01 dB of it from 400 to 2600 Hz, the receiver-audio clips' filter (A.1, "Receiver audio"). No AGC: one fixed gain.
 - **Track path (`--track-filter`).** The channelizer (section 7, A.7) with one channel at bin c = round(f_o / Δf), its stream at
   r mixed by e^(−j2π (f_o − c Δf) j / r) (`ChannelFollower`'s shift for a detector frequency held at f_o), then
   `RationalResampler` r → f_a (1500 → 12000 samples/s: transition 78 Hz, flat to 672 Hz). Its filter is the channel's: −6 dB re

@@ -148,6 +148,13 @@ public:
     // for a center_bin outside that range.
     double noise_density_fs2_per_hz(int center_bin) const;
 
+    // A receiver's passband, Hz from the span's center (EngineConfig::passband_lo_hz, passband_hi_hz): from now on stage 3's
+    // neighborhood is also clipped to the bins whose centers lie within [lo_hz, hi_hz] (band_bins), so that the near-silence
+    // outside a receiver's filter does not pull the percentile down; a channel whose neighborhood lies wholly outside it reads
+    // the passband's bins. hi_hz <= lo_hz: the whole span again (the default). Throws std::invalid_argument for an edge that
+    // is not finite.
+    void set_band(double lo_hz, double hi_hz);
+
     // beta after `frames` frames (stage 4): the factor by which the percentile reads low on noise alone, 0.2877 after 1
     // frame (the exponential's ln(4/3)) and 0.92658 in steady state at the defaults. The recursion runs up to the frame
     // where it has reached its fixed point (to the double's precision) and stops there, so the cost is bounded for any
@@ -167,7 +174,10 @@ private:
     double beta_of(const Weights& weights) const;
 
     int fft_size_;
-    int half_bins_;                       // W: the neighborhood's half-width, bins
+    int sample_rate_ = 0;
+    int band_first_ = 0;                  // the passband's bins (set_band), first and last; else the whole span
+    int band_last_ = 0;
+    int half_bins_;                      // W: the neighborhood's half-width, bins
     double fraction_;                     // hiss_percentile / 100
     double alpha_;                        // the pole's step per frame
     double enbw_hz_;                      // one bin's equivalent noise bandwidth, Hz

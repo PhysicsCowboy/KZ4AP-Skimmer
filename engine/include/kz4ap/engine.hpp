@@ -118,6 +118,14 @@ struct EngineConfig {
     // of the samples, of time constant dc_block_s, s, whose notch at 0 Hz has its -3 dB points re the passband at
     // +/-1 / (2 pi dc_block_s) Hz: 0.032 Hz wide at 10 s. 0 for none.
     double dc_block_s = 0.0;
+    // Receiver audio (RecordingReader's audio input, audio_input.hpp; docs/signal-processing.md, section 1): the receiver's
+    // passband, Hz from the span's center, which for receiver audio are the audio frequencies themselves. When passband_hi_hz >
+    // passband_lo_hz, the detector's floor, local floor and peaks (DetectorConfig::band_lo_hz) and the hiss estimator's
+    // neighborhood (HissEstimator::set_band) read only the bins whose centers lie within it, so that the near-silence outside the
+    // receiver's filter does not pull the floor down and no station is found outside it. Both 0 (the default): the whole span,
+    // as for I/Q.
+    double passband_lo_hz = 0.0;
+    double passband_hi_hz = 0.0;
     // Which retirements by the judge leave their place open the first time there (SignalDetector::retire's first_open): 0 none,
     // 1 a quiet one (TrackEnd::Quiet: it heard nothing, as when its station listens), 2 any.
     int first_retirement_open = 0;

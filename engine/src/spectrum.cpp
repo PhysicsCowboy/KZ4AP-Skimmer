@@ -3,6 +3,7 @@
 #include "fft.hpp"
 #include "kz4ap/segmental/fast_math.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <numbers>
@@ -72,6 +73,15 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
 
 double SpectrumAnalyzer::bin_to_hz(int index) const {
     return static_cast<double>(index - fft_size_ / 2) * sample_rate_ / fft_size_;
+}
+
+BinRange band_bins(double lo_hz, double hi_hz, int sample_rate, int fft_size) {
+    if (!(hi_hz > lo_hz)) return {0, fft_size - 1};
+    const double bin_hz = static_cast<double>(sample_rate) / fft_size;
+    const auto clip = [&](double bin) { return static_cast<int>(std::clamp(bin, 0.0, static_cast<double>(fft_size - 1))); };
+    BinRange r{clip(std::ceil(lo_hz / bin_hz - 1e-9) + fft_size / 2), clip(std::floor(hi_hz / bin_hz + 1e-9) + fft_size / 2)};
+    if (r.last < r.first) r.first = r.last = clip(std::round((lo_hz + hi_hz) / 2.0 / bin_hz) + fft_size / 2);
+    return r;
 }
 
 }  // namespace kz4ap

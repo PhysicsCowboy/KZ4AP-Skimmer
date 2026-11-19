@@ -1,6 +1,7 @@
 add_library(kz4ap_bench_lib
   src/bank_json.cpp
   src/channel_recorder.cpp
+  src/audio_options.cpp
   src/labels.cpp
   src/noise_mask.cpp
   src/report.cpp
@@ -88,6 +89,7 @@ else()
 endif()
 
 add_executable(kz4ap_bench_tests
+  tests/audio_options_test.cpp
   tests/bank_json_test.cpp
   tests/bench_run_test.cpp
   tests/channel_recorder_test.cpp
