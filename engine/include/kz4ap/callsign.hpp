@@ -140,9 +140,11 @@ struct SegmentationCosts {
     double de_before_nats = 2.7726;
     double de_after_nats = 1.0;
     double sign_off_nats = 1.5;
+    // When 0, a K or KN after a call that would also make it a longer call (AK4J K, AK4JK) gives no evidence; 1 counts it as any.
+    double ambiguous_sign_off = 0.0;
     // nats: a call on the path is believed when its evidence (its copies after the first, the DE beside them, the K after them;
     // a call's first copy is none, since noise text has many call forms) reaches this, and the whole path's gain (the word against
-    // noise) reaches word_min_nats. A DE before it is enough, a DE after it only with a K, a repeat always. Heuristic.
+    // noise) reaches word_min_nats. A DE before it is enough, a DE after it only with an unambiguous K, a repeat always. Heuristic.
     double believe_nats = 2.5;
     double word_min_nats = 0.0;
     // Words longer than this are not cut (CPU; heuristic).

@@ -4843,7 +4843,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
 | Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
 | Callsign stage: a neighbor's text | every symbol read (default); a variant skips a stretch with `heard_from` that is whole words and whose neighbor's track holds every symbol of it within 25 ms | `skip_neighbors_text` 0, `neighbor_twin_s` 0.025 s | chosen by measurement: the variant changed 12 calls' fields, no call (A.12) |
-| Callsign stage: joined words segmented | off; a variant: 1 a word of 6 characters or more that rule 2 cannot split, 2 every such word; a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 0, `segment_min_chars` 6, `CallSearchConfig::segmentation` (`SegmentationCosts`) | off by default, a variant (`joined-words-1`); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic (A.12) |
+| Callsign stage: joined words segmented | off; a variant: 1 a word of 6 characters or more that rule 2 cannot split, 2 every such word; a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 0, `segment_min_chars` 6, `CallSearchConfig::segmentation` (`SegmentationCosts`) | off: +8 window-confirmed calls for +1 misreading on the 2026-11-17 recordings, none gained and 4 misreadings added held out (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
@@ -5438,12 +5438,13 @@ track. A rereading after a correction is triggered by a change of text only, not
    copies apart in garbled text are no repeat. Only a string found twice without overlap has a cache state of its own: the states are
    (place, cache, last token DE, call or other). A call on the best path is *believed* when its evidence E, summed over its copies,
    reaches `believe_nats` (2.5): each copy after the first its gain, each DE before a copy 2.77, each DE after one 1.0, each K or KN
-   after one 1.5 (a first copy's gain is no evidence, since noise text holds many call forms), and the path's whole gain reaches
-   `word_min_nats` (0: the word at least as likely the protocol's text as noise). So a repeat is always enough, a DE before is, a DE
-   after only with a K. Each copy of a believed call is a *glued* reading (1 point) with its own characters' times, as in rule 2, and
+   after one 1.5 unless the call with it is a call too (AK4J K and AK4JK: an ambiguous K is no evidence; `ambiguous_sign_off` 0), and
+   the path's whole gain reaches `word_min_nats` (0: the word at least as likely the protocol's text as noise). A first copy's gain is
+   no evidence, since noise text holds many call forms. So a repeat is always enough, a DE before is, a DE after only with an
+   unambiguous K. Each copy of a believed call is a *glued* reading (1 point) with its own characters' times, as in rule 2, and
    the role (below) of the nearest path tokens outside it and its other copies, stray E, T, I skipped, and the words around at the
-   word's ends. Examples (`JoinedWords` tests): DEK8DXK8DXK8DXK is DE K8DX K8DX K8DX K, E = 2.77 + 2 × 14.4 + 1.5 = 33.1 nats;
-   CQCQPOTADENA9M is CQ CQ POTA DE NA9M, E = 2.77; N5JJDEWA0QZK is N5JJ DE WA0QZ K, N5JJ 1.0 (not believed), WA0QZ 4.27;
+   word's ends. Examples (`JoinedWords` tests): DEK8DXK8DXK8DXK is DE K8DX K8DX K8DX K, E = 2.77 + 2 × 14.4 = 31.6 nats (K8DXK is
+   a call); CQCQPOTADENA9M is CQ CQ POTA DE NA9M, E = 2.77; N5JJDEWA0QZK is N5JJ DE WA0QZ K, N5JJ 1.0 (not believed), WA0QZ 2.77;
    CQCQDXCQDXCQDXDEK8DXK8DK reads K8DX once (the last copy, K8DK, is a new call of no evidence).
 
 **Role,** from the nearest words outside the call and its repeats, skipping E, T, I, EE, TT, IE, EI, ET, TE: next word DE, *named*; previous word DE, *signed*; next word
@@ -5638,25 +5639,35 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   also took W7QDM's role of sender (KC2LRC-2, "TEST W7QDM" with "TES" given to a track 27 Hz away). Off: chosen by measurement; the
   stage already counts readings that overlap in time within 300 Hz once.
 
-- `segment_joined` 0 (`joined-words-1`, 2026-11-19), a variant: on the seven 2026-11-17 recordings, 42 calls the RBN spotted in the
+- `segment_joined` 0 (`joined-words-1`, 2026-11-19), a variant, off: on the seven 2026-11-17 recordings, 42 calls the RBN spotted in the
   window and the defaults did not report appear inside a decoded word of 7 characters or more within 0.5 kHz of a spot (about 35
-  stations; the gate before building). Replaying the defaults' decoder events, mode 1 gave 168 / 83 / 103 (window-confirmed / misread /
+  stations; the gate before building). On their decoded text (the defaults' decodes again, with the clock lines: calls equal to the
+  earlier decodes' and the replays equal to the decodes, byte for byte), mode 1 gave 168 / 83 / 103 (window-confirmed / misread /
   unknown) against 160 / 82 / 102: KD2ITZ, KG5VNQ, NA9M, W3GTR, N8CKU, CO3ET, KE2EH and K8DX in the window, WA4BAM and WA9TOP that day,
-  one misreading (KD5Z, from S73DEKD5ZCQ), one unknown (WA7WKY, from DEWA7WKYK), none lost. Mode 2: 168 / 85 / 102 (W4PM and WA5DT for
-  K9IHK and WA5DTK, which the RBN also spotted). Around the chosen costs: `believe_nats` 2.0 the same, 3.0 166 / 82 / 102; `stray_nats`
-  1.5 and 3.0 the same; `word_min_nats` −5 167 / 86 / 103, +3 168 / 83 / 102. An earlier form (keywords equally likely, a call's
-  first copy counted as evidence, repeats across strays, `believe_nats` 3) gave 168 / 90 / 106: N0TAR lost as N0T AR, OO0O and W1BR
-  from garbled repeats; and until strings repeated within themselves were refused, 3J3J from periodic garbage. On 2 000 words of noise
-  text (12 to 40 characters drawn with p(c) ∝ 2^−e) no call is believed (the first form, its noise characters uniform at ln 36, DE
-  after a call at 2.77 nats and no test of the word: 52). The stage's CPU: 0.0041 ms per channel-second at the defaults,
-  0.0042 with mode 1 (three paired replays over 819 447 channel-seconds). Classes: ν(c) a model, heuristic; λ_κ measured, the mean of
-  −ln shares over the 2026-11-17 recordings' 127 036 decoded words (general text) and the 2026-11-18 recordings' 366 101 (mostly the CWT
-  contest), SOTA unseen at 11 (heuristic); φ(m) derived from the grammar (2 000 000 random strings a length; a test checks it within
-  0.1 nats); π(m) measured, the 4 314 base calls three or more RBN skimmers spotted on 2026-11-17 (8 to 12 characters share their
-  0.35% evenly: heuristic); `call_nats` measured, the mean of 3.32 and 1.52 nats on those two days; `stray_nats`, `repeat_nats`, the
-  bigram gains, `believe_nats`, `word_min_nats`, `segment_min_chars` and the 64-character limit heuristic, the bigram gains of the size
-  measured on 2026-11-17's words (DE before a call 2.72 nats, DE after 1.22, K after 1.54; the CWT text of 2026-11-18 gives 1.06, −1.34,
-  −0.03).
+  one misreading (KD5Z, from S73DEKD5ZCQ), one unknown (WA7WKY, from DEWA7WKYK), none lost; `believe_nats` 3: 166 / 82 / 102 (NA9M and
+  KG5VNQ, a DE before alone, go). Mode 2: 168 / 85 / 102 (W4PM and WA5DT for K9IHK and WA5DTK, which the RBN also spotted). Around the
+  chosen costs (replays of the earlier logs): `believe_nats` 2.0 the same, `stray_nats` 1.5 and 3.0 the same; `word_min_nats` −5
+  167 / 86 / 103, +3 168 / 83 / 102. Held out, replaying logged events: the three 2026-11-18 recordings (mostly the CWT contest; RBN day
+  file of 2026-11-18) 576 / 309 / 212 at the defaults, 576 / 313 / 215 with mode 1, 576 / 312 / 212 at `believe_nats` 3 (AK4JK lost as
+  AK4J K from K5NUDEAK4JK73; misreadings WN4ATI from 73DEWN4ATI, W7Q and B3FW beside KW7Q and KB3FW; unknown W3QRE from ES73DEW3QRE,
+  KC4HCH, AC0BU); the four 2017 recordings (review 18's logs) 200 / 56 / 54 to 200 / 56 / 55 (L99E from a grid square, EL99, sent
+  over and over). So it is no win held out: off by default. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
+  nothing at 2.5 nats on any of these sets. An earlier form (keywords equally likely, a call's first copy counted as evidence,
+  repeats across strays, `believe_nats` 3) gave 168 / 90 / 106 on 2026-11-17: N0TAR lost as N0T AR, OO0O and W1BR from garbled
+  repeats; and until strings repeated within themselves were refused, 3J3J from periodic garbage. On 2 000 words of noise text (12 to
+  40 characters drawn with p(c) ∝ 2^−e) no call is believed (the first form, its noise characters uniform at ln 36, DE after a call
+  at 2.77 nats and no test of the word: 52). The stage's CPU: 0.00423 ms per channel-second at the defaults, 0.00424 with mode 1
+  (exact replays over 819 447 channel-seconds, the keywords matched once a place); on the dense CWT recordings of 2026-11-18 the stage
+  costs 1.2 to 2.7 ms per channel-second whether mode 1 is on or off (566 219 and 607 817 channel-seconds a recording; the wall clock
+  there varied by more than the variant's effect between runs of the same text). Classes: ν(c) a model, heuristic; λ_κ measured, the
+  mean of −ln shares over the 2026-11-17 recordings' 127 036 decoded words (general text) and the 2026-11-18 recordings' 366 101
+  (mostly the CWT contest), SOTA unseen at 11 (heuristic); φ(m) derived from the grammar (2 000 000 random strings a length; a test
+  checks it within 0.1 nats); π(m) measured, the 4 314 base calls three or more RBN skimmers spotted on 2026-11-17 (8 to 12
+  characters share their 0.35% evenly: heuristic); `call_nats` measured, the mean of 3.32 and 1.52 nats on those two days;
+  `stray_nats`, `repeat_nats`, the bigram gains, `believe_nats`, `word_min_nats`, `segment_min_chars` and the 64-character limit
+  heuristic, the bigram gains of the size measured on 2026-11-17's words (DE before a call 2.72 nats, DE after 1.22, K after 1.54; the
+  CWT text of 2026-11-18 gives 1.06, −1.34, −0.03). The keyword shares and the call lengths were measured on the days the variant was
+  judged on, the 2026-11-18 recordings among them: a held-out check of the costs' form, not of those values.
 
 - A call read only once, anywhere in the band, is not reported without a list: that is the rule (since `rob-1` named or not; before it, named words passed alone). On W3OA, of the 13 calls CW Skimmer lists that the RBN confirms and `main` (d44c7d6) did not, 5 were read as one transmission (K5LN after a fragment 5LN, N4KGL and NZ9Z signing, VE3KP bare, KQ2M on two tracks at once), W0OPW twice as joined letters (1.5 points), K9BGL glued to itself (two readings since `rob-1`), and 5 were never read whole (weak or garbled text: N0AIS as N0AI and 0AIS); CW Skimmer read both repeats where our decoder read one. Reading a fragment beside a whole call (5LN K5LN) as a repeat was tried and dropped (A.12, `rob-1`). On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
 - Since `rob-1` a word named once does not pass without a list: a caller whose own signal is never read loses his row (the contest 221 to 210 true calls; on the four 2017 recordings 18 confirmed calls and 36 the RBN spotted elsewhere that day, nearly all real callers). With `points_named` 1, as before, a misread call before 5NN was listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
@@ -5665,9 +5676,11 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
 - With the variant `known_margin_nats`, a listed misreading the decoder was sure of passes on one bare word (on the generated contest EA5V, JA3E, ZL9XMP, the list's decoys).
 - The segmentation (variant `segment_joined`): a call ending in K beside a sign-off is a choice the lengths' shares and the K's bigram
   make by fractions of a nat (K8DX K over K8DXK by 0.2 nats), and the RBN's skimmers split the same way (K9IHK and K9IH, WA5DTK and
-  WA5DT); a call before DE with nothing after it is not believed (N5JJ DE ...); a repeat with a garbled copy (K3BFQK3BF) does not count;
-  a single copy after DE is believed on 2.77 nats alone, so the stage's two points are what keeps a call's form after a chance DE in
-  noise off the list; the keyword shares come from two days' text, one mostly a contest, and the noise model is not measured.
+  WA5DT; AK4JK read as AK4J K); a stray E or I behind a call after DE is taken into it (WN4ATI, W3QRE), since a fifth character costs
+  less than a stray; a call before DE with nothing after it is not believed (N5JJ DE ...); a repeat with a garbled copy (K3BFQK3BF)
+  does not count, nor a single copy with two strays behind (AB9CAEE, read 19 times); a single copy after DE is believed on 2.77 nats
+  alone, so the stage's two points are what keeps a call's form after a chance DE in noise off the list; the keyword shares come from
+  two days' text, one mostly a contest, and the noise model is not measured.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.

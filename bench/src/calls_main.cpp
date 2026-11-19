@@ -67,7 +67,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"segment_stray_nats", &c.segmentation.stray_nats}, {"segment_call_nats", &c.segmentation.call_nats},
         {"segment_repeat_nats", &c.segmentation.repeat_nats}, {"segment_de_before_nats", &c.segmentation.de_before_nats},
         {"segment_de_after_nats", &c.segmentation.de_after_nats}, {"segment_word_min_nats", &c.segmentation.word_min_nats},
-        {"segment_sign_off_nats", &c.segmentation.sign_off_nats}, {"segment_believe_nats", &c.segmentation.believe_nats},
+        {"segment_sign_off_nats", &c.segmentation.sign_off_nats}, {"segment_ambiguous_sign_off", &c.segmentation.ambiguous_sign_off}, {"segment_believe_nats", &c.segmentation.believe_nats},
     };
     const auto it = fields.find(name);
     if (it == fields.end()) throw std::runtime_error("no such setting: " + name);

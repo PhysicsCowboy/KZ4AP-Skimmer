@@ -469,7 +469,14 @@ std::vector<Segment> segment_word(std::string_view w, const SegmentationCosts& c
             continue;
         }
         out.push_back({text, b.kind, false, b.kind == Segment::Kind::Call ? b.evidence : 0.0});
-        if (b.to_previous != 0.0 && out.size() >= 2) out[out.size() - 2].evidence_nats += b.to_previous;
+        if (b.to_previous != 0.0 && out.size() >= 2) {
+            // A K or KN that would also end the call before it as a longer call (AK4J K, AK4JK) is no evidence: which it is, the
+            // segmentation's score decides by fractions of a nat (costs.ambiguous_sign_off).
+            Segment& call = out[out.size() - 2];
+            const bool ambiguous = b.kind == Segment::Kind::Keyword && text != "DE" && costs.ambiguous_sign_off == 0.0 &&
+                                   parse_call(call.text + text).has_value();
+            if (!ambiguous) call.evidence_nats += b.to_previous;
+        }
     }
     // A call's evidence: the gains of all its copies and of what frames them, the same on every copy.
     std::vector<double> total(out.size(), 0.0);
