@@ -34,7 +34,7 @@ With `--us-licenses HD.dat` (the license file of the FCC's complete amateur data
 and the license status in field 6, A for active) the table gains `us_license` after them: for a call of the US form
 (`US_FORM`: A[A-L], K, N or W, one letter more at most, a digit, one to three letters) `active`, `expired` (issued, no longer
 active) or `never` (never issued), and empty for any other form. The database holds every US license, so this check is two-sided
-for US calls, though unequally: `never` is conclusive that a call is false, while `active` is weak alone, since a one-edit garble
+for US calls, though unequally: `never` (not issued as of the file's date) is strong evidence that a call is false, though a license granted since or purged long ago reads so too, while `active` is weak alone, since a one-edit garble
 of a confirmed US call is an active license 38.1% of the time (2026-11-17's window calls; decision log, 2026-11-19). The counts gain
 `us_never` (over every class) and `unknown_us_active`. Membership leaves every class as it was.
 
