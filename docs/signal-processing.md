@@ -4843,7 +4843,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: places pooled | a call's readings add over the band, one per transmission (overlap in time), leaving out places where a variant holds it; the same support decides report and withdrawal | `pool_places` 1 | heuristic motivated by the evidence rule (readings at several places are not independent when a misreading is systematic); scope (the band, `window_s`) a choice; on by measurement (A.12) |
 | Callsign stage: glued pieces | each piece of a glued word has its own characters' times (K1ABCK1ABC: two readings) | `glued_pieces_timed` 1 | derived from the evidence rule (A.12) |
 | Callsign stage: a neighbor's text | every symbol read (default); a variant skips a stretch with `heard_from` that is whole words and whose neighbor's track holds every symbol of it within 25 ms | `skip_neighbors_text` 0, `neighbor_twin_s` 0.025 s | chosen by measurement: the variant changed 12 calls' fields, no call (A.12) |
-| Callsign stage: joined words segmented | off; a variant: 1 a word of 6 characters or more that rule 2 cannot split, 2 every such word; a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 0, `segment_min_chars` 6, `CallSearchConfig::segmentation` (`SegmentationCosts`) | off: +8 window-confirmed calls for +1 misreading on the 2026-11-17 recordings, none gained and 4 misreadings added held out (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
+| Callsign stage: joined words segmented | off; a variant: 1 a word of 6 characters or more that rule 2 cannot split, 2 every such word; a Viterbi cuts it into keywords, calls and strays (gains in nats against noise text); a call is believed at 2.5 nats of evidence (repeats; DE before 2.77, DE after 1.0, an unambiguous K after 1.5) on a word at least as likely the protocol's text as noise; at most 64 characters | `segment_joined` 0, `segment_min_chars` 6, `segment_alternatives` 0 (1: both readings, stripped, of a call whose last E, I or K the segmentation cannot place), `CallSearchConfig::segmentation` (`SegmentationCosts`) | off: +8 window-confirmed calls for +1 misreading on the 2026-11-17 recordings, none gained and 4 misreadings added held out (A.12); keyword shares, call lengths and `call_nats` measured, the form's gain derived, the rest heuristic |
 | Callsign stage: tiny calls | whole words only, 2 of them, listed or not; 0 leaves them unread | `tiny_points` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: a call that starts another | held as a variant at distance 1 (0: by edit distance alone) | `prefix_held` | heuristic, chosen by measurement (A.12) |
 | Callsign stage: withdrawal | pooled (the default): when its pooled support no longer passes; with `pool_places` 0: by a rival better at its best, or a local defeat with no pass elsewhere beyond 150 Hz (0: any local defeat) | `withdraw_own_place` | heuristic, by a hand test and measurement (A.12) |
@@ -5446,6 +5446,12 @@ track. A rereading after a correction is triggered by a change of text only, not
    word's ends. Examples (`JoinedWords` tests): DEK8DXK8DXK8DXK is DE K8DX K8DX K8DX K, E = 2.77 + 2 × 14.4 = 31.6 nats (K8DXK is
    a call); CQCQPOTADENA9M is CQ CQ POTA DE NA9M, E = 2.77; N5JJDEWA0QZK is N5JJ DE WA0QZ K, N5JJ 1.0 (not believed), WA0QZ 2.77;
    CQCQDXCQDXCQDXDEK8DXK8DK reads K8DX once (the last copy, K8DK, is a new call of no evidence).
+   With `segment_alternatives` 1 (0 by default; a further option of the variant), a believed copy whose last E, I or K the
+   segmentation cannot place gives both readings, each *stripped* (0.5 point), for the stage's repeats and arbitration to choose
+   between: a call ending in E, I or K that is a call without it (73DEWN4ATI: WN4AT and WN4ATI), and a call followed by a stray
+   beginning with E or I, or by the keyword K, that is a call with it (K5NUDEAK4JK73: AK4JK and AK4J). The segmentation's own choice
+   is emitted last, so that on a tie the stage's rule for near calls that begin within 1 s (the later made wins) leans to it. Each
+   reading takes its own characters' times.
 
 **Role,** from the nearest words outside the call and its repeats, skipping E, T, I, EE, TT, IE, EI, ET, TE: next word DE, *named*; previous word DE, *signed*; next word
 in {5NN, ENN, 599, UR, NR, RST, GM, GA, GE, GN, FB, TNX, TKS, R, SRI, AGN}, *named*; previous in {CQ, TEST, QRZ, CQCQ, TESTTEST, POTA, SOTA,
@@ -5651,7 +5657,12 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   file of 2026-11-18) 576 / 309 / 212 at the defaults, 576 / 313 / 215 with mode 1, 576 / 312 / 212 at `believe_nats` 3 (AK4JK lost as
   AK4J K from K5NUDEAK4JK73; misreadings WN4ATI from 73DEWN4ATI, W7Q and B3FW beside KW7Q and KB3FW; unknown W3QRE from ES73DEW3QRE,
   KC4HCH, AC0BU); the four 2017 recordings (review 18's logs) 200 / 56 / 54 to 200 / 56 / 55 (L99E from a grid square, EL99, sent
-  over and over). So it is no win held out: off by default. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
+  over and over). So it is no win held out: off by default. With `segment_alternatives` 1 as well (one iteration, no value retuned):
+  2026-11-17 168 / 83 / 103 (exact; WA9TOP, spotted that day, lost: GMDEWA9TOPK's readings split between WA9TOP and WA9TOPK);
+  2026-11-18 576 / 310 / 214 (AK4JK kept; WN4ATI, B3FW, AK4J and W3QRE gone; W7Q, KC4HCH and AC0BU stay); 2017 200 / 56 / 55. The
+  rule for a default (the coordinating session's, 2026-11-19: window-confirmed calls up on 2026-11-17, and on no held-out set more than one
+  new misreading per window-confirmed call gained) fails on 2026-11-18 (none gained, one new misreading, W7Q): off. The clean
+  held-out set (the 2026-11-19 recordings) waits for the RBN's day file, not posted at 14:03Z on 2026-11-19. The ambiguous-K rule (`ambiguous_sign_off` 0) came from AK4J and changes
   nothing at 2.5 nats on any of these sets. An earlier form (keywords equally likely, a call's first copy counted as evidence,
   repeats across strays, `believe_nats` 3) gave 168 / 90 / 106 on 2026-11-17: N0TAR lost as N0T AR, OO0O and W1BR from garbled
   repeats; and until strings repeated within themselves were refused, 3J3J from periodic garbage. On 2 000 words of noise text (12 to

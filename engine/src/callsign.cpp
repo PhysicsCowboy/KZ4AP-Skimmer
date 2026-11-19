@@ -634,13 +634,33 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 const std::string_view prev = a > 0 ? std::string_view(segs[a - 1].text) : before(i);
                 const std::string_view next = b < segs.size() ? std::string_view(segs[b].text) : after(i + 1);
                 const bool twice = (k > 0 && segs[k - 1].text == s.text) || (k + 1 < segs.size() && segs[k + 1].text == s.text);
-                const std::size_t before_emit = out.size();
-                emit(s.text, Reading::Glued, i, i + 1, role_from(prev, next), twice);
-                if (out.size() > before_emit) {
-                    segmented = true;
-                    if (timed) {
-                        out.back().start_s = symbols[word.first + offset].start_s;
-                        out.back().end_s = symbols[word.first + offset + s.text.size() - 1].end_s;
+                // The readings the segmentation cannot tell apart (ReadOptions::segment_alternatives): a call ending in E, I or K
+                // that is a call without it (W3QRE, W3QR), and a call with a stray E or I or a K after it that is a call with it
+                // (AK4J K, AK4JK). Each is a stripped reading, the segmentation's last, so that the stage's repeats choose and, on a
+                // tie, its rule for readings that begin together (the later made) leans to the segmentation's choice.
+                std::vector<std::string> readings;
+                if (options.segment_alternatives != 0) {
+                    const char end = s.text.back();
+                    if ((end == 'E' || end == 'I' || end == 'K') && parse_call(std::string_view(s.text).substr(0, s.text.size() - 1)))
+                        readings.push_back(s.text.substr(0, s.text.size() - 1));
+                    if (k + 1 < segs.size()) {
+                        const Segment& after_it = segs[k + 1];
+                        const bool stray = after_it.kind == Segment::Kind::Stray && (after_it.text[0] == 'E' || after_it.text[0] == 'I');
+                        const bool sign_off = after_it.kind == Segment::Kind::Keyword && after_it.text == "K";
+                        if ((stray || sign_off) && parse_call(s.text + after_it.text[0])) readings.push_back(s.text + after_it.text[0]);
+                    }
+                }
+                const Reading how = readings.empty() ? Reading::Glued : Reading::Stripped;
+                readings.push_back(s.text);
+                for (const std::string& text : readings) {
+                    const std::size_t before_emit = out.size();
+                    emit(text, how, i, i + 1, role_from(prev, next), twice);
+                    if (out.size() > before_emit) {
+                        segmented = true;
+                        if (timed) {
+                            out.back().start_s = symbols[word.first + offset].start_s;
+                            out.back().end_s = symbols[word.first + offset + text.size() - 1].end_s;
+                        }
                     }
                 }
             }
@@ -868,6 +888,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     ReadOptions options;
     options.segment_joined = static_cast<int>(config_.segment_joined);
     options.segment_min_chars = static_cast<std::size_t>(std::max(0.0, config_.segment_min_chars));
+    options.segment_alternatives = static_cast<int>(config_.segment_alternatives);
     options.costs = config_.segmentation;
     for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;

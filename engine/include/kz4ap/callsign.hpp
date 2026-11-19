@@ -174,6 +174,9 @@ struct ReadOptions {
     // 0: split_glued only (the defaults); 1: segment_word when split_glued finds no split; 2: segment_word in place of split_glued.
     int segment_joined = 0;
     std::size_t segment_min_chars = 6;  // words shorter than this are not segmented (heuristic)
+    // When not 0, a believed call ending in E, I or K that is a call without it, or followed by a stray E or I or a K with which it
+    // is a call, gives both readings, each stripped (0.5 point), for the stage to choose between.
+    int segment_alternatives = 0;
     SegmentationCosts costs;
 };
 
@@ -298,6 +301,8 @@ struct CallSearchConfig {
     // readings with the roles their neighbors on the path give. A variant (branch joined-words-1; appendix A.12).
     double segment_joined = 0.0;
     double segment_min_chars = 6.0;
+    // Both readings of a call whose last E, I or K the segmentation cannot place, each stripped (ReadOptions::segment_alternatives).
+    double segment_alternatives = 0.0;
     SegmentationCosts segmentation;
 };
 

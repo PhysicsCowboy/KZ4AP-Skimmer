@@ -1291,12 +1291,19 @@ TEST(CallSearch, ANewKnownCallListMarksTheCallsHeld) {
 
 namespace {
 
-std::vector<CallReading> readings_with(const std::string& text, int mode) {
+std::vector<CallReading> readings_with(const std::string& text, int mode, int alternatives = 0) {
     const std::vector<DecodedSymbol> s = symbols(text);
     const std::vector<Word> w = words_of(s);
     ReadOptions options;
     options.segment_joined = mode;
+    options.segment_alternatives = alternatives;
     return read_calls(w, 0, w.size(), s, options);
+}
+
+const CallReading* reading_of(const std::vector<CallReading>& r, const std::string& base) {
+    for (const CallReading& x : r)
+        if (x.base == base) return &x;
+    return nullptr;
 }
 
 // The segments' texts, a believed call marked with *.
@@ -1464,4 +1471,50 @@ TEST(JoinedWords, TheStageReportsEK8DXOnlyWithTheVariant) {
     EXPECT_FALSE(run(0.0));
     EXPECT_TRUE(run(1.0));
     EXPECT_TRUE(run(2.0));
+}
+
+TEST(JoinedWords, ALastLetterTheSegmentationCannotPlaceGivesBothReadingsStripped) {
+    // A stray I behind a call after DE (73DEWN4ATI): WN4AT and WN4ATI, each stripped, the segmentation's choice (WN4ATI) last.
+    const auto off = readings_with("73DEWN4ATI", 1);
+    ASSERT_NE(reading_of(off, "WN4ATI"), nullptr);
+    EXPECT_EQ(reading_of(off, "WN4ATI")->reading, Reading::Glued);
+    EXPECT_EQ(reading_of(off, "WN4AT"), nullptr);
+    const auto on = readings_with("73DEWN4ATI", 1, 1);
+    ASSERT_EQ(on.size(), 2u);
+    EXPECT_EQ(on[0].base, "WN4AT");
+    EXPECT_EQ(on[1].base, "WN4ATI");
+    for (const CallReading& x : on) {
+        EXPECT_EQ(x.reading, Reading::Stripped);
+        EXPECT_EQ(x.role, Role::Sender);
+        EXPECT_NEAR(x.start_s, 0.4, 1e-9);
+    }
+    EXPECT_NEAR(on[0].end_s, 0.9, 1e-9);
+    EXPECT_NEAR(on[1].end_s, 1.0, 1e-9);
+    // A K after a call that is a call with it (K5NUDEAK4JK73): AK4JK and AK4J.
+    const auto k = readings_with("K5NUDEAK4JK73", 1, 1);
+    ASSERT_NE(reading_of(k, "AK4JK"), nullptr);
+    ASSERT_NE(reading_of(k, "AK4J"), nullptr);
+    EXPECT_EQ(reading_of(k, "AK4JK")->reading, Reading::Stripped);
+    // EK8DX: only the copy before the K has an alternative; the others stay glued.
+    const auto ek = readings_with("CQCQCQDXCQDXCQDXDEK8DXK8DXK8DXK", 1, 1);
+    EXPECT_EQ(count_of(ek, "K8DX"), 3u);
+    EXPECT_EQ(count_of(ek, "K8DXK"), 1u);
+    EXPECT_EQ(std::count_if(ek.begin(), ek.end(), [](const CallReading& x) { return x.reading == Reading::Glued; }), 2);
+    // A word with no such letter reads as without the option.
+    EXPECT_EQ(readings_with("CQCQPOTADENA9M", 1, 1).size(), readings_with("CQCQPOTADENA9M", 1).size());
+}
+
+TEST(JoinedWords, TheStageChoosesBetweenTheTwoReadingsByItsEvidence) {
+    const auto run = [](double alternatives) {
+        CallSearchConfig config;
+        config.segment_joined = 1.0;
+        config.segment_alternatives = alternatives;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "73DEWN4ATI 73DEWN4ATI DE WN4AT K ", 0.0);
+        s.search.advance(60.0);
+        return std::make_pair(s.row("WN4AT") != nullptr, s.row("WN4ATI") != nullptr);
+    };
+    EXPECT_EQ(run(0.0), std::make_pair(false, true));  // the segmentation's choice, 2 points, holds WN4AT's 1
+    EXPECT_EQ(run(1.0), std::make_pair(true, false));  // WN4AT 0.5 + 0.5 + 1 against WN4ATI 0.5 + 0.5
 }
