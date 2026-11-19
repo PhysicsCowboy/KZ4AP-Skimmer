@@ -121,6 +121,48 @@ TEST(CallGrammar, Portable) {
     EXPECT_FALSE(is_call("K1ABC/P/M"));
 }
 
+TEST(CallGrammar, ThreeCharactersBeforeTheDigitOnlyInAHalfSeries) {
+    // RR 19.68.1: three characters before the digit only where Appendix 42 splits the first two between nations (3DA-3DM
+    // Eswatini, 3DN-3DZ Fiji), and then three characters at most after it; and Guinea's 3XY, which its DXpeditions sign. Signal
+    // reports run together (5NN5NN) and a short word repeated (5RE5RE) had a call's form as 5NN or 5RE, 5, then letters.
+    for (const char* word : {"5NN5NN", "5NN5NNK", "5NN5NNCT", "5NN5NNNJ", "5RE5RE", "8RN8RN", "4XZ4XZ", "3XA1D", "3DA0ABCD", "3XY1ABCD"})
+        EXPECT_FALSE(is_call(word)) << word;
+    for (const char* call : {"3DA0RU", "3DA0GY", "3D2AB", "3D2ABC", "3XY1D", "3XY7C", "3X2ZS", "5N7M", "5N0OCH", "5N2AB", "5N5N", "9A1A",
+                             "4U1ITU", "3B8CF", "6Y5WJ"})
+        EXPECT_TRUE(is_call(call)) << call;
+}
+
+TEST(CallGrammar, TheUnitedStatesSeriesHaveTheFccsForms) {
+    // K, N, W and AA to AL: one to three letters after the digit; AA to AL and NA to NZ two at most (the FEMA stations AF#EMA and
+    // NF#EMA excepted); a 1x1 is a special-event call, never ending in X.
+    for (const char* word : {"K9STPL", "AB9CAEE", "AB9CAE", "W0RAUW", "KE4COHK", "NA1ABC", "AL7ABC", "K1X", "W7X", "WA1ABCD"})
+        EXPECT_FALSE(is_call(word)) << word;
+    for (const char* call : {"K1ABC", "W1AW", "N2ASD", "KP4AA", "KP4ABC", "NP4A", "WP4ABC", "KH6ABC", "AH6AB", "NH6A", "KL7ABC",
+                             "AL7AB", "WL7A", "KH0AA", "KG4AB", "AA1A", "KA1A", "NA1A", "WA1A", "AB9CA", "NN5NN", "AF1EMA", "NF0EMA",
+                             "K1A", "W7Q", "N5V", "K4U", "W0Z", "WA0QZK", "KC4AAA"})
+        EXPECT_TRUE(is_call(call)) << call;
+    // Elsewhere four letters stay a call's form (RR 19.68), marked unusual; a US call's special form (W100AW) is as before.
+    for (const char* call : {"VK3FABC", "8N3ACAF", "EE4EEEE", "TE7TTTD", "GA5NNON", "OM3MSTR"}) {
+        const auto p = parse_call(call);
+        ASSERT_TRUE(p.has_value()) << call;
+        EXPECT_TRUE(p->unusual) << call;
+        EXPECT_FALSE(p->special) << call;
+    }
+    EXPECT_FALSE(parse_call("K1ABC")->unusual);
+    EXPECT_FALSE(parse_call("SH5SHI")->unusual);  // a call's form: SH is Sweden's (SH9YOTA), and only the tiny rule reads it (A.12)
+    const auto w100aw = parse_call("W100AW");
+    ASSERT_TRUE(w100aw.has_value());
+    EXPECT_TRUE(w100aw->special);
+    EXPECT_FALSE(w100aw->unusual);
+    // Portable forms keep the base call's rules.
+    EXPECT_EQ(parse_call("DL/K1ABC")->base, "K1ABC");
+    EXPECT_EQ(parse_call("K1ABC/P")->base, "K1ABC");
+    EXPECT_EQ(parse_call("W1/DL1ABC")->base, "DL1ABC");
+    EXPECT_EQ(parse_call("KH6/K1ABC")->base, "K1ABC");
+    EXPECT_FALSE(is_call("DL/K9STPL"));
+    EXPECT_FALSE(is_call("K9STPL/P"));
+}
+
 TEST(CallGrammar, EditDistance) {
     EXPECT_EQ(edit_distance("IK0HBN", "IK0HBN", 2), 0);
     EXPECT_EQ(edit_distance("IK0HBN", "IK0HBT", 2), 1);
@@ -844,8 +886,8 @@ TEST(CallSearch, AOneLetterSuffixIsHeldByAMuchBetterCallTwoEditsAwayWithItsPrefi
     two.short_variant_ratio = 2.0;
     two.far_variant_ratio = 3.0;
     EXPECT_FALSE(run(two, "K1BX", 7));
-    // More than two edits apart (K1T and K1BXYZ, four) is no pair.
-    EXPECT_TRUE(run(CallSearchConfig{}, "K1BXYZ", 7));
+    // More than two edits apart (K1T and K1BXY, three) is no pair. (K1BXYZ, four, has no US form since call-form-1.)
+    EXPECT_TRUE(run(CallSearchConfig{}, "K1BXY", 7));
 }
 
 TEST(Readings, AMaidenheadLocatorGivesNoCall) {
@@ -1443,14 +1485,17 @@ TEST(JoinedWords, FormGains) {
         return static_cast<std::size_t>((state >> 33) % 36);
     };
     const std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    // With FORM_TABLE set, 2 000 000 strings a length and the gains printed: how the table is made.
+    const bool table = std::getenv("FORM_TABLE") != nullptr;
     for (std::size_t n = 3; n <= 9; ++n) {
         int hits = 0;
-        const int draws = 200000;
+        const int draws = table ? 2000000 : 200000;
         for (int k = 0; k < draws; ++k) {
             std::string w;
             for (std::size_t c = 0; c < n; ++c) w += alphabet[next()];
             if (parse_call(w)) ++hits;
         }
+        if (table) std::printf("call_form_nats(%zu) = %.2f nats (%d of %d)\n", n, -std::log(hits / static_cast<double>(draws)), hits, draws);
         EXPECT_NEAR(call_form_nats(n), -std::log(hits / static_cast<double>(draws)), 0.1) << n;
     }
     // The shares of call lengths sum to 1 (3 to 12 characters).
@@ -1562,4 +1607,74 @@ TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {
     s.search.advance(60.0);
     EXPECT_NE(s.row("K1AB"), nullptr);
     EXPECT_EQ(s.row("K1ABC"), nullptr);
+}
+
+// ---- Call forms (branch call-form-1)
+
+TEST(CallForms, AnUnusualFormIsReportedFromAListOnly) {
+    // Four letters after the digit (EE4EEEE, TE7TTTD, VK3FABC): CW Skimmer's unusual pattern, from a list only by default, as a
+    // special form is; with unusual_listed_only 0 it is any call.
+    const auto run = [](CallSearchConfig config, std::shared_ptr<const KnownCalls> known, const std::string& call) {
+        Stage s(config, std::move(known));
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQ DE " + call + " " + call + " K ", 0.0);
+        s.text(1, 1000.0, "CQ DE " + call + " " + call + " K ", 10.0);
+        s.search.advance(60.0);
+        return s.row(call) != nullptr;
+    };
+    EXPECT_EQ(CallSearchConfig{}.unusual_listed_only, 1.0);
+    EXPECT_FALSE(run(CallSearchConfig{}, nullptr, "VK3FABC"));
+    EXPECT_FALSE(run(CallSearchConfig{}, nullptr, "TE7TTTD"));
+    EXPECT_TRUE(run(CallSearchConfig{}, nullptr, "VK3FAB"));
+    auto known = std::make_shared<KnownCalls>();
+    known->add("VK3FABC");
+    EXPECT_TRUE(run(CallSearchConfig{}, known, "VK3FABC"));
+    CallSearchConfig off;
+    off.unusual_listed_only = 0.0;
+    EXPECT_TRUE(run(off, nullptr, "VK3FABC"));
+    // The readings carry the mark.
+    const auto r = readings("DE VK3FABC K");
+    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "VK3FABC"; });
+    ASSERT_NE(it, r.end());
+    EXPECT_TRUE(it->unusual);
+}
+
+TEST(CallForms, JoinedWordsOfPeriodicTextGiveNoCall) {
+    // L 9 6LL 9 6LL (20 m, 2026-11-17): joined, L96LL; its characters go on repeating every 4 (96LL), shorter than the call, over
+    // more than two periods. A call sent twice keeps its own period and stays.
+    const auto joined = [](const std::string& text, int periodic) {
+        const std::vector<DecodedSymbol> s = symbols(text);
+        const std::vector<Word> w = words_of(s);
+        ReadOptions options;
+        options.joined_periodic = periodic;
+        return read_calls(w, 0, w.size(), s, options);
+    };
+    EXPECT_TRUE(has_base(joined("L 9 6LL 9 6LL 9 6LL", 0), "L96LL"));
+    EXPECT_FALSE(has_base(joined("L 9 6LL 9 6LL 9 6LL", 1), "L96LL"));
+    for (const auto& [text, call] : std::vector<std::pair<std::string, std::string>>{
+             {"N 5 JJ N 5 JJ K", "N5JJ"}, {"DE K X 9 F K X 9 F K", "KX9F"}, {"WA 0 QZK", "WA0QZK"}, {"N 5 JJ DE K 1 ABC", "K1ABC"}}) {
+        EXPECT_EQ(count_of(joined(text, 0), call), count_of(joined(text, 1), call)) << text;
+        EXPECT_GE(count_of(joined(text, 1), call), 1u) << text;
+    }
+    // A phase of the call sent twice is periodic text: N5JJN (N 5 JJ N, then 5 JJ) goes, the call stays. (KX9FK from the last copy
+    // and the K after it is not periodic text: the K is the ambiguous sign-off, for the evidence to decide.)
+    EXPECT_TRUE(has_base(joined("N 5 JJ N 5 JJ K", 0), "N5JJN"));
+    EXPECT_FALSE(has_base(joined("N 5 JJ N 5 JJ K", 1), "N5JJN"));
+    EXPECT_EQ(CallSearchConfig{}.joined_periodic, 1.0);
+}
+
+TEST(CallForms, ARepeatAfterAKeywordThatMakesItALongerCallIsNoEvidence) {
+    // TTW7QKW7Q (20 m, 2026-11-18, the CWT): W7Q K W7Q, or W7Q KW7Q with KW7Q's first K garbled to TT. KW7Q was the station (the
+    // RBN spotted it); W7Q was never issued. Its second copy's repeat is no evidence, so W7Q is not believed; with
+    // ambiguous_repeat 1 it is, as before.
+    EXPECT_EQ(cut("TTW7QKW7Q").find('*'), std::string::npos);
+    SegmentationCosts as_before;
+    as_before.ambiguous_repeat = 1.0;
+    bool believed = false;
+    for (const Segment& s : segment_word("TTW7QKW7Q", as_before))
+        believed = believed || (s.kind == Segment::Kind::Call && s.text == "W7Q" && s.believed);
+    EXPECT_TRUE(believed);
+    // A repeat with no keyword before it, or after one that makes no call with it, still counts.
+    EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
+    EXPECT_EQ(cut("W1AWW1AWK"), "W1AW* W1AW* K");
 }
