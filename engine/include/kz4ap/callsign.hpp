@@ -128,6 +128,10 @@ struct CallReading {
     // them has probability 1, which a decoder that keeps no margins gives every symbol. CallSearch fills it.
     double margin_nats = kUnknownMargin;
     static constexpr double kUnknownMargin = -1.0;
+    // A joined reading whose first word is a call by itself (K4VR T: K4VRT, its first word K4VR): that call's base, the fragment the
+    // same transmission also gives as a whole word (CallSearchConfig::joined_covers); empty otherwise, and when the words after it
+    // are only a K or an R, a sign-off or a roger far more often than a call's last letter.
+    std::string covers;
 };
 
 // nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
@@ -205,6 +209,10 @@ struct ReadOptions {
     // shorter than the call over at least two periods and the whole call (L 9 6LL 9 6LL: L96LL; 5RE 5RE: 5RE5RE): periodic text, no
     // call, as in segment_word. A call sent twice (N 5 JJ N 5 JJ) has the call's own period and stays. Heuristic (call-form-1).
     int joined_periodic = 0;
+    // When not 0, an X in front of a call is also read as TU run onto it, a stripped reading (XW3RJ: W3RJ, 0.5 point), as a stray
+    // E, T or I is: T (-) and U (..-) with their letter space lost are X (-..-), and TU before his own call ends a runner's every QSO
+    // in a contest. Derived from the code; the rule's value chosen by measurement (call-arb-1).
+    int x_as_tu = 0;
 };
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
@@ -346,6 +354,14 @@ struct CallSearchConfig {
     double prefix_digit_listed_only = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
+    // ReadOptions::x_as_tu.
+    double x_as_tu = 0.0;
+    // A transmission read both as a fragment's whole word and as a joined reading that starts with it (K4VR T: K4VR at 1 point,
+    // K4VRT at joined_points; CallReading::covers) counts, in the comparison of the two calls as near variants (held_at), 1: for the
+    // longer only, the fragment's occurrence left out; 2: for neither, unless neither then has any points, when both count as
+    // before; 0: for both, each at its points, as before (the fragment wins every such transmission, 1 against 0.75). The report
+    // test is unchanged. A variant (call-arb-1).
+    double joined_covers = 0.0;
 };
 
 // One line of the list.
@@ -412,6 +428,7 @@ private:
         bool framed = false;
         bool own = false;   // some reading of it was not Role::Named: the station itself was heard here (CallRow::heard_s)
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
+        std::string covers;  // CallReading::covers of a joined reading it holds, the first one
     };
     struct Candidate {
         std::string base;
@@ -429,6 +446,7 @@ private:
         double best_points = 0;
         bool heard = false;
         bool framed = false;
+        bool covers = false;  // some occurrence covers a fragment (Occurrence::covers)
     };
     struct TrackText {
         std::vector<DecodedSymbol> symbols;  // kept: from the context before what has been read
@@ -456,6 +474,10 @@ private:
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
+    // The points, within variant_hz of this place and window_s of now_s, of the fragment's occurrences that a joined occurrence of
+    // the longer call covers (one transmission: they overlap in time within same_place_hz), and of those covering occurrences
+    // (CallSearchConfig::joined_covers).
+    std::pair<double, double> covered_points(const Candidate& fragment, const Candidate& longer, double freq_hz, double now_s) const;
     // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s of now_s, one per
     // transmission, leaving out those at places where it is held.
     Support pooled_support(const Candidate& candidate, double now_s);

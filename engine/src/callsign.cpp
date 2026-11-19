@@ -798,9 +798,10 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             }
         }
         // A stray character on either end; both sides of the question stay, for the evidence to decide.
+        // An X in front is TU run onto the call when asked (ReadOptions::x_as_tu): T and U with no letter space are X.
         if (!lone_keyword && w.size() >= 4) {
             for (std::size_t n = 1; n <= 2 && n + 3 <= w.size(); ++n) {
-                if (!stray_start(w[n - 1])) break;
+                if (!stray_start(w[n - 1]) && !(options.x_as_tu != 0 && w[n - 1] == 'X')) break;
                 const std::string rest = w.substr(n);
                 if (parse_call(rest)) emit(rest, Reading::Stripped, i, i + 1, role_of(rest, i, i + 1));
             }
@@ -824,6 +825,11 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         // Short words that make a call together.
         if (w.size() <= 4 && !is_cw_word(w)) {
             std::string joined = w;
+            // The fragment a joined reading covers: the first word as a call by itself, as the whole reading above took it. A
+            // shorter joined reading from this word (K 4VR T: K4VR for K4VRT) is none: as one, it lost window-confirmed calls
+            // (HB9T, KZ8R, K8BZ, HC5A, W6SX) on the replays of call-arb-1.
+            const auto first = direct && !lone_keyword ? parse_call(w) : std::nullopt;
+            const std::string fragment = first ? first->base : std::string();
             for (std::size_t j = i + 1; j < words.size() && j <= i + 5; ++j) {
                 const std::string& next = words[j].text;
                 if (is_prosign(next) || next.size() > 4) break;
@@ -832,7 +838,11 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (joined.size() > 9) break;
                 if (!parse_call(joined)) continue;
                 if (options.joined_periodic != 0 && periodic_text(joined, j + 1)) continue;
+                const std::size_t before_emit = out.size();
                 emit(joined, Reading::Joined, i, j + 1, role_of(joined, i, j + 1));
+                // A sign-off or a roger after a call (W4PM K, W4PM R) is no letter of it: no cover.
+                const bool sign_off = j == i + 1 && (next == "K" || next == "R");
+                if (out.size() > before_emit && !fragment.empty() && !sign_off && out.back().base != fragment) out.back().covers = fragment;
             }
         }
     }
@@ -1014,6 +1024,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     options.segment_alternatives = static_cast<int>(config_.segment_alternatives);
     options.costs = config_.segmentation;
     options.joined_periodic = static_cast<int>(config_.joined_periodic);
+    options.x_as_tu = static_cast<int>(config_.x_as_tu);
     for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
@@ -1086,6 +1097,8 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
             if (r.role != Role::Named) o.own = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
             o.margin = std::max(o.margin, margin);
+            if (o.covers.empty() && !r.covers.empty()) o.covers = r.covers;
+            c.covers = c.covers || !r.covers.empty();
             evaluate(c, freq_hz, r.end_s);
             return;
         }
@@ -1099,6 +1112,8 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     o.framed = framed;
     o.own = r.role != Role::Named;
     o.margin = margin;
+    o.covers = r.covers;
+    c.covers = c.covers || !r.covers.empty();
     c.recent.push_back(o);
     while (!c.recent.empty() && r.end_s - c.recent.front().end_s > config_.window_s) c.recent.pop_front();
     ++c.count;
@@ -1194,6 +1209,24 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
         const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
         if (theirs <= 0) continue;
         const int d = prefix ? 1 : distance;
+        // A transmission read as a fragment and as a joined reading that starts with it (CallSearchConfig::joined_covers).
+        double mine_vs = mine, theirs_vs = theirs;
+        if (config_.joined_covers != 0.0 && (c.covers || other.covers) && (c.base.starts_with(other.base) || other.base.starts_with(c.base))) {
+            const bool c_short = other.base.starts_with(c.base);
+            const auto [fragment_points, longer_points] = c_short ? covered_points(c, other, freq_hz, now_s) : covered_points(other, c, freq_hz, now_s);
+            double& fragment_vs = c_short ? mine_vs : theirs_vs;
+            double& longer_vs = c_short ? theirs_vs : mine_vs;
+            // 3: for the longer only when it has points of its own, outside the transmissions it covers; else as before.
+            const bool own = config_.joined_covers != 3.0 || longer_vs - longer_points > 0.0;
+            if (own) fragment_vs -= fragment_points;
+            if (config_.joined_covers == 2.0) {
+                longer_vs -= longer_points;
+                if (fragment_vs <= 0.0 && longer_vs <= 0.0) {
+                    mine_vs = mine;
+                    theirs_vs = theirs;
+                }
+            }
+        }
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
         const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
@@ -1205,15 +1238,44 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
             if (std::abs(a.first_s - b.first_s) <= 1.0) return a.made > b.made;
             return a.first_s < b.first_s;
         };
-        if (beats(other, theirs, c, mine)) {
+        if (beats(other, theirs_vs, c, mine_vs)) {
             held = true;
             if (rival_best) *rival_best = std::max(*rival_best, other.best_points);
             if (!rival_best) return true;  // only the answer is wanted
-        } else if (beaten && beats(c, mine, other, theirs)) {
+        } else if (beaten && beats(c, mine_vs, other, theirs_vs)) {
             if (other.reported) beaten->push_back(&other);
         }
     }
     return held;
+}
+
+std::pair<double, double> CallSearch::covered_points(const Candidate& fragment, const Candidate& longer, double freq_hz, double now_s) const {
+    const auto counts = [&](const Occurrence& o) {
+        return std::abs(o.freq_hz - freq_hz) <= config_.variant_hz && std::abs(now_s - o.end_s) <= config_.window_s;
+    };
+    const auto one_transmission = [&](const Occurrence& f, const Occurrence& l) {
+        return l.covers == fragment.base && f.start_s < l.end_s && l.start_s < f.end_s && std::abs(f.freq_hz - l.freq_hz) <= config_.same_place_hz;
+    };
+    double fragment_points = 0.0, longer_points = 0.0;
+    for (const Occurrence& f : fragment.recent) {
+        if (!counts(f)) continue;
+        for (const Occurrence& l : longer.recent) {
+            if (counts(l) && one_transmission(f, l)) {
+                fragment_points += f.points;
+                break;
+            }
+        }
+    }
+    for (const Occurrence& l : longer.recent) {
+        if (l.covers != fragment.base || !counts(l)) continue;
+        for (const Occurrence& f : fragment.recent) {
+            if (counts(f) && one_transmission(f, l)) {
+                longer_points += l.points;
+                break;
+            }
+        }
+    }
+    return {fragment_points, longer_points};
 }
 
 void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {

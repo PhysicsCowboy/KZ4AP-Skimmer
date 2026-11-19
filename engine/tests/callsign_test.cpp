@@ -1827,3 +1827,112 @@ TEST(CallForms, ARepeatAfterAKeywordThatMakesItALongerCallIsNoEvidence) {
     EXPECT_EQ(cut("DEK8DXK8DXK8DXK"), "DE K8DX* K8DX* K8DX* K");
     EXPECT_EQ(cut("W1AWW1AWK"), "W1AW* W1AW* K");
 }
+
+// ---- Arbitration (call-arb-1)
+
+namespace {
+
+std::vector<CallReading> readings_x(const std::string& text, int x_as_tu) {
+    const std::vector<DecodedSymbol> s = symbols(text);
+    const std::vector<Word> w = words_of(s);
+    ReadOptions options;
+    options.x_as_tu = x_as_tu;
+    return read_calls(w, 0, w.size(), s, options);
+}
+
+}  // namespace
+
+TEST(Arbitration, AnXInFrontIsAlsoReadAsTuRunOntoTheCall) {
+    // T (-) and U (..-) with their letter space lost are X (-..-): TU W3RJ read as XW3RJ.
+    const auto r = readings_x("XW3RJ CQ", 1);
+    const CallReading* w3rj = reading_of(r, "W3RJ");
+    ASSERT_NE(w3rj, nullptr);
+    EXPECT_EQ(w3rj->reading, Reading::Stripped);
+    EXPECT_EQ(w3rj->role, Role::Sender);
+    EXPECT_TRUE(has_base(r, "XW3RJ"));  // both sides of the question stay
+    EXPECT_FALSE(has_base(readings_x("XW3RJ CQ", 0), "W3RJ"));
+    EXPECT_TRUE(has_base(readings_x("EXW3RJ", 1), "W3RJ"));  // a stray E, then the X
+    // A real call that starts with X keeps its whole word's point against the stripped half point (XE2ABC: E2ABC at 0.5).
+    const std::vector<CallReading> x = readings_x("XE2ABC", 1);
+    const CallReading* e2abc = reading_of(x, "E2ABC");
+    ASSERT_NE(e2abc, nullptr);
+    EXPECT_EQ(e2abc->reading, Reading::Stripped);
+}
+
+// The 2026-11-18 20 m CWT recording's W3RJ (spotted by 116 RBN skimmers): reported at 17.7 s on CQ CWT W3RJ, then withdrawn at
+// 2 150.4 s when its runs of QSOs, each ended TU W3RJ and decoded XW3RJ, gave the misreading more points in the window at its
+// place (52.5 against 46.0); XW3RJ was listed instead. Read as TU and the call, each XW3RJ gives W3RJ half a point too.
+TEST(Arbitration, ACallSignedAfterTuRunTogetherIsNotLostToTheMisreading) {
+    const auto run = [](double x_as_tu) {
+        CallSearchConfig config;
+        config.x_as_tu = x_as_tu;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        for (int i = 0; i < 4; ++i) s->text(1, 1000.0, "CQ CWT W3RJ ", 10.0 * i);
+        s->search.advance(60.0);
+        EXPECT_NE(s->row("W3RJ"), nullptr);
+        for (int i = 0; i < 5; ++i) s->text(1, 1000.0, "5NN XW3RJ CQ ", 100.0 + 10.0 * i);
+        s->search.advance(200.0);
+        return s;
+    };
+    const auto before = run(0.0);
+    EXPECT_EQ(before->row("W3RJ"), nullptr);  // 4 points against 5
+    EXPECT_NE(before->row("XW3RJ"), nullptr);
+    const auto after = run(1.0);
+    EXPECT_NE(after->row("W3RJ"), nullptr);  // 4 + 5 x 0.5 = 6.5 against 5
+    EXPECT_EQ(after->row("XW3RJ"), nullptr);
+}
+
+TEST(Arbitration, AJoinedReadingCoversTheWholeWordItStartsWith) {
+    const auto covers = [](const std::string& text, const std::string& base) {
+        const std::vector<CallReading> r = readings(text);
+        const CallReading* x = reading_of(r, base);
+        return x ? x->covers : std::string("(no reading)");
+    };
+    EXPECT_EQ(covers("DE K4VR T", "K4VRT"), "K4VR");
+    EXPECT_EQ(covers("DE K4VR T", "K4VR"), "");    // the whole word covers nothing
+    EXPECT_EQ(covers("DE K 4VR T", "K4VRT"), "");  // its first word is no call
+    EXPECT_EQ(covers("DE W4PM K", "W4PMK"), "");   // a sign-off
+    EXPECT_EQ(covers("DE W4PM R", "W4PMR"), "");   // a roger
+    EXPECT_EQ(covers("X W3RJ", "XW3RJ"), "");      // a letter before: the fragment must start the reading
+}
+
+// The 2026-11-17 40 m recording's K4VRT (RBN-confirmed), who sends DE K4VR T with a word space before the T: each such transmission
+// gave K4VR a whole word's point and K4VRT a joined reading's 0.75, so the fragment beat the call it is part of.
+TEST(Arbitration, ATransmissionAJoinedReadingCoversCountsForTheLongerCallWhenItHasPointsOfItsOwn) {
+    const auto run = [](double covers) {
+        CallSearchConfig config;
+        config.joined_covers = covers;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        for (int i = 0; i < 4; ++i) s->text(1, 1000.0, "DE K4VR T K ", 10.0 * i);
+        s->text(1, 1000.0, "DE K4VRT K ", 50.0);
+        s->search.advance(100.0);
+        return s;
+    };
+    const auto before = run(0.0);  // K4VR 4 + 0.5 (K4VRT stripped) against K4VRT 4 x 0.75 + 1
+    EXPECT_NE(before->row("K4VR"), nullptr);
+    EXPECT_EQ(before->row("K4VRT"), nullptr);
+    const auto after = run(3.0);  // K4VR's four covered transmissions left out: 0.5 against 4, and K4VRT has 1 of its own
+    EXPECT_NE(after->row("K4VRT"), nullptr);
+    EXPECT_EQ(after->row("K4VR"), nullptr);
+    EXPECT_NE(run(1.0)->row("K4VRT"), nullptr);
+}
+
+// KC2LRC-2's W6SX (RBN-confirmed), read W6SX E twice: the E is a stray, and W6SXE, read only so, has no points of its own.
+TEST(Arbitration, ALongerCallReadOnlyAsTheFragmentAndALetterTakesNothing) {
+    const auto run = [](double covers) {
+        CallSearchConfig config;
+        config.joined_covers = covers;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->text(1, 1000.0, "QRZ W6SX E ", 0.0);
+        s->text(1, 1000.0, "QRZ W6SX E ", 10.0);
+        s->search.advance(60.0);
+        return s;
+    };
+    EXPECT_NE(run(0.0)->row("W6SX"), nullptr);
+    EXPECT_NE(run(3.0)->row("W6SX"), nullptr);
+    EXPECT_EQ(run(3.0)->row("W6SXE"), nullptr);
+    EXPECT_NE(run(2.0)->row("W6SX"), nullptr);  // for neither: neither has any points then, so both count as before
+}
