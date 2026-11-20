@@ -558,12 +558,12 @@ with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 ## 11. Callsign stage
 
-`CallSearch` reads any decoder's track and text events. Values are
-heuristics unless marked. Appendix: A.12.
+`CallSearch` reads any decoder's tracks and text; values are
+heuristics unless marked (A.12).
 
 **Words.** Each stream-second it reads text 10 s old; changes within
 200 s are reread, old readings kept. A word space, prosign or punctuation ends a word;
-every symbol is read, a neighbor's too.
+a neighbor's symbols are read too.
 
 **Readings.** A call's form (RR 19.68; sourced): an allocated prefix of one or two
 characters (three: 3DA0), one digit, one to four letters (US: one to three). Only listed:
@@ -580,12 +580,11 @@ unplaceable last E, I or K gives both, 0.5 each (A.12).
 over the band within 30 min, a transmission once,
 none where a better variant holds it. Reported at 2 points, named words
 too; listed, 1 if framed (signed, named or sent twice), else 2
-(variant: 1, a high-margin word). A call of E T I S H A N M U 5
-alone: 2 whole words, listed or not.
+(variant: 1, a high-margin word). Only E T I S H A N M U 5: 2 whole words, listed or not.
+Unlisted, a 1x1 (N4A) needs 3 points, 2 signed; a cut number's shape (2T7A) a signed reading (A.12).
 
 **Variants.** A call within edit distance 1 of a better-supported call within 150 Hz, or a
-prefix of one or vice versa, is held back there; distance 2 (4 characters or more) needs over twice the points, and
-counts between one letter after a digit and its prefix and digit (K1T, K1BX). Ties at
+prefix of one or vice versa, is held back there; distance 2 (4 characters or more, or K1T and K1BX) needs over twice the points. Ties at
 distance 1: the earlier call; beginning within 1 s, the later. Listed calls weigh triple, but
 not an X stripped. A transmission read whole and joined to letters after it (K4VR T) counts
 for the longer, if it has 1.5 points besides (variants: always, or for neither). A reported row
@@ -4951,6 +4950,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: a fragment a joined reading covers | in the variants' comparison, a transmission read as a whole-word call and as a joined reading starting with it (K4VR T) counts for the longer only, when the longer has `covers_own_points` of its own at the place; else for both; no cover when the words added are only K and R (3; variants 1: for the longer always, 2: for neither, 0: for both) | `joined_covers` 3 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: the longer call's own points for a cover | 1.5 points outside the covered transmissions (more than one reading, two joined at least) | `covers_own_points` | heuristic; 1.0 let one whole word take a real call's transmissions (review of `call-arb-1`, A.12) |
 | Callsign stage: flat stripped readings | a stripped reading with an X taken off the front counts once, not 3 times, in a listed call's points against an unlisted one (2: also E, T, I; 0: never) | `flat_stripped` 1 | heuristic, the review's ruling (A.12) |
+| Callsign stage: a 1x1's bar | an unlisted call of three characters (N4A, W6S, G2M) needs at least this many points, whatever else it passes on | `short_points` 3, `short_points_signed` 2 (some occurrence counted signed) | heuristic, chosen by measurement; 3 characters are 0.63% to 0.73% of the calls the RBN spots, measured (A.12) |
+| Callsign stage: a cut number's shape | a digit, A, N or T, then the digit, outside 9A, 7N, 8N (2T7A, 3N4D): unlisted, only with a signed occurrence (2; 1: from a list only; 0: as any call) | `cut_number_form` 2 | heuristic, chosen by measurement; 4 of 11 370 spotted calls have it, measured (A.12) |
 | Callsign stage: signed | some reading had the role signed, at any place and time; never undone | `is_signed` (`CallRow::framed`) | heuristic (A.12) |
 | App: decoder-only mode | off by default; on, no stage runs | `UserChoices::decoder_only`, `--decoder-only` | owner (2026-11-18) |
 | App: call list | every call by default; signed calls only an option | `UserChoices::signed_only`, `--signed-only` | owner (2026-11-18) |
@@ -5597,7 +5598,7 @@ counting each chain of occurrences connected by overlaps in time once, at the la
 any counted o. A candidate's first time is its earliest reading, which a correction can move back.
 
 **Report test** (a named word no exception: CW Skimmer's practice, provenance below; a special form, two or more digits as in
-W100AW, and a word of CW (N1MM, DJ5NN), from a list only; with `unusual_listed_only` 1, the default since `call-form-1`, an unusual one, four letters after one digit as in VK3FABC; and with `prefix_digit_listed_only` 1, the default since `call-form-2`, a prefix-digit one (C6AGU): a reading of any of these forms off the list is dropped before it reaches a candidate), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+W100AW, and a word of CW (N1MM, DJ5NN), from a list only; with `unusual_listed_only` 1, the default since `call-form-1`, an unusual one, four letters after one digit as in VK3FABC; and with `prefix_digit_listed_only` 1, the default since `call-form-2`, a prefix-digit one (C6AGU): a reading of any of these forms off the list is dropped before it reaches a candidate), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. First, since `call-short-1`, an unlisted call of three characters (`is_short_call`: a letter, a digit, a letter, the 1x1 form of any series: N4A, W6S, G2M) needs at least `short_points` (3) on the points tested, or `short_points_signed` (2) when an occurrence counted holds a reading with the role *signed* (`Occurrence::sender`; `Support::sender`), whatever it would pass on below (a tiny call, a named word); 0 leaves the bar to the rules below. And with `cut_number_form` 2 (the default) an unlisted call of a cut number's shape (`is_cut_number_form`: a digit, then A, N or T, then the call's digit, the pair not 9A, 7N or 8N: 2T7A, 3N4D, 5A3BOB, 4A7A) passes only with such a signed occurrence; with 1 its readings off the list are dropped before they reach a candidate, as a special form's are; with 0 it is any call. The pooled test counts an occurrence's role only where it is counted, so a signed reading at a place where a variant holds the call does not sign it. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
 
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and whose occurrences span to within `variant_s` of the judgment time on either side (now, or a loser's last reading, below), by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1, and 2 also for a *short pair* (`short_variant_ratio` not 0): one of the two has one letter after its last digit and both have the same characters up to their last digit (K1T and K1BX); a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
@@ -5953,6 +5954,55 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
     misreadings) gone, NB7O (spotted that day) gained: a loss of an RBN-spotted listed call, so 2 stays a variant. The generated
     sets: every list byte for byte the same as before the fixes.
 
+- Short calls and cut numbers (`call-short-1`, 2026-11-20), from the held-out check of the two 2026-11-19 recordings, where 26 of the
+  29 never-issued US calls reported were 1x1s (N5N, W6S, K0E) and CW Skimmer reported none of that form. *Why they pass* (a trace
+  of `evaluate` in a scratch build, 2026-11-18 CWT on 20 m): K7U, a fragment of K7UT, is held wherever K7UT is read, but the pooled
+  points sum three scattered readings no K7UT is within 150 Hz of (0.75 joined at +6 003 Hz, a tie with K7UTE; 1 whole word at
+  −23 883 Hz; 0.5 stripped at −23 955 Hz): 2.25 points, none signed. The 1x1s the stage reported on the tuning sets had mostly two to
+  five bare whole words, or were such fragments (K7U, N6N, N3J, W1Q of K7UT, N6NT, N3JT, W1QK, each read 59 to 192 times
+  stripped); the real ones, the 2017-08-21 eclipse stations (W0D, N7S, W7E, W0E, K7Y, W6S; 6 to 18 RBN skimmers), had 6 to 74
+  transmissions, signed in 1 to 64. *Measured shares* (base calls three or more RBN skimmers spotted on 2026-11-17, 2026-11-18,
+  2017-08-21): three characters 27 of 4 311 (0.63%), 33 of 4 772 (0.69%), 24 of 3 287 (0.73%); MASTER.SCP of 2026-11-18 holds 268
+  calls of three characters, none of the US series. A cut number's shape: 16, 21 and 23 calls, all 9A, 7N or 8N but 5A1AL, 5N80Y, 5T5T
+  and 9N1HA (4 of 11 370, 0.035%); MASTER.SCP holds 389, 349 of them 9A, 7N or 8N (the rest 7A 19, 4A 11, 8A 3, 4T 2, 5N 2, 4N, 7T,
+  9N). The CWT's exchange is a name and a member's number, sent in cut digits by many (A 1, N 9, T 0): DREW N7N, SCOTT 4T2A, JOHN 5A3
+  BOB, read as calls. *Tried* (exact replays of the logged events, no list; RBN judge with MASTER.SCP and HD.dat; tables in
+  `build/cs-1/judge/`, git-ignored), window-confirmed / spotted that day / misread / unknown, never-issued US calls in brackets;
+  `main` 2026-11-17 171 / 66 / 82 / 90 (12), 2026-11-18 580 / 180 / 302 / 185 (99), 2017 200 / 107 / 55 / 53 (31). As (unsigned,
+  signed) bars: (3, 3) 171 / 64 / 73 / 90 (5), 577 / 173 / 233 / 183 (40), 199 / 104 / 45 / 52 (17), losing window-confirmed K2W
+  (N2GZ, 1 skimmer); (4, 4) and (5, 5) on 2026-11-17 and 2017 170 / 64 / 72 / 90 (4) and 170 / 64 / 71 / 90 (4), 198 / 104 / 41
+  / 52 (13), losing W1B (6 skimmers), W6K and K2W; signed only (2 signed, else never) 171 / 65 / 70 / 90 (6), 199 / 104 / 50 / 53 (22), losing W6K
+  (KC2LRC-1, 1 skimmer, named only: W6K5NN); (4, 2) 171 / 65 / 72 / 90 (6), 578 / 174 / 234 / 183 (43), 199 / 105 / 50 / 53 (23),
+  losing W6K; (5, 2) 171 / 65 / 71 / 90 (6), 199 / 105 / 50 / 53 (23), losing W6K; (5, 3) 171 / 64 / 71 / 90 (5), 198 / 104 / 43
+  / 52 (14), losing W6K and K2W (on 2026-11-17 and 2017 only); (3, 2), taken: 171 / 65 / 73 / 90 (6), 578 / 176 /
+  245 / 183 (52), 200 / 105 / 52 / 53 (26). With the cut-number rule (`cut_number_form`) on 2026-11-18: 2 (signed only, taken) 578 /
+  176 / 237 / 167 (52), 1 (list only) 578 / 176 / 237 / 165 (52); on the other sets neither changes anything. The defaults lose
+  window-confirmed W8K and N0T, both the RBN's own misreadings: W8K's one spot (EA8BFK, 14 040.4 kHz, 19:07Z) is on W8CAR's
+  frequency (486 spots by 79 skimmers; our CQ CWT W8K TR is CQ CWT W8CAR), as are W8T's two, and N0T's one (JA1CCA, 7 032.1 kHz,
+  13:19Z) is on N0TA's (509 spots by 99 skimmers). Every other call removed is a fragment of a longer call or junk by its text (lists
+  in `build/cs-1/judge/changed-*.txt`): K7U, N6N, W1Q, N1L, K0H, K4Y, W2H, W0O, K4P, K8A (VK8A K8A), K9V (K 9 V P L), W7G (DE W7G F
+  T, W7GKF), W4Z (4Z YT W4Z YT), B4V, I5E, I8O, I7X and the like; of the removed calls spotted that day, all had one RBN spot that day
+  (N4R, K1N, K9T, K9V, W7G, W0M) but W1T (5 skimmers, 17:31Z to 18:49Z, hours after the recording; TU NE5A W1T K); two removed calls
+  are in MASTER.SCP, M5A (W5LA M5A A T B) and M3E (E M3E). The cut-number rule removes 25 numbers (DANI 2N7N, DON 2N8N, SCOTT
+  4T2A, STAN 3N7N, CHIP 4T5 JIM) and gains 2T2M (JIM 2T2M, no longer held by 2T2T); 2T7A and 3T7T, one signed reading each, stay. With
+  MASTER.SCP (`main` / the defaults): 2026-11-17 171 / 71 / 82 / 94 (9) / 171 / 71 / 75 / 94 (6), 2026-11-18 572 / 173 / 228 / 182
+  (38) / 571 / 172 / 202 / 163 (25), 2017 219 / 120 / 59 / 55 (20) / 219 / 120 / 57 / 55 (18), the same calls removed and N0T, W9W
+  (one spot that day, 15 m, 08:49Z; DTT S DTT S) gone; none gained. The generated sets (checkpoint 4's logged events): false calls
+  unchanged on every set (the contest 1, fresh seed 0, strong pairs 1 and 0, crowded 1, 100 stations 0, G2 0 and 2, H2 2 and 0);
+  true calls the same but on the two contests, 207 to 204 (G6I, I1J, I8Z) and 225 to 221 (F8L, I0M, K2Z, W4T), callers of three
+  characters read twice bare: the generator gives 8.6% to 12.5% of its stations that form. A heuristic: the bar of 3 points and
+  the signed reading are CW Skimmer's practice in kind (a rarer pattern needs more repeats), their values the test set's choice.
+  The stage's CPU (`kz4ap-calls`, the stage's wall time over channel-seconds), the two builds side by side and alone on the densest
+  recording, the 2026-11-18 CWT on 20 m (566 219 channel-seconds): 1.67 ms per channel-second before, 1.66 after; 0.001 to 0.010 ms
+  on the seven 2026-11-17 and four 2017 recordings; against the bar's 40 ms and the goal's 8 ms. *Held out, once* (the two
+  2026-11-19 recordings, exact replays judged against the RBN's 2026-11-19 file; `build/cs-1/heldout/`, git-ignored), calls /
+  window-confirmed / spotted that day / misread / unknown, never-issued US calls and of them 1x1s in brackets: `main` 534 / 260 / 66
+  / 131 / 77 (29; 26) to 499 / 260 / 65 / 102 / 72 (11; 8); with MASTER.SCP 514 / 259 / 69 / 108 / 78 (15; 12) to 491 / 259 / 67 /
+  91 / 74 (7; 4); CW Skimmer 420 / 224 / 49 / 93 / 54 (2; 0). No window-confirmed call lost, none gained at all; removed without a
+  list 35, among them the cut numbers 3N3T, 5T7R, 3T2T, 2N7N, the 1x1s N5N, W6S, K1K, N4M, N8P, W8O, N4W (2 RBN spots that day,
+  15 m, 16:43Z) and G1T (in MASTER.SCP, never spotted); with the list M0T too (1 spot that day). Left, never-issued 1x1s: K0E, N0N,
+  N5O, N8W, W0M, W0T, W4K, W7M without a list.
+
 - A call read only once, anywhere in the band, is not reported without a list: that is the rule (since `rob-1` named or not; before it, named words passed alone). On W3OA, of the 13 calls CW Skimmer lists that the RBN confirms and `main` (d44c7d6) did not, 5 were read as one transmission (K5LN after a fragment 5LN, N4KGL and NZ9Z signing, VE3KP bare, KQ2M on two tracks at once), W0OPW twice as joined letters (1.5 points), K9BGL glued to itself (two readings since `rob-1`), and 5 were never read whole (weak or garbled text: N0AIS as N0AI and 0AIS); CW Skimmer read both repeats where our decoder read one. Reading a fragment beside a whole call (5LN K5LN) as a repeat was tried and dropped (A.12, `rob-1`). On the generated contest it is not the largest loss of callers: of the 78 lost before the rules below (review 5), 45 were never decoded, every one overlapped by a keying station within 150 Hz over at least 30% of its bursts, and 33 were read: 28 once, 1 at 1.5 points, 4 refused before the evidence (SM5NU; N9AZ, EA7UPZ, KB8AKK glued inside a word). The generator's callers key at random over the runner and each other, where a real caller waits his turn, so this overlap is likely overstated (conjecture).
 - Since `rob-1` a word named once does not pass without a list: a caller whose own signal is never read loses his row (the contest 221 to 210 true calls; on the four 2017 recordings 18 confirmed calls and 36 the RBN spotted elsewhere that day, nearly all real callers). With `points_named` 1, as before, a misread call before 5NN was listed: most of the false calls the rules gained on the contest (6 of 7), and about half the misreadings on the 2017 recordings without a list. A row reached by naming shows the namer's frequency. With a list an unlisted caller named once is lost, as is one not on the list at all (the contest with a list of none of its callers: 206 true calls against 216).
 - Withdrawal judged at a loser's last reading (stage-aging): a misreading reported early stays when its true call comes more than `window_s` after its last reading, and a reported call that survives a defeat once cannot leave later, since a rival's support at that time only falls as its old occurrences age out.
@@ -5998,6 +6048,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   run together (DE before a call reads B: BW3RJ) are not read. A listed call read only stripped of a stray E, T or I (EM2E: M2E)
   still weighs triple against the word it came from: `flat_stripped` 2 would make it flat, but lost M2E, listed and spotted that
   day, on 2026-11-18.
+- Short calls and cut numbers (`call-short-1`): a real 1x1 heard only bare (a contest's caller who never signs, the generated contest's I1J, G6I, K2Z) needs three readings where another call needs two; the generator draws 8.6% to 12.5% of its stations in that form against 0.63% to 0.73% of spotted calls, so its loss there (7 of 59 such callers on the two contests) overstates a real band's. A signed reading is the Role rule's: CWT is not among its keywords, so CQ CWT W8K is bare. A real call of a cut number's shape outside 9A, 7N and 8N (4A7A, 7A1A, 5N7Q; 40 in MASTER.SCP) is reported only when it signs, and a CWT number with one signed reading among many is still reported (2T7A, 3T7T on 2026-11-18). Fragments of a longer call that are not of three characters (MO0M, OQ0MM) and a CWT number run onto a name in another shape (A78JIM: Qatar's A7, then 8) are not touched.
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
