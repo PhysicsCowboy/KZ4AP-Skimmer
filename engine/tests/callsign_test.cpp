@@ -1997,3 +1997,106 @@ TEST(Arbitration, ARunOfSignOffsOrRogersCoversNothing) {
     EXPECT_EQ(covers("DE N4A K R", "N4AKR"), "");
     EXPECT_EQ(covers("DE N4A T K", "N4ATK"), "N4A");  // a letter that is no sign-off still covers
 }
+
+// call-short-1: a call of three characters (a 1x1) and a cut number's shape need more evidence than other calls.
+TEST(CallGrammar, ShortCallsAndCutNumberShapes) {
+    for (const char* c : {"N4A", "W9W", "K1A", "W6S", "G2M"}) EXPECT_TRUE(is_short_call(c)) << c;
+    for (const char* c : {"N4AA", "K1ABC", "4U1UN", "9A2CT", "W1"}) EXPECT_FALSE(is_short_call(c)) << c;
+    // A digit, then A, N or T, then a digit: the CWT's members' numbers sent in cut digits (A 1, N 9, T 0).
+    for (const char* c : {"2T7A", "3N4D", "5A3BOB", "5T7R", "2N7N", "4A7A"}) EXPECT_TRUE(is_cut_number_form(c)) << c;
+    // Croatia's 9A and Japan's 7N and 8N are most real calls of that shape; other series, other shapes.
+    for (const char* c : {"9A2CT", "7N3ORC", "8N3AZ", "4U1UN", "4X6TT", "1A0KM", "2E0ABC", "K1ABC", "3DA0RU"})
+        EXPECT_FALSE(is_cut_number_form(c)) << c;
+}
+
+// A real 1x1 (a special-event call: N4A, W9W, K1A; the FCC's file holds none) that signs is reported as any call is: on two
+// readings without a list, on one framed reading with a list that holds it.
+TEST(CallSearch, ASignedOneByOneIsReportedOnTwoReadings) {
+    auto known = std::make_shared<KnownCalls>();
+    known->add("N4A");
+    for (const auto& list : {std::shared_ptr<KnownCalls>{}, known}) {
+        Stage s(CallSearchConfig{}, list);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "CQ DE N4A K ", 0.0);
+        s.search.advance(30.0);
+        EXPECT_EQ(s.row("N4A") != nullptr, list != nullptr);
+        s.text(1, 1000.0, "CQ DE N4A K ", 40.0);
+        s.search.advance(70.0);
+        const CallRow* r = s.row("N4A");
+        ASSERT_NE(r, nullptr);
+        EXPECT_TRUE(r->framed);
+        EXPECT_EQ(r->count, 2u);
+    }
+}
+
+// Unsigned, an unlisted 1x1 needs short_points (3) points: two bare readings are not enough, three are. A listed one needs what any
+// listed call needs, and with the bar at 0 (off) two are enough, as for any call.
+TEST(CallSearch, AnUnsignedOneByOneNeedsThreePoints) {
+    auto known = std::make_shared<KnownCalls>();
+    known->add("K1B");
+    const auto reported = [&](double short_points, int times, bool listed) {
+        CallSearchConfig config;
+        config.short_points = short_points;
+        Stage s(config, listed ? known : nullptr);
+        s.born(1, 1000.0);
+        for (int i = 0; i < times; ++i) s.text(1, 1000.0, "K1B ", 20.0 * i);
+        s.search.advance(20.0 * times + 30.0);
+        return s.row("K1B") != nullptr;
+    };
+    const double bar = CallSearchConfig{}.short_points;
+    EXPECT_FALSE(reported(bar, 2, false));
+    EXPECT_TRUE(reported(bar, 3, false));
+    EXPECT_TRUE(reported(bar, 2, true));
+    EXPECT_TRUE(reported(0.0, 2, false));
+    // A longer call is not affected.
+    Stage s;
+    s.born(1, 1000.0);
+    for (int i = 0; i < 2; ++i) s.text(1, 1000.0, "K1BC ", 20.0 * i);
+    s.search.advance(70.0);
+    EXPECT_NE(s.row("K1BC"), nullptr);
+}
+
+// One signed reading lets a 1x1 pass at short_points_signed (2): a CQ and a bare repeat.
+TEST(CallSearch, OneSignedReadingIsEnoughForAOneByOneAtTwoPoints) {
+    Stage s;
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "CQ W9W ", 0.0);
+    s.text(1, 1000.0, "W9W ", 20.0);
+    s.search.advance(60.0);
+    EXPECT_NE(s.row("W9W"), nullptr);
+}
+
+// The CWT's exchange, a name and a member's number in cut digits (DREW 2T7A, 2071): never signed, so not reported however often it
+// is read. A real call of that shape that signs is (4A7A, Mexico), and Croatia's 9A is outside the shape.
+TEST(CallSearch, ACutNumbersShapeIsReportedOnlySigned) {
+    const auto run = [](double form) {
+        CallSearchConfig config;
+        config.cut_number_form = form;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, 3000.0);
+        s->born(3, 5000.0);
+        for (int i = 0; i < 5; ++i) s->text(1, 1000.0, "DREW 2T7A TU ", 20.0 * i);
+        for (int i = 0; i < 2; ++i) s->text(2, 3000.0, "CQ DE 4A7A K ", 20.0 * i);
+        for (int i = 0; i < 2; ++i) s->text(3, 5000.0, "9A2CT ", 20.0 * i);
+        s->search.advance(150.0);
+        return s;
+    };
+    const auto fixed = run(CallSearchConfig{}.cut_number_form);
+    EXPECT_EQ(fixed->row("2T7A"), nullptr);
+    EXPECT_NE(fixed->row("4A7A"), nullptr);
+    EXPECT_NE(fixed->row("9A2CT"), nullptr);
+    const auto off = run(0.0);
+    EXPECT_NE(off->row("2T7A"), nullptr);
+    // From a list only (1): the signed 4A7A is lost without one.
+    const auto listed_only = run(1.0);
+    EXPECT_EQ(listed_only->row("2T7A"), nullptr);
+    EXPECT_EQ(listed_only->row("4A7A"), nullptr);
+    EXPECT_NE(listed_only->row("9A2CT"), nullptr);
+}
+
+TEST(CallSearch, TheShortCallDefaults) {
+    EXPECT_EQ(CallSearchConfig{}.short_points, 3.0);
+    EXPECT_EQ(CallSearchConfig{}.short_points_signed, 2.0);
+    EXPECT_EQ(CallSearchConfig{}.cut_number_form, 2.0);
+}

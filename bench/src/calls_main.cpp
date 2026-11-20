@@ -71,6 +71,7 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"segment_alternatives", &c.segment_alternatives},
         {"unusual_listed_only", &c.unusual_listed_only}, {"prefix_digit_listed_only", &c.prefix_digit_listed_only},
         {"joined_periodic", &c.joined_periodic}, {"x_as_tu", &c.x_as_tu}, {"joined_covers", &c.joined_covers}, {"covers_own_points", &c.covers_own_points}, {"flat_stripped", &c.flat_stripped},
+        {"short_points", &c.short_points}, {"short_points_signed", &c.short_points_signed}, {"cut_number_form", &c.cut_number_form},
         {"segment_stray_nats", &c.segmentation.stray_nats}, {"segment_call_nats", &c.segmentation.call_nats},
         {"segment_repeat_nats", &c.segmentation.repeat_nats}, {"segment_de_before_nats", &c.segmentation.de_before_nats},
         {"segment_de_after_nats", &c.segmentation.de_after_nats}, {"segment_word_min_nats", &c.segmentation.word_min_nats},

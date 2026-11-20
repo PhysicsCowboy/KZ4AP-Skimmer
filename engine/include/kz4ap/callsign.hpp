@@ -73,6 +73,12 @@ bool is_locator(std::string_view word);
 // takes it only as a whole word and reports it at CallSearchConfig::tiny_points whole words, with or without a known-call list. A heuristic.
 bool only_tiny_pieces(std::string_view base);
 
+// A base call of three characters, one letter, a digit, one letter (N4A, W6S, G2M): the 1x1 form (CallSearchConfig::short_points).
+bool is_short_call(std::string_view base);
+// A base call whose prefix is a digit and A, N or T, then its digit (2T7A, 3N4D, 5T7R), outside 9A, 7N and 8N (Croatia's and Japan's
+// series, which most real calls of this shape are): the shape of a number sent in cut digits (CallSearchConfig::cut_number_form).
+bool is_cut_number_form(std::string_view base);
+
 // Levenshtein distance, stopping once it exceeds `limit` (it then returns limit + 1).
 int edit_distance(std::string_view a, std::string_view b, int limit);
 
@@ -375,6 +381,21 @@ struct CallSearchConfig {
     // arbitration: 1, the default, when an X was taken (x_as_tu: a listed F4ABC at 8 x 0.5 x 3 points beat XF4ABC at 8); 2 also
     // for E, T, I; 0 never. Heuristic (ruled on review of call-arb-1).
     double flat_stripped = 1.0;
+    // Points an unlisted call of three characters (one letter, a digit, one letter: a 1x1, N4A, W6S, K1A; is_short_call) needs to
+    // be reported, as pooled or local points are tested: short_points_signed when some occurrence counted had the role Sender (DE
+    // N4A, CQ ... N4A, N4A K), else short_points; the rules for any call (points_framed, points_bare, tiny_points) still apply, so
+    // 0 leaves the bar as it is. Only 0.63% to 0.73% of the calls the RBN spots have three characters (measured; call_length_nats),
+    // against 20.0% with four, while fragments of longer calls read as this form (K7U from K7UT, summed over scattered places).
+    // CW Skimmer's practice in kind (more repeats for a less common pattern; RBN 2021). Heuristic, chosen by measurement
+    // (call-short-1).
+    double short_points = 3.0;
+    double short_points_signed = 2.0;
+    // A call with the shape of a number sent in cut digits (is_cut_number_form: 2T7A, 3N4D, 5A3BOB; A for 1, N for 9, T for 0, as
+    // the CWT's members' numbers are sent): 1, from a list only; 2, unlisted, only with an occurrence counted that had the role
+    // Sender; 0, as any call. Measured (call-short-1): outside 9A, 7N and 8N, 4 of the 11 370 base calls three or more RBN skimmers
+    // spotted on 2026-11-17, 2026-11-18 and 2017-08-21 have it (5A1AL, 5N80Y, 5T5T, 9N1HA), while the replays of the 2026-11-18
+    // CWT reported 29 such strings. Heuristic, chosen by measurement.
+    double cut_number_form = 2.0;
 };
 
 // One line of the list.
@@ -443,6 +464,7 @@ private:
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
         bool flat = false;  // its points are a flat stripped reading's (CallSearchConfig::flat_stripped)
         std::string covers;  // CallReading::covers of a joined reading it holds, the first one
+        bool sender = false;  // some reading of it had the role Sender (CallSearchConfig::short_points_signed)
     };
     struct Candidate {
         std::string base;
@@ -475,6 +497,7 @@ private:
         bool named = false;  // a whole or glued word named by another (CallSearchConfig::points_named)
         bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
         double flat = 0;     // of points, those of flat occurrences (Occurrence::flat)
+        bool sender = false;  // some occurrence counted is Occurrence::sender
     };
 
     void read_track(TrackText& track, bool all);
