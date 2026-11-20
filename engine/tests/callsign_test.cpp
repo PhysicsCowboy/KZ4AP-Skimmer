@@ -1906,15 +1906,16 @@ TEST(Arbitration, ATransmissionAJoinedReadingCoversCountsForTheLongerCallWhenItH
         config.joined_covers = covers;
         auto s = std::make_unique<Stage>(config);
         s->born(1, 1000.0);
-        for (int i = 0; i < 4; ++i) s->text(1, 1000.0, "DE K4VR T K ", 10.0 * i);
-        s->text(1, 1000.0, "DE K4VRT K ", 50.0);
+        for (int i = 0; i < 5; ++i) s->text(1, 1000.0, "DE K4VR T K ", 10.0 * i);
+        s->text(1, 1000.0, "DE K4VRT K ", 60.0);
+        s->text(1, 1000.0, "TU K4VRT ", 70.0);
         s->search.advance(100.0);
         return s;
     };
-    const auto before = run(0.0);  // K4VR 4 + 0.5 (K4VRT stripped) against K4VRT 4 x 0.75 + 1
+    const auto before = run(0.0);  // K4VR 5 + 2 x 0.5 (K4VRT stripped) = 6 against K4VRT 5 x 0.75 + 2 = 5.75
     EXPECT_NE(before->row("K4VR"), nullptr);
     EXPECT_EQ(before->row("K4VRT"), nullptr);
-    const auto after = run(3.0);  // K4VR's four covered transmissions left out: 0.5 against 4, and K4VRT has 1 of its own
+    const auto after = run(3.0);  // K4VR's five covered transmissions left out: 1 against 5.75, and K4VRT has 2 of its own
     EXPECT_NE(after->row("K4VRT"), nullptr);
     EXPECT_EQ(after->row("K4VR"), nullptr);
     EXPECT_NE(run(1.0)->row("K4VRT"), nullptr);
@@ -1937,4 +1938,62 @@ TEST(Arbitration, ALongerCallReadOnlyAsTheFragmentAndALetterTakesNothing) {
     EXPECT_NE(run(3.0)->row("W6SX"), nullptr);
     EXPECT_EQ(run(3.0)->row("W6SXE"), nullptr);
     EXPECT_NE(run(2.0)->row("W6SX"), nullptr);  // for neither: neither has any points then, so both count as before
+}
+
+// Review of call-arb-1: a real call that starts with X, with only its stripped twin on the list. The twin's half points would count
+// three times as a listed call's (4 x 0.5 x 3 = 12 against 8) and take XF4ABC's row; a reading stripped of an X counts flat.
+TEST(Arbitration, AListedTwinStrippedOfAnXDoesNotBeatTheRealXCall) {
+    const auto run = [](double flat) {
+        CallSearchConfig config;
+        config.flat_stripped = flat;
+        auto known = std::make_shared<KnownCalls>();
+        known->add("F4ABC");
+        auto s = std::make_unique<Stage>(config, known);
+        s->born(1, 1000.0);
+        for (int i = 0; i < 4; ++i) s->text(1, 1000.0, "CQ XF4ABC XF4ABC K ", 10.0 * i);
+        s->search.advance(80.0);
+        return s;
+    };
+    const auto fixed = run(1.0);
+    EXPECT_NE(fixed->row("XF4ABC"), nullptr);
+    EXPECT_EQ(fixed->row("F4ABC"), nullptr);
+    const auto before = run(0.0);
+    EXPECT_EQ(before->row("XF4ABC"), nullptr);
+    EXPECT_NE(before->row("F4ABC"), nullptr);
+    EXPECT_EQ(CallSearchConfig{}.flat_stripped, 1.0);
+}
+
+// Review of call-arb-1, the reviewer's probe: W1AW sends CQ DE W1AW T K three times and CQ DE W1AW K once; a track 50 Hz away reads
+// QRZ W1AWT once. That one reading of W1AWT must not take W1AW's three covered transmissions.
+TEST(Arbitration, OneReadingOfTheLongerCallElsewhereDoesNotTakeTheFragmentsTransmissions) {
+    const auto run = [](double own) {
+        CallSearchConfig config;
+        config.covers_own_points = own;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, 1050.0);
+        for (int i = 0; i < 3; ++i) s->text(1, 1000.0, "CQ DE W1AW T K ", 10.0 * i);
+        s->text(1, 1000.0, "CQ DE W1AW K ", 30.0);
+        s->text(2, 1050.0, "QRZ W1AWT ", 40.0);
+        s->search.advance(90.0);
+        return s;
+    };
+    const auto fixed = run(CallSearchConfig{}.covers_own_points);
+    EXPECT_NE(fixed->row("W1AW"), nullptr);
+    EXPECT_EQ(fixed->row("W1AWT"), nullptr);
+    // W1AWT's one whole word is 1 point of its own: at 1.0 it still takes W1AW's three transmissions (1 + 0.5 against 3.25).
+    EXPECT_EQ(run(1.0)->row("W1AW"), nullptr);
+    EXPECT_EQ(CallSearchConfig{}.covers_own_points, 1.5);
+}
+
+TEST(Arbitration, ARunOfSignOffsOrRogersCoversNothing) {
+    const auto covers = [](const std::string& text, const std::string& base) {
+        const std::vector<CallReading> r = readings(text);
+        const CallReading* x = reading_of(r, base);
+        return x ? x->covers : std::string("(no reading)");
+    };
+    EXPECT_EQ(covers("DE N4A K K", "N4AKK"), "");
+    EXPECT_EQ(covers("DE N4A R R", "N4ARR"), "");
+    EXPECT_EQ(covers("DE N4A K R", "N4AKR"), "");
+    EXPECT_EQ(covers("DE N4A T K", "N4ATK"), "N4A");  // a letter that is no sign-off still covers
 }

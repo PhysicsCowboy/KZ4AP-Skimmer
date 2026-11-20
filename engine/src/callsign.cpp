@@ -803,7 +803,9 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             for (std::size_t n = 1; n <= 2 && n + 3 <= w.size(); ++n) {
                 if (!stray_start(w[n - 1]) && !(options.x_as_tu != 0 && w[n - 1] == 'X')) break;
                 const std::string rest = w.substr(n);
+                const std::size_t before_emit = out.size();
                 if (parse_call(rest)) emit(rest, Reading::Stripped, i, i + 1, role_of(rest, i, i + 1));
+                if (out.size() > before_emit) out.back().stripped_front = w.substr(0, n);
             }
             if (stray_end(w.back())) {
                 const std::string rest = w.substr(0, w.size() - 1);
@@ -840,8 +842,9 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (options.joined_periodic != 0 && periodic_text(joined, j + 1)) continue;
                 const std::size_t before_emit = out.size();
                 emit(joined, Reading::Joined, i, j + 1, role_of(joined, i, j + 1));
-                // A sign-off or a roger after a call (W4PM K, W4PM R) is no letter of it: no cover.
-                const bool sign_off = j == i + 1 && (next == "K" || next == "R");
+                // Sign-offs and rogers after a call (W4PM K, N4A K K, W4PM R R) are no letters of it: no cover.
+                bool sign_off = true;
+                for (std::size_t k = i + 1; k <= j && sign_off; ++k) sign_off = words[k].text == "K" || words[k].text == "R";
                 if (out.size() > before_emit && !fragment.empty() && !sign_off && out.back().base != fragment) out.back().covers = fragment;
             }
         }
@@ -1089,10 +1092,18 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     c.heard = c.heard || r.role != Role::Named;
     c.framed = c.framed || r.role == Role::Sender;
     const double margin = word ? r.margin_nats : 0.0;
+    // A reading made by stripping a stray off the front gets no listed weight in the arbitration (CallSearchConfig::flat_stripped).
+    const bool flat = !r.stripped_front.empty() &&
+                      (config_.flat_stripped >= 2.0 || (config_.flat_stripped >= 1.0 && r.stripped_front.find('X') != std::string::npos));
     // One transmission, one occurrence: another track's or another reading's copy of the same moment at this place only betters it.
     for (Occurrence& o : c.recent) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
-            if (points > o.points) o.points = points;
+            if (points > o.points) {
+                o.points = points;
+                o.flat = flat;
+            } else if (points == o.points && !flat) {
+                o.flat = false;
+            }
             if (framed) o.framed = true;
             if (r.role != Role::Named) o.own = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
@@ -1112,6 +1123,7 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     o.framed = framed;
     o.own = r.role != Role::Named;
     o.margin = margin;
+    o.flat = flat;
     o.covers = r.covers;
     c.covers = c.covers || !r.covers.empty();
     c.recent.push_back(o);
@@ -1127,6 +1139,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
     for (const Occurrence& o : c.recent) {
         if (std::abs(o.freq_hz - freq_hz) > within_hz || std::abs(now_s - o.end_s) > config_.window_s) continue;
         s.points += o.points;
+        if (o.flat) s.flat += o.points;
         s.framed = s.framed || o.framed;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
         s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
@@ -1192,7 +1205,8 @@ CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s)
 bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten) {
     const auto limit_for = [](std::size_t n) { return n >= 4 ? 2 : 1; };
     bool held = false;
-    const double mine = support(c, freq_hz, now_s, config_.variant_hz).points;
+    const Support mine_s = support(c, freq_hz, now_s, config_.variant_hz);
+    const double mine = mine_s.points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
         // Its occurrences' span must come within variant_s of now, on either side (now is a loser's last reading when a withdrawal is judged).
@@ -1206,7 +1220,8 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
         const bool prefix = config_.prefix_held != 0.0 && (c.base.starts_with(other.base) || other.base.starts_with(c.base));
         const int distance = edit_distance(c.base, other.base, limit);  // cheap when the lengths differ by more than limit
         if (distance > limit && !prefix) continue;
-        const double theirs = support(other, freq_hz, now_s, config_.variant_hz).points;
+        const Support theirs_s = support(other, freq_hz, now_s, config_.variant_hz);
+        const double theirs = theirs_s.points;
         if (theirs <= 0) continue;
         const int d = prefix ? 1 : distance;
         // A transmission read as a fragment and as a joined reading that starts with it (CallSearchConfig::joined_covers).
@@ -1217,7 +1232,7 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
             double& fragment_vs = c_short ? mine_vs : theirs_vs;
             double& longer_vs = c_short ? theirs_vs : mine_vs;
             // 3: for the longer only when it has points of its own, outside the transmissions it covers; else as before.
-            const bool own = config_.joined_covers != 3.0 || longer_vs - longer_points > 0.0;
+            const bool own = config_.joined_covers != 3.0 || longer_vs - longer_points >= config_.covers_own_points;
             if (own) fragment_vs -= fragment_points;
             if (config_.joined_covers == 2.0) {
                 longer_vs -= longer_points;
@@ -1229,20 +1244,22 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
         }
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
-        const auto beats = [&](const Candidate& a, double pa, const Candidate& b, double pb) {
-            if (a.known && !b.known) return pa * config_.known_rival_factor >= pb;
-            if (b.known && !a.known) return pa >= config_.known_rival_factor * pb;
+        // A listed call's points count known_rival_factor times against an unlisted call's, but for its flat ones (flat_stripped).
+        const auto listed = [&](double p, double flat) { return config_.known_rival_factor * std::max(0.0, p - flat) + std::min(p, flat); };
+        const auto beats = [&](const Candidate& a, double pa, double fa, const Candidate& b, double pb, double fb) {
+            if (a.known && !b.known) return listed(pa, fa) >= pb;
+            if (b.known && !a.known) return pa >= listed(pb, fb);
             if (pa > need * pb) return true;
             if (pa != pb || d != 1) return false;
             // A tie: the earlier call, unless they begin on one word (within 1 s; heuristic), where the later is what a correction made of it.
             if (std::abs(a.first_s - b.first_s) <= 1.0) return a.made > b.made;
             return a.first_s < b.first_s;
         };
-        if (beats(other, theirs_vs, c, mine_vs)) {
+        if (beats(other, theirs_vs, theirs_s.flat, c, mine_vs, mine_s.flat)) {
             held = true;
             if (rival_best) *rival_best = std::max(*rival_best, other.best_points);
             if (!rival_best) return true;  // only the answer is wanted
-        } else if (beaten && beats(c, mine_vs, other, theirs_vs)) {
+        } else if (beaten && beats(c, mine_vs, mine_s.flat, other, theirs_vs, theirs_s.flat)) {
             if (other.reported) beaten->push_back(&other);
         }
     }

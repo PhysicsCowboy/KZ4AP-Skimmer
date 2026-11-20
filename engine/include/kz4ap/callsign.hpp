@@ -130,8 +130,10 @@ struct CallReading {
     static constexpr double kUnknownMargin = -1.0;
     // A joined reading whose first word is a call by itself (K4VR T: K4VRT, its first word K4VR): that call's base, the fragment the
     // same transmission also gives as a whole word (CallSearchConfig::joined_covers); empty otherwise, and when the words after it
-    // are only a K or an R, a sign-off or a roger far more often than a call's last letter.
+    // are only K and R, sign-offs and rogers far more often than a call's last letters.
     std::string covers;
+    // A stripped reading's characters taken off the front (EIK0HBN: EI; XW3RJ: X); empty for any other reading.
+    std::string stripped_front;
 };
 
 // nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
@@ -365,6 +367,14 @@ struct CallSearchConfig {
     // The report test is unchanged. Heuristic, chosen by measurement (call-arb-1): 1 lost window-confirmed calls read with a stray
     // letter after them (W6SX E, HC5A M), and covering a shorter joined reading too (K 4VR T) lost more (HB9T, KZ8R, K8BZ).
     double joined_covers = 3.0;
+    // Points the longer call needs at the place outside the transmissions it covers for joined_covers 3 to take them: more than
+    // one reading, two joined ones at least (1.5). Heuristic (review of call-arb-1: above 0, any one reading of the longer call took
+    // a real call's transmissions; at 1.0, one whole word still did, the reviewer's probe W1AW T against one QRZ W1AWT).
+    double covers_own_points = 1.5;
+    // A stripped reading made by taking a stray off the front counts flat, without the listed weight (known_rival_factor), in the
+    // arbitration: 1, the default, when an X was taken (x_as_tu: a listed F4ABC at 8 x 0.5 x 3 points beat XF4ABC at 8); 2 also
+    // for E, T, I; 0 never. Heuristic (ruled on review of call-arb-1).
+    double flat_stripped = 1.0;
 };
 
 // One line of the list.
@@ -431,6 +441,7 @@ private:
         bool framed = false;
         bool own = false;   // some reading of it was not Role::Named: the station itself was heard here (CallRow::heard_s)
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
+        bool flat = false;  // its points are a flat stripped reading's (CallSearchConfig::flat_stripped)
         std::string covers;  // CallReading::covers of a joined reading it holds, the first one
     };
     struct Candidate {
@@ -463,6 +474,7 @@ private:
         bool framed = false;
         bool named = false;  // a whole or glued word named by another (CallSearchConfig::points_named)
         bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
+        double flat = 0;     // of points, those of flat occurrences (Occurrence::flat)
     };
 
     void read_track(TrackText& track, bool all);
