@@ -86,19 +86,22 @@ struct SegmentalConfig {
     // Heuristic, by measurement on the matched fast-fading set (text-level-1: a walk of 10 nepers per square root of a second reads
     // 7 to 14 Hz 0.062 with the 21.33 ms frame and 0.010 with this one).
     double level_fast_frame_s = 4.0 * 4.0 / 1500.0;
-    // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and to which it must fall
-    // again to be slow; 0 leaves the walk as configured. dB re the floor: the median key-down level the spread is read at, at
-    // least. Heuristics.
-    double doppler_fast_hz = 0.0;
-    double doppler_slow_hz = 0.0;
+    // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and under which it must fall
+    // again to be slow; 0 leaves the walk as configured everywhere. dB re the floor: the runs' median key-down level the spread must
+    // be read at, at least (18.3 dB re the floor is +10 dB S500 at the widest filter). Heuristics: the estimator reads a steady or
+    // 0.1 Hz carrier at up to 2.5 Hz at +57.78 dB S500 (amplitude left in the mark's edges), the matched set's 2.2 to 2.9 Hz at 2.8 to
+    // 4.6 Hz; below +10 dB S500 the fast walk costs DEV2's B2 (text-level-1: 10 nepers per square root of a second, the short frame).
+    double doppler_fast_hz = 3.0;
+    double doppler_slow_hz = 2.5;
     double doppler_min_db = 18.3;
     // nepers per square root of a second per Hz of f_D, and the most: the fast walk, at least level_walk_nepers_per_sqrt_s.
     // Heuristic: the matched set reads 7 to 14 Hz best at 10 to 14 nepers per square root of a second.
     double doppler_walk_per_hz = 1.4;
     double doppler_walk_max = 20.0;
     // s: the pairs read for the spread lie between a run's first and last samples at or above -6 dB re its median power, this far
-    // inside them, so that neither the front filter's edges nor the channel's tail is read (the clips: |rho| at 26.7 ms 0.797 with
-    // every pair of the run, 0.992 off its last 30 ms; kz4ap-fading). Heuristic: 3 samples at the widest filter, its edge's half.
+    // inside them, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its
+    // tail, another path's, take |rho| down in proportion to tau (the clips' straight line in ln |rho|; kz4ap-fading). Heuristic: 3
+    // samples at the widest filter, its edge's half.
     double doppler_end_guard_s = 0.008;
     // runs: the estimator's memory and what it needs before it is used. Heuristics.
     double doppler_memory_runs = 100.0;
@@ -109,8 +112,8 @@ struct SegmentalConfig {
     // 2026-11-19) the power after the fall stands at -10 dB re the mark from 4 to 12 ms and -15 dB re the mark at 40 ms, incoherent
     // with the mark (coherence 0.94 at the fall, 0.24 at 10 ms; kz4ap-fading), so it fills an element gap at 35 WPM. The decoder
     // learns it per stream from its own envelope and scores the samples after a claimed fall as noise plus a zero-mean Gaussian of
-    // that power, in the search and in the level filter's key chain. Times in s, not dits: a path's delay is the channel's, not
-    // the sender's.
+    // that power, in the search (a gap's first samples, an over's end) and in the fall's window (its variance). Times in s, not dits:
+    // a path's delay is the channel's, not the sender's.
     // s: the longest tail modeled after the fall's window; 0 leaves the tail out everywhere (the decoder as before text-fast-1).
     // Heuristic: the clips' tail is still -15 dB re the mark at 40 ms, and an over's end waits that much less 16 ms to rejoin the
     // no-signal story.

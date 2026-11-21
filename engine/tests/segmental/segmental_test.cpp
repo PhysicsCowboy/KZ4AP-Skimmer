@@ -1154,4 +1154,255 @@ TEST(SegmentalMargins, ACapAFloatCannotHoldIsRefusedAndTheDefaultIsOff) {
     EXPECT_NO_THROW(SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}));
 }
 
+// --- text-fast-1: the channel's tail and the walk set by the Doppler spread ---
+
+TEST(RunningSums, ATailIsSummedFromTheFallsWindowOn) {
+    // tail(i, n) is the sum of the tail's values at positions 0 ... n - 1 after a fall claimed at i, position q read at sample
+    // i + 11 + q; past the positions pushed it reads them all.
+    RunningSums sums;
+    const Window none{};
+    constexpr int kPositions = 9;
+    const auto value = [](std::int64_t k, int q) { return 0.01 * static_cast<double>(k % 97) - 0.3 * q; };
+    for (std::int64_t k = 0; k < 3000; ++k) {
+        double tail[kTailMax];
+        for (int q = 0; q < kPositions; ++q) tail[q] = value(k, q);
+        sums.push(0.0, none, none, {}, tail, kPositions);
+    }
+    for (const std::int64_t i : {2100, 2500, 2900}) {  // n below the positions filled is read for the last 1 024 claims
+        double direct = 0.0;
+        for (int n = 0; n <= kPositions + 3; ++n) {
+            EXPECT_NEAR(sums.tail(i, n), direct, 1e-12) << i << " " << n;
+            if (n < kPositions) direct += value(i + kEdgeDone + n, n);
+        }
+        EXPECT_EQ(sums.tail_filled(i), kPositions);
+        double best = sums.tail(i, 2);
+        for (int n = 3; n <= 5; ++n) best = std::max(best, sums.tail(i, n));
+        EXPECT_DOUBLE_EQ(sums.tail_reach(i, 2, 5), best);
+    }
+    // No tail pushed: nothing to add.
+    RunningSums clean;
+    for (int k = 0; k < 100; ++k) clean.push(1.0, none, none);
+    EXPECT_EQ(clean.tail(20, 9), 0.0);
+    EXPECT_EQ(clean.tail_filled(20), 0);
+}
+
+// Envelope power through the estimator: marks of `mark` samples at `level` re the floor (1), gaps of `gap`, and after each fall a
+// zero-mean complex Gaussian of `tail` x level for `tail_samples`; noise everywhere.
+EchoShape learn_tail(double level, double tail, int tail_samples, unsigned seed) {
+    const SegmentalConfig config;
+    const SegmentalShared shared(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    EchoEstimator estimator(config, shared.template_tables);
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    const auto gaussian = [&](double power) {
+        const std::complex<double> z(unit(rng), unit(rng));
+        return std::norm(z) * power;
+    };
+    for (int run = 0; run < 400; ++run) {
+        const int mark = run % 3 == 0 ? 39 : 13, gap = run % 5 == 0 ? 39 : 13;  // 35 WPM's dot and dash, element and letter gaps
+        for (int k = 0; k < mark; ++k) {
+            const std::complex<double> z(std::sqrt(level) + unit(rng), unit(rng));
+            estimator.push(std::norm(z), 1.0);
+        }
+        for (int k = 0; k < gap; ++k) estimator.push(gaussian(1.0) + (k < tail_samples ? gaussian(tail * level) : 0.0), 1.0);
+    }
+    return estimator.shape();
+}
+
+TEST(EchoEstimator, LearnsATailAfterTheFallAndNoneWhereThereIsNone) {
+    // +30 dB re the floor, a tail at -10 dB re the mark for 12 samples (32 ms) after an abrupt fall. The last -6 dB sample is the
+    // mark's last, which the estimator takes as the fall template's half point, h samples after the claim (7 at the widest filter):
+    // position 11 + q reads the sample 4 + q after it, so the tail's 12 samples give 8 positions. They read about 0.06, -2 dB re the
+    // truth: 8% of a Rayleigh tail's samples stand above -6 dB re the mark and move the last -6 dB sample into the tail (measured).
+    const EchoShape with = learn_tail(1000.0, 0.1, 12, 21);
+    ASSERT_TRUE(with.on);
+    ASSERT_GE(with.tail.size(), 7u);
+    ASSERT_LE(with.tail.size(), 10u);
+    for (std::size_t q = 0; q + 1 < with.tail.size() && q < 7; ++q) EXPECT_NEAR(with.tail[q], 0.065, 0.025) << q;
+    for (const double g : with.in_fall) EXPECT_DOUBLE_EQ(g, with.tail[0]);
+    // A clean key leaves no tail; nor does a station under 20 dB re the floor, whatever follows its marks (echo_min_db).
+    EXPECT_FALSE(learn_tail(1000.0, 0.0, 0, 22).on);
+    EXPECT_FALSE(learn_tail(60.0, 0.1, 12, 23).on);
+}
+
+TEST(LevelEvidence, ShortFramesJoinedIntoBlocksScoreAsTheLongFrame) {
+    // While the walk is slow the frames of 10.67 ms are joined two by two into the 21.33 ms frame: the evidence is the old one,
+    // to the bit.
+    SegmentalConfig split;
+    SegmentalConfig whole;
+    whole.level_fast_frame_s = 0.0;
+    const SegmentalShared shared = make_shared_parts(split);
+    const Simulated sim = simulate(15.0, shared.output_noise.sigma2_per_n0_hz, 31);
+    RunningSums a, b;
+    LevelEvidence ea(split, shared.level_tables, a), eb(whole, shared.level_tables, b);
+    for (const double e : sim.e) {
+        ea.push(e, 1.0);
+        eb.push(e, 1.0);
+    }
+    ea.finish();
+    eb.finish();
+    ASSERT_EQ(a.committed(), b.committed());
+    for (std::int64_t m = a.committed() - 4000; m <= a.committed(); ++m) ASSERT_EQ(a.sum(m), b.sum(m)) << m;
+    for (std::int64_t m = a.committed() - 4000; m < a.committed() - kEdgeDone; ++m) {
+        ASSERT_EQ(a.rise(m), b.rise(m)) << m;
+        ASSERT_EQ(a.fall(m), b.fall(m)) << m;
+    }
+}
+
+// A complex fading gain with a Gaussian Doppler spectrum of f_D = 2 sigma_D, unit mean power, at `rate` samples/s: white complex
+// noise through h(t) = exp(-4 pi^2 sigma_D^2 t^2), whose |H(f)|^2 is the spectrum (derived).
+std::vector<std::complex<double>> fading_gain(double f_d_hz, double rate, std::size_t count, unsigned seed) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    const double sigma = f_d_hz / 2.0;
+    const double width_s = 1.0 / (2.0 * std::sqrt(2.0) * std::numbers::pi * sigma);
+    const int half = static_cast<int>(std::ceil(4.0 * width_s * rate));
+    std::vector<double> h(static_cast<std::size_t>(2 * half + 1));
+    double energy = 0.0;
+    for (int n = -half; n <= half; ++n) {
+        const double t = n / rate;
+        h[static_cast<std::size_t>(n + half)] = std::exp(-4.0 * std::numbers::pi * std::numbers::pi * sigma * sigma * t * t);
+        energy += h[static_cast<std::size_t>(n + half)] * h[static_cast<std::size_t>(n + half)];
+    }
+    std::vector<std::complex<double>> white(count + h.size());
+    for (auto& w : white) w = {unit(rng), unit(rng)};
+    std::vector<std::complex<double>> gain(count);
+    for (std::size_t k = 0; k < count; ++k) {
+        std::complex<double> acc = 0.0;
+        for (std::size_t j = 0; j < h.size(); ++j) acc += h[j] * white[k + j];
+        gain[k] = acc / std::sqrt(energy);
+    }
+    return gain;
+}
+
+TEST(DopplerEstimator, ReadsAFadingCarriersSpreadAndNoneOnASteadyOne) {
+    // Marks of 100 ms and gaps of 60 ms at +30 dB re the floor, 375 samples/s (the widest filter's), noise of 1: the spread read off
+    // the marks' insides, f_D = 2 sigma_D.
+    const SegmentalConfig config;
+    for (const double f_d : {0.0, 10.0, 20.0}) {
+        DopplerEstimator estimator(config);
+        const std::size_t count = 375 * 120;
+        const auto gain = f_d > 0.0 ? fading_gain(f_d, 375.0, count, 41) : std::vector<std::complex<double>>(count, 1.0);
+        std::mt19937 rng(42);
+        std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+        for (std::size_t k = 0; k < count; ++k) {
+            const bool down = k % 60 < 38;
+            const std::complex<double> y = (down ? std::sqrt(1000.0) * gain[k] : 0.0) + std::complex<double>(unit(rng), unit(rng));
+            estimator.push(y, 1.0);
+        }
+        ASSERT_GE(estimator.runs(), config.doppler_min_runs) << f_d;
+        if (f_d == 0.0) EXPECT_LT(estimator.spread_hz(), 1.0);
+        else EXPECT_NEAR(estimator.spread_hz(), f_d, 0.25 * f_d) << f_d;
+        EXPECT_NEAR(estimator.level_db(), f_d > 0.0 ? 28.0 : 30.0, 3.0) << f_d;  // a Rayleigh mark's median power is -1.6 dB re its mean
+    }
+}
+
+// A channel's samples at 1 500 samples/s: a text keyed at 35 WPM (51 samples a dot), +30 dB S500, through a fading gain of f_D (or none),
+// with another path's, a zero-mean complex Gaussian fading at 5 Hz of `tail` x the mark's power, for `tail_samples` after each fall;
+// then the decoder's text, its walk and its tail.
+struct Channel35 {
+    std::string text;
+    std::string read;
+    bool walk_fast = false;
+    EchoShape echo;
+};
+
+Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tail, int tail_samples, unsigned seed) {
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double amplitude = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    Channel35 out;
+    const std::string message = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789";
+    out.text = message;
+    while (static_cast<int>(out.text.size()) * 51 * 8 < 1500 * 70) out.text += " " + message;
+    const Keyed keyed = keyed_text(out.text, 51, 600, 1500);
+    const auto gain = f_d_hz > 0.0 ? fading_gain(f_d_hz, 1500.0, keyed.key.size(), seed + 1)
+                                   : std::vector<std::complex<double>>(keyed.key.size(), 1.0);
+    auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    SegmentalDecoder decoder(1500.0, shared);
+    decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+    std::vector<Sample> block;
+    std::vector<std::string> list;
+    const auto take = [&](const DecodeUpdate& update) {
+        for (const TextCorrection& correction : update.corrections) {
+            list.resize(correction.from_index);
+            for (const DecodedSymbol& symbol : correction.chars) list.push_back(symbol.text);
+        }
+        for (const DecodedSymbol& symbol : update.chars) list.push_back(symbol.text);
+    };
+    const auto other = fading_gain(5.0, 1500.0, keyed.key.size(), seed + 2);  // a scatter's path is as narrow as its Doppler spread
+    int since_fall = 1 << 30;
+    for (std::size_t k = 0; k < keyed.key.size();) {
+        block.clear();
+        const std::size_t first = k;
+        for (; k < keyed.key.size() && block.size() < 32; ++k) {
+            since_fall = keyed.key[k] == 1 ? 0 : since_fall + 1;
+            std::complex<double> y = amplitude * static_cast<double>(keyed.key[k]) * gain[k];
+            // the scatter of the last tail_samples of keying: under a mark as after it, ending tail_samples after the fall
+            if (since_fall <= tail_samples) y += amplitude * std::sqrt(tail) * other[k];
+            block.emplace_back(static_cast<float>(y.real() + draw(rng)), static_cast<float>(y.imag() + draw(rng)));
+        }
+        take(decoder.process(block, static_cast<double>(first) / 1500.0));
+    }
+    out.walk_fast = decoder.walk_fast();
+    out.echo = decoder.echo_shape(1);
+    take(decoder.flush());
+    for (const std::string& symbol : list) out.read += symbol;
+    return out;
+}
+
+// No-space edit distance, per character of the text.
+double cer(const std::string& text, const std::string& read) {
+    std::string a, b;
+    for (const char c : text) if (c != ' ') a += c;
+    for (const char c : read) if (c != ' ') b += c;
+    std::vector<int> row(b.size() + 1);
+    for (std::size_t j = 0; j <= b.size(); ++j) row[j] = static_cast<int>(j);
+    for (std::size_t i = 1; i <= a.size(); ++i) {
+        int diagonal = row[0];
+        row[0] = static_cast<int>(i);
+        for (std::size_t j = 1; j <= b.size(); ++j) {
+            const int up = row[j];
+            row[j] = std::min({row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] == b[j - 1] ? 0 : 1)});
+            diagonal = up;
+        }
+    }
+    return static_cast<double>(row[b.size()]) / static_cast<double>(a.size());
+}
+
+TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
+    // At 35 WPM a tail at -10 dB re the mark for 30 ms (45 samples at 1 500 samples/s) fills most of each 34 ms element gap, as on
+    // the owner's 80 m clips. With the tail learned the text reads; without it (echo_max_s 0) the gaps are filled.
+    SegmentalConfig config;
+    const Channel35 with = decode_35_wpm(config, 0.0, 0.1, 45, 51);
+    EXPECT_TRUE(with.echo.on);
+    config.echo_max_s = 0.0;
+    const Channel35 without = decode_35_wpm(config, 0.0, 0.1, 45, 51);
+    EXPECT_FALSE(without.echo.on);
+    const double cer_with = cer(with.text, with.read), cer_without = cer(without.text, without.read);
+    std::cout << "tail: CER " << cer_with << " with the tail learned, " << cer_without << " without\n";
+    // Its first 30 runs, about 10 s, are read without it.
+    EXPECT_LT(cer_with, 0.25);
+    EXPECT_GT(cer_without, 0.5);
+}
+
+TEST(SegmentalDoppler, AFastFadingCarrierSetsTheFastWalkAndReadsBetter) {
+    // f_D 10 Hz at +30 dB S500, 35 WPM: the estimator sets the fast walk, which reads the text better than the slow one; a steady
+    // carrier keeps the slow walk.
+    SegmentalConfig config;
+    const Channel35 fast = decode_35_wpm(config, 10.0, 0.0, 0, 61);
+    EXPECT_TRUE(fast.walk_fast);
+    config.doppler_fast_hz = 0.0;
+    const Channel35 slow = decode_35_wpm(config, 10.0, 0.0, 0, 61);
+    EXPECT_FALSE(slow.walk_fast);
+    const double cer_fast = cer(fast.text, fast.read), cer_slow = cer(slow.text, slow.read);
+    std::cout << "f_D 10 Hz: CER " << cer_fast << " with the Doppler walk, " << cer_slow << " without\n";
+    EXPECT_LT(cer_fast, cer_slow);
+    const Channel35 steady = decode_35_wpm(SegmentalConfig{}, 0.0, 0.0, 0, 62);
+    EXPECT_FALSE(steady.walk_fast);
+    EXPECT_FALSE(steady.echo.on);
+    EXPECT_LT(cer(steady.text, steady.read), 0.005);
+}
+
 }  // namespace

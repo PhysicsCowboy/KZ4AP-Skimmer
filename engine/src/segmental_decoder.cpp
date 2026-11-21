@@ -237,6 +237,12 @@ double SegmentalDecoder::leak_floor_fs2(int scale) const {
 
 std::size_t SegmentalDecoder::streams_running() const { return streams_.size(); }
 
+segmental::EchoShape SegmentalDecoder::echo_shape(int scale) const {
+    for (const Stream& stream : streams_)
+        if (stream.scale == scale) return stream.echo->shape();
+    return {};
+}
+
 bool SegmentalDecoder::choose_leader(double stream_now_s, bool may_drop) {
     const segmental::SegmentalConfig& config = shared_->config;
     if (streams_.size() == 1) return false;

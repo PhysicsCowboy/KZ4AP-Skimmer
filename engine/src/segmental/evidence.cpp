@@ -316,6 +316,11 @@ void EchoEstimator::update_shape() {
     };
     EchoShape shape;
     const double first = mean_at(kEdgeDone);
+    if (std::getenv("KZ4AP_ECHO_PROFILE")) {  // TEMPORARY, text-fast-1
+        std::fprintf(stderr, "profile h=%d:", half_);
+        for (int q = 0; q < span_; ++q) std::fprintf(stderr, " %.1f(%.0f)", count_[q] > 0 ? 10.0 * std::log10(std::max(1e-9, sum_[q] / count_[q])) : -99.0, count_[q]);
+        std::fprintf(stderr, "\n");
+    }
     if (first >= on_ratio_) {
         shape.on = true;
         for (int q = 0; q < positions_; ++q) {
@@ -428,28 +433,35 @@ bool DopplerEstimator::push(std::complex<double> y_fs, double floor_fs2) {
 void DopplerEstimator::end_run() {
     const int n = static_cast<int>(run_.size());
     if (n >= 4096) return;
-    // The mark's own samples: from its first to its last sample at or above -6 dB re the run's median power, less the front
-    // filter's edge at each end; so neither the rise nor the fall nor a tail after it is read.
+    // The marks' own samples, at or above -6 dB re the run's median power, less the front filter's edge at each end: so neither a
+    // rise nor a fall nor a tail after it is read.
     std::vector<double> power(run_.size());
     for (std::size_t k = 0; k < run_.size(); ++k) power[k] = std::norm(run_[k]);
     std::vector<double> sorted = power;
     std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
     const double median = sorted[sorted.size() / 2];
-    int first_half = -1, last_half = -1;
-    for (int k = 0; k < n; ++k)
-        if (power[static_cast<std::size_t>(k)] >= median / 4.0) {
-            if (first_half < 0) first_half = k;
-            last_half = k;
-        }
-    const int first = first_half + guard_, end = last_half + 1 - guard_;  // pairs k, k + lag in [first, end)
-    if (first_half < 0 || end - first <= lag_) return;
+    // Pairs within each stretch at or above M / 10, guard_ inside its ends: a gap a tail fills (-12.6 to -13.4 dB re the mark at the
+    // widest filter's output on the clips) splits the run, a fade to -6 dB re the median does not (heuristic).
     std::complex<double> cross = 0.0;
     double p0 = 0.0, p1 = 0.0;
-    for (int k = first; k + lag_ < end; ++k) {
-        cross += run_[static_cast<std::size_t>(k + lag_)] * std::conj(run_[static_cast<std::size_t>(k)]);
-        p0 += std::norm(run_[static_cast<std::size_t>(k)]) - run_floor_[static_cast<std::size_t>(k)];
-        p1 += std::norm(run_[static_cast<std::size_t>(k + lag_)]) - run_floor_[static_cast<std::size_t>(k + lag_)];
+    bool any = false;
+    for (int k = 0; k < n;) {
+        if (power[static_cast<std::size_t>(k)] < median / 10.0) {
+            ++k;
+            continue;
+        }
+        int e = k;
+        while (e < n && power[static_cast<std::size_t>(e)] >= median / 10.0) ++e;
+        const int first = k + guard_, end = e - guard_;  // pairs i, i + lag in [first, end)
+        for (int i = first; i + lag_ < end; ++i) {
+            cross += run_[static_cast<std::size_t>(i + lag_)] * std::conj(run_[static_cast<std::size_t>(i)]);
+            p0 += power[static_cast<std::size_t>(i)] - run_floor_[static_cast<std::size_t>(i)];
+            p1 += power[static_cast<std::size_t>(i + lag_)] - run_floor_[static_cast<std::size_t>(i + lag_)];
+            any = true;
+        }
+        k = e;
     }
+    if (!any) return;
     cross_ = cross_ * forget_ + cross;
     power0_ = power0_ * forget_ + p0;
     power1_ = power1_ * forget_ + p1;
@@ -506,14 +518,13 @@ void LevelEvidence::set_echo(const EchoShape& shape) {
     echo_on_ = shape.on && !shape.tail.empty();
     echo_positions_ = echo_on_ ? std::min(kTailMax, static_cast<int>(shape.tail.size())) : 0;
     if (!echo_on_) return;
-    if (std::getenv("KZ4AP_ECHO_NOTAIL")) echo_positions_ = 0;  // TEMPORARY diagnostics, text-fast-1
     // The fall's window: the template's term with the tail's power added to its variance, v = 1 + r^2 (f^2 (1 - s)^2 + v_m + g).
     echo_fall_.resize(static_cast<std::size_t>(kEdgeCount * table_levels));
     for (int position = 0; position < kEdgeCount; ++position)
         for (int i = 0; i < table_levels; ++i)
             echo_fall_[static_cast<std::size_t>(position * table_levels + i)] =
                 LevelTables::make_term(tables_.r2(i), 1.0 - tables_.edge_s(position), tables_.f2(),
-                                       tables_.edge_v(position) + (std::getenv("KZ4AP_ECHO_NOFALL") ? 0.0 : shape.in_fall[static_cast<std::size_t>(position)]));
+                                       tables_.edge_v(position) + shape.in_fall[static_cast<std::size_t>(position)]);
     // The tail's positions: noise plus a zero-mean complex Gaussian of power g a^2, against noise alone:
     // w (z^2 rho / (1 + rho) - ln(1 + rho)), rho = g a^2 / sigma^2 (derived: the ratio of two complex Gaussians' densities).
     echo_gain_.resize(static_cast<std::size_t>(echo_positions_ * table_levels));
@@ -593,37 +604,65 @@ void LevelEvidence::finish() {
     for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
+namespace {
+
+// A walk over n levels as a matrix K[to][from], each column a Gaussian of sd_steps grid steps about rom, folded at both ends
+// (reflecting, as the three-tap passes are), normalized to 1 (the method of images).
+std::vector<double> walk_matrix(int n, double sd_steps) {
+    std::vector<double> kernel(static_cast<std::size_t>(n * n), 0.0);
+    for (int from = 0; from < n; ++from) {
+        double total = 0.0;
+        for (int image = -4 * n; image <= 4 * n; ++image) {
+            int to = image;
+            while (to < 0 || to >= n) to = to < 0 ? -1 - to : 2 * n - 1 - to;
+            const double d = (image - from) / std::max(sd_steps, 1e-9);
+            const double g = std::exp(-0.5 * d * d);
+            kernel[static_cast<std::size_t>(to * n + from)] += g;
+            total += g;
+        }
+        for (int to = 0; to < n; ++to) kernel[static_cast<std::size_t>(to * n + from)] /= total;
+    }
+    return kernel;
+}
+
+// x' = K x (forward) or K^T x (backward), n at most 256.
+void apply_matrix(const std::vector<double>& kernel, int n, double* x, bool backward) {
+    double buffer[256];
+    const std::size_t un = static_cast<std::size_t>(n);
+    for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
+    if (!backward) {
+        for (std::size_t to = 0; to < un; ++to) {
+            double acc = 0.0;
+            const double* row = kernel.data() + to * un;
+            for (std::size_t from = 0; from < un; ++from) acc += row[from] * x[from];
+            buffer[to] = acc;
+        }
+    } else {
+        for (std::size_t to = 0; to < un; ++to) {
+            const double* row = kernel.data() + to * un;
+            const double value = x[to];
+            for (std::size_t from = 0; from < un; ++from) buffer[from] += row[from] * value;
+        }
+    }
+    std::copy_n(buffer, n, x);
+}
+
+}  // namespace
+
 void LevelEvidence::step_level(double* x, int kind, bool backward) const {
     const int n = levels_;
-    double buffer[256];
-    const std::vector<double>& kernel = tables_.walk_kernel();
-    if (kind == 1 && !kernel.empty()) {
-        // The walk from each level its own: x' = K x forward, K^T x backward.
-        const std::size_t un = static_cast<std::size_t>(n);
-        for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
-        if (!backward) {
-            for (std::size_t to = 0; to < un; ++to) {
-                double acc = 0.0;
-                const double* row = kernel.data() + to * un;
-                for (std::size_t from = 0; from < un; ++from) acc += row[from] * x[from];
-                buffer[to] = acc;
-            }
-        } else {
-            for (std::size_t to = 0; to < un; ++to) {
-                const double* row = kernel.data() + to * un;
-                const double v = x[to];
-                for (std::size_t from = 0; from < un; ++from) buffer[from] += row[from] * v;
-            }
-        }
-        std::copy_n(buffer, n, x);
+    // The fast walk's matrix, or the walk from each level its own (level_walk_high_nepers_per_sqrt_s): x' = K x forward, K^T x backward.
+    const std::vector<double>& kernel = kind == 2 ? fast_kernel_ : kind == 3 ? fast_block_kernel_ : tables_.walk_kernel();
+    if (!kernel.empty()) {
+        apply_matrix(kernel, n, x, backward);
     } else {
-        const double p = kind == 2 ? fast_p_ : kind == 3 ? fast_block_p_ : tables_.walk_p();
-        const int passes = kind == 2 ? fast_passes_ : kind == 3 ? fast_block_passes_ : tables_.walk_passes();
+        double buffer[256];
+        const double p = tables_.walk_p();
         const double keep = 1.0 - 2.0 * p;
         // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
         double* from = x;
         double* to = buffer;
-        for (int pass = 0; n > 1 && pass < passes; ++pass) {
+        for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
             to[0] = keep * from[0] + p * (from[0] + from[1]);
             for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
             to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
@@ -651,15 +690,13 @@ void LevelEvidence::end_frame() {
         step_level(alpha_.data() + levels, kind);
         fast_ = fast_next_;
         if (fast_ && fast_walk_next_ != fast_walk_) {
-            // The walk's variance over a frame is W^2 T nepers^2; one pass of (p, 1 - 2 p, p) adds 2 p step^2 (as LevelTables').
+            // The walk's variance over a frame is W^2 T nepers^2, its sd W sqrt(T) / step in grid steps; over a block of
+            // level_frame_s, sqrt(slow_block_) times that. A matrix, not the three-tap passes, whose count goes as W^2.
             fast_walk_ = fast_walk_next_;
             const double step_nepers = tables_.step_db() / 20.0 * std::log(10.0);
-            const double total_p = fast_walk_ * fast_walk_ * frame_s_ / (2.0 * step_nepers * step_nepers);
-            fast_passes_ = std::max(1, static_cast<int>(std::ceil(total_p / 0.33)));
-            fast_p_ = total_p / fast_passes_;
-            const double block_p = total_p * slow_block_;
-            fast_block_passes_ = std::max(1, static_cast<int>(std::ceil(block_p / 0.33)));
-            fast_block_p_ = block_p / fast_block_passes_;
+            const double sd_steps = fast_walk_ * std::sqrt(frame_s_) / step_nepers;
+            fast_kernel_ = walk_matrix(levels_, sd_steps);
+            fast_block_kernel_ = walk_matrix(levels_, sd_steps * std::sqrt(static_cast<double>(slow_block_)));
         }
         // Fast: a frame to a block, unless the channel's tail is modeled, where a short frame lets the level follow the tail into
         // the gaps (the clips: 0.352 and 0.247 with the long frame, 0.841 and 0.766 with the short; heuristic by measurement).
@@ -832,15 +869,6 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
                 tail_scratch_[q] = value_top + fast::log(tail_sum);
             }
             tail_count = echo_positions_;
-        }
-        if (const char* dump = std::getenv("KZ4AP_ECHO_DUMP"); dump != nullptr && frame_samples_ == 8) {  // TEMPORARY, text-fast-1
-            const long long from = std::atoll(dump);
-            if (k >= from && k < from + 1200) {
-                std::fprintf(stderr, "dump %lld z2 %.1f l1 %.1f rise0 %.1f fall5 %.1f top %d:", static_cast<long long>(k), z2, l1, rise[0], fall[5],
-                             edge_count > 0 ? edge_level[0] : -1);
-                for (int q = 0; q < tail_count; ++q) std::fprintf(stderr, " %.1f", tail_scratch_[q]);
-                std::fprintf(stderr, "\n");
-            }
         }
         sums_.push(l1, rise, fall, context, tail_scratch_, tail_count);
     }

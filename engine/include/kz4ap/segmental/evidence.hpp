@@ -304,8 +304,8 @@ private:
 };
 
 // The channel's Doppler spread from the widest filter's complex output (text-fast-1), as kz4ap-fading reads it: a run is the
-// samples above echo_run_db re the floor; within a run, between its first and last samples at or above -6 dB re its median power,
-// doppler_end_guard_s inside them (past the front filter's edges and the channel's tail), the pairs tau = round(21.33 ms / Delta) apart give
+// samples above echo_run_db re the floor; within a run, in each stretch of samples at or above -10 dB re its median power, from
+// doppler_end_guard_s inside its ends (past the front filter's edges; a gap a tail fills splits the run), the pairs tau = round(21.33 ms / Delta) apart give
 //     |rho(tau)| = |sum y[k + tau] y*[k]| / sqrt(sum (|y[k]|^2 - floor) sum (|y[k + tau]|^2 - floor)),
 // kept with an exponential memory in runs, and the Gaussian spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives
 // f_D = 2 sigma_D (Watterson's and DeepCW's width). A constant frequency offset turns every product alike and leaves |rho|.
@@ -396,10 +396,10 @@ private:
     int block_frames_ = 1;
     bool fast_ = false, fast_next_ = false;
     double fast_walk_ = 0.0, fast_walk_next_ = 0.0;
-    int fast_passes_ = 1;
-    double fast_p_ = 0.0, fast_jump_ = 0.0;
-    int fast_block_passes_ = 1;  // the fast walk over level_frame_s, where a tail keeps the frame long
-    double fast_block_p_ = 0.0, fast_block_jump_ = 0.0;
+    double fast_jump_ = 0.0;
+    double fast_block_jump_ = 0.0;
+    // the fast walk over a frame and over level_frame_s (where a tail keeps the frame long), as K[to][from]
+    std::vector<double> fast_kernel_, fast_block_kernel_;
     double frame_s_ = 0.0;  // s
     std::vector<double> beta_block_;  // the backward message at the end of the block being read back, key summed out
 

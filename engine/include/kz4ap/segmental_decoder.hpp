@@ -90,6 +90,10 @@ public:
     std::size_t streams_running() const;
     // FS^2: the noise the leak asks of the stream at this filter scale, 0 if it has none (or no such stream runs).
     double leak_floor_fs2(int scale) const;
+    // Whether the walk is the fast one (the Doppler estimator's), and the tail the stream at this filter scale has learned (empty if none
+    // or no such stream runs); text-fast-1.
+    bool walk_fast() const { return walk_fast_; }
+    segmental::EchoShape echo_shape(int scale) const;
 
 private:
     void start();
