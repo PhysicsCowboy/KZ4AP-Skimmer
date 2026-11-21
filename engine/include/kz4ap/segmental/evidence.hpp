@@ -40,6 +40,7 @@
 #include "kz4ap/viterbi/mark_template.hpp"
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -301,8 +302,41 @@ private:
     double floor_ = 0.0;      // FS^2; 0 until it is used
 };
 
-class LevelEvidence {
+// The channel's Doppler spread from the widest filter's complex output (text-fast-1), as kz4ap-fading reads it: a run is the
+// samples above echo_run_db re the floor; within a run, from its third sample to doppler_end_guard_s before its end (past the
+// front filter's rise and the channel's tail), the pairs tau = round(21.33 ms / Delta) apart give
+//     |rho(tau)| = |sum y[k + tau] y*[k]| / sqrt(sum (|y[k]|^2 - floor) sum (|y[k + tau]|^2 - floor)),
+// kept with an exponential memory in runs, and the Gaussian spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives
+// f_D = 2 sigma_D (Watterson's and DeepCW's width). A constant frequency offset turns every product alike and leaves |rho|.
+// The level is the runs' median power re the floor, dB, averaged with the same memory.
+class DopplerEstimator {
 public:
+    explicit DopplerEstimator(const SegmentalConfig& config);
+    // One sample: y, FS, and the floor, FS^2. True at a run's end once the estimate is in.
+    bool push(std::complex<double> y_fs, double floor_fs2);
+    // Hz: f_D = 2 sigma_D; dB re the floor: the runs' median level.
+    double spread_hz() const { return spread_hz_; }
+    double level_db() const { return level_db_; }
+    double runs() const { return runs_; }
+
+private:
+    void end_run();
+    bool on_ = false;
+    double run_ratio_ = 10.0;
+    int lag_ = 8;
+    int trim_ = 2;
+    int guard_ = 11;
+    double tau_s_ = 0.0;
+    double forget_ = 1.0, min_runs_ = 20.0;
+    bool in_run_ = false;
+    std::vector<std::complex<double>> run_;
+    std::vector<double> run_floor_;
+    std::complex<double> cross_ = 0.0;
+    double power0_ = 0.0, power1_ = 0.0, level_sum_ = 0.0, runs_ = 0.0;
+    double spread_hz_ = 0.0, level_db_ = -1e9;
+};
+
+class LevelEvidence {public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);
 
     // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2; floor_fs2, the channel's noise
@@ -317,18 +351,24 @@ public:
     // The channel's tail from here on (EchoEstimator): the fall's terms with its variance and the tail's terms after the fall.
     // An empty shape takes it out.
     void set_echo(const EchoShape& shape);
+    // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
+    // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
+    void set_walk(bool fast, double walk_nepers_per_sqrt_s);
+    bool fast() const { return fast_; }
 
 private:
     void end_frame();
     void commit(bool all);
-    // forward: x' = K x; backward (the transpose): x' = K^T x. The same for the three-tap passes, which are symmetric.
-    void step_level(double* x, bool backward = false) const;
+    // The step at a block's end, kind 1 (the configured walk over level_frame_s) or 2 (the fast walk over one frame): forward
+    // x' = K x; backward (the transpose) x' = K^T x. The same for the three-tap passes, which are symmetric.
+    void step_level(double* x, int kind, bool backward = false) const;
     void commit_frame(std::int64_t frame, const double* belief);
 
     const LevelTables& tables_;
     RunningSums& sums_;
     int levels_;
-    int frame_samples_;
+    int frame_samples_;  // a frame's samples: level_fast_frame_s's, a whole share of level_frame_s's
+    int slow_block_;     // frames to a block when not fast: level_frame_s / the frame
     int lookahead_frames_;
     int commit_frames_;
     int ring_frames_;
@@ -346,6 +386,19 @@ private:
     std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
+    // Blocks of frames over which the level is held (text-fast-1): by frame in the ring, the block's first frame and the step at
+    // the frame's end (0 none, 1 slow, 2 fast); the block being filled; the mode and the fast walk's three-tap passes.
+    std::vector<std::int64_t> block_start_;
+    std::vector<std::uint8_t> step_after_;
+    std::int64_t block_first_ = 0;
+    int block_fill_ = 0;
+    int block_frames_ = 1;
+    bool fast_ = false, fast_next_ = false;
+    double fast_walk_ = 0.0, fast_walk_next_ = 0.0;
+    int fast_passes_ = 1;
+    double fast_p_ = 0.0, fast_jump_ = 0.0;
+    double frame_s_ = 0.0;  // s
+    std::vector<double> beta_block_;  // the backward message at the end of the block being read back, key summed out
 
     // The tail (set_echo): on, its fall terms by position and table level, and its tail terms (rho / (1 + rho), ln(1 + rho)) by
     // position and table level.

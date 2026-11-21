@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <numbers>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -367,14 +368,96 @@ double ChannelFloor::sigma2(double e_fs, double hiss_sigma2_fs2) {
     return std::max(hiss_sigma2_fs2, floor_);
 }
 
+namespace {
+
+// samples: the frame, the largest whole share of level_frame_s's samples within level_fast_frame_s (at least 1); with no fast
+// frame (0 or not shorter), level_frame_s's.
+int frame_samples_of(const SegmentalConfig& config) {
+    const int slow = viterbi::whole_count(config.level_frame_s, config.model.sample_interval_s, "level_frame_s", "samples");
+    if (!(std::isfinite(config.level_fast_frame_s) && config.level_fast_frame_s >= 0.0))
+        throw std::invalid_argument("segmental: level_fast_frame_s must be finite and not negative (s)");
+    const int fast = static_cast<int>(std::floor(config.level_fast_frame_s / config.model.sample_interval_s + 1e-9));
+    if (fast <= 0 || fast >= slow) return slow;
+    for (int d = fast; d > 1; --d)
+        if (slow % d == 0) return d;
+    return 1;
+}
+
+}  // namespace
+
+DopplerEstimator::DopplerEstimator(const SegmentalConfig& config) {
+    if (!(config.doppler_fast_hz > 0.0)) return;
+    const double interval_s = config.model.sample_interval_s;
+    if (!(config.doppler_slow_hz >= 0.0 && config.doppler_slow_hz <= config.doppler_fast_hz && std::isfinite(config.doppler_min_db) &&
+          config.doppler_end_guard_s >= 0.0 && config.doppler_memory_runs >= 1.0 && config.doppler_min_runs >= 1.0 &&
+          config.doppler_walk_per_hz >= 0.0 && config.doppler_walk_max > 0.0))
+        throw std::invalid_argument("segmental: the doppler_ settings must be finite and in range (Hz, dB, s, runs)");
+    on_ = true;
+    run_ratio_ = std::pow(10.0, config.echo_run_db / 10.0);
+    lag_ = std::max(1, static_cast<int>(std::lround(8.0 * 4.0 / 1500.0 / interval_s)));
+    tau_s_ = lag_ * interval_s;
+    guard_ = static_cast<int>(std::ceil(config.doppler_end_guard_s / interval_s - 1e-9));
+    forget_ = std::exp(-1.0 / config.doppler_memory_runs);
+    min_runs_ = config.doppler_min_runs;
+}
+
+bool DopplerEstimator::push(std::complex<double> y_fs, double floor_fs2) {
+    if (!on_ || !(floor_fs2 > 0.0)) return false;
+    const bool down = std::norm(y_fs) > run_ratio_ * floor_fs2;
+    if (down) {
+        if (!in_run_) {
+            in_run_ = true;
+            run_.clear();
+            run_floor_.clear();
+        }
+        if (run_.size() < 4096) {
+            run_.push_back(y_fs);
+            run_floor_.push_back(floor_fs2);
+        }
+        return false;
+    }
+    if (!in_run_) return false;
+    in_run_ = false;
+    const double before = runs_;
+    end_run();
+    return runs_ != before && runs_ >= min_runs_;
+}
+
+void DopplerEstimator::end_run() {
+    const int n = static_cast<int>(run_.size());
+    if (n >= 4096) return;
+    const int first = trim_, end = n - guard_;  // pairs k, k + lag in [first, end)
+    if (end - first <= lag_) return;
+    std::complex<double> cross = 0.0;
+    double p0 = 0.0, p1 = 0.0;
+    for (int k = first; k + lag_ < end; ++k) {
+        cross += run_[static_cast<std::size_t>(k + lag_)] * std::conj(run_[static_cast<std::size_t>(k)]);
+        p0 += std::norm(run_[static_cast<std::size_t>(k)]) - run_floor_[static_cast<std::size_t>(k)];
+        p1 += std::norm(run_[static_cast<std::size_t>(k + lag_)]) - run_floor_[static_cast<std::size_t>(k + lag_)];
+    }
+    std::vector<double> ratio(run_.size());
+    for (std::size_t k = 0; k < run_.size(); ++k) ratio[k] = std::norm(run_[k]) / run_floor_[k];
+    std::nth_element(ratio.begin(), ratio.begin() + static_cast<std::ptrdiff_t>(ratio.size() / 2), ratio.end());
+    cross_ = cross_ * forget_ + cross;
+    power0_ = power0_ * forget_ + p0;
+    power1_ = power1_ * forget_ + p1;
+    level_sum_ = level_sum_ * forget_ + 10.0 * std::log10(ratio[ratio.size() / 2]);
+    runs_ = runs_ * forget_ + 1.0;
+    level_db_ = level_sum_ / runs_;
+    const double rho = power0_ > 0.0 && power1_ > 0.0 ? std::abs(cross_) / std::sqrt(power0_ * power1_) : 1.0;
+    // |rho| = exp(-2 pi^2 sigma_D^2 tau^2), f_D = 2 sigma_D
+    spread_hz_ = rho < 1.0 && rho > 0.0 ? 2.0 * std::sqrt(-std::log(rho) / (2.0 * std::numbers::pi * std::numbers::pi)) / tau_s_ : 0.0;
+}
+
 LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums)
     : tables_(tables),
       sums_(sums),
       levels_(tables.levels()),
-      frame_samples_(viterbi::whole_count(config.level_frame_s, config.model.sample_interval_s, "level_frame_s", "samples")),
-      lookahead_frames_(viterbi::whole_count(config.level_lookahead_s, config.level_frame_s, "level_lookahead_s", "frames")),
-      commit_frames_(viterbi::whole_count(config.level_commit_s, config.level_frame_s, "level_commit_s", "frames")),
-      ring_frames_(lookahead_frames_ + commit_frames_ + 2),
+      frame_samples_(frame_samples_of(config)),
+      slow_block_(viterbi::whole_count(config.level_frame_s, config.model.sample_interval_s, "level_frame_s", "samples") / frame_samples_),
+      lookahead_frames_(viterbi::whole_count(config.level_lookahead_s, config.level_frame_s, "level_lookahead_s", "frames") * slow_block_),
+      commit_frames_(viterbi::whole_count(config.level_commit_s, config.level_frame_s, "level_commit_s", "frames") * slow_block_),
+      ring_frames_(lookahead_frames_ + commit_frames_ + 2 * slow_block_),
       key_switch_(config.key_switch_per_s * config.model.sample_interval_s) {
     if (!(key_switch_ > 0.0 && key_switch_ < 0.5))
         throw std::invalid_argument("segmental: key_switch_per_s x sample_interval_s must lie in (0, 0.5)");
@@ -389,9 +472,20 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     top_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
+    block_start_.assign(ring, 0);
+    step_after_.assign(ring, 0);
+    beta_block_.assign(levels, 0.0);
+    block_frames_ = slow_block_;
+    fast_jump_ = config.level_jump_per_s * frame_samples_ * config.model.sample_interval_s;
+    frame_s_ = frame_samples_ * config.model.sample_interval_s;
     // The forward message's prediction into frame 0.
     std::copy_n(alpha_.begin(), levels, entering_.begin());
     for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];
+}
+
+void LevelEvidence::set_walk(bool fast, double walk_nepers_per_sqrt_s) {
+    fast_next_ = fast;
+    fast_walk_next_ = walk_nepers_per_sqrt_s;
 }
 
 void LevelEvidence::set_echo(const EchoShape& shape) {
@@ -486,11 +580,11 @@ void LevelEvidence::finish() {
     for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
-void LevelEvidence::step_level(double* x, bool backward) const {
+void LevelEvidence::step_level(double* x, int kind, bool backward) const {
     const int n = levels_;
     double buffer[256];
     const std::vector<double>& kernel = tables_.walk_kernel();
-    if (!kernel.empty()) {
+    if (kind == 1 && !kernel.empty()) {
         // The walk from each level its own: x' = K x forward, K^T x backward.
         const std::size_t un = static_cast<std::size_t>(n);
         for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
@@ -510,12 +604,13 @@ void LevelEvidence::step_level(double* x, bool backward) const {
         }
         std::copy_n(buffer, n, x);
     } else {
-        const double p = tables_.walk_p();
+        const double p = kind == 2 ? fast_p_ : tables_.walk_p();
+        const int passes = kind == 2 ? fast_passes_ : tables_.walk_passes();
         const double keep = 1.0 - 2.0 * p;
         // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
         double* from = x;
         double* to = buffer;
-        for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
+        for (int pass = 0; n > 1 && pass < passes; ++pass) {
             to[0] = keep * from[0] + p * (from[0] + from[1]);
             for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
             to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
@@ -525,7 +620,7 @@ void LevelEvidence::step_level(double* x, bool backward) const {
     }
     double sum = 0.0;
     for (int i = 0; i < n; ++i) sum += x[i];
-    const double jump = tables_.jump();
+    const double jump = kind == 2 ? fast_jump_ : tables_.jump();
     const double mean = sum / n;
     for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
 }
@@ -533,11 +628,31 @@ void LevelEvidence::step_level(double* x, bool backward) const {
 void LevelEvidence::end_frame() {
     const std::size_t levels = static_cast<std::size_t>(levels_);
     frame_fill_ = 0;
+    const std::size_t ended_slot = static_cast<std::size_t>(frames_ % ring_frames_);
     ++frames_;
-    // The prediction into the next frame: the level steps; the belief over levels it gives that frame sums the key out.
-    step_level(alpha_.data());
-    step_level(alpha_.data() + levels);
+    // At a block's end the level steps, and the next block takes the mode asked for (set_walk).
+    int kind = 0;
+    if (++block_fill_ >= block_frames_) {
+        kind = fast_ ? 2 : 1;
+        step_level(alpha_.data(), kind);
+        step_level(alpha_.data() + levels, kind);
+        fast_ = fast_next_;
+        if (fast_ && fast_walk_next_ != fast_walk_) {
+            // The walk's variance over a frame is W^2 T nepers^2; one pass of (p, 1 - 2 p, p) adds 2 p step^2 (as LevelTables').
+            fast_walk_ = fast_walk_next_;
+            const double step_nepers = tables_.step_db() / 20.0 * std::log(10.0);
+            const double total_p = fast_walk_ * fast_walk_ * frame_s_ / (2.0 * step_nepers * step_nepers);
+            fast_passes_ = std::max(1, static_cast<int>(std::ceil(total_p / 0.33)));
+            fast_p_ = total_p / fast_passes_;
+        }
+        block_frames_ = fast_ ? 1 : slow_block_;
+        block_fill_ = 0;
+        block_first_ = frames_;
+    }
+    step_after_[ended_slot] = static_cast<std::uint8_t>(kind);
+    // The prediction into the next frame; the belief over levels it gives that frame sums the key out.
     const std::size_t slot = static_cast<std::size_t>(frames_ % ring_frames_);
+    block_start_[slot] = block_first_;
     for (std::size_t level = 0; level < levels; ++level) entering_[slot * levels + level] = alpha_[level] + alpha_[levels + level];
 }
 
@@ -553,11 +668,14 @@ void LevelEvidence::commit(bool all) {
     const double stay = 1.0 - key_switch_;
     for (std::int64_t t = last; t >= next_commit_; --t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);
-        // The belief this frame's samples read: what enters it from each side, its own samples left out.
+        // The belief this frame's samples read: what enters its block from each side, the block's own samples left out.
+        if (t == last || step_after_[slot] != 0)
+            for (std::size_t level = 0; level < levels; ++level) beta_block_[level] = up[level] + down[level];
         if (t <= last_committed) {
+            const std::size_t first = static_cast<std::size_t>(block_start_[slot] % ring_frames_);
             double total = 0.0;
             for (std::size_t level = 0; level < levels; ++level) {
-                const double value = entering_[slot * levels + level] * (up[level] + down[level]);
+                const double value = entering_[first * levels + level] * beta_block_[level];
                 belief_[slot * levels + level] = value;
                 total += value;
             }
@@ -585,8 +703,14 @@ void LevelEvidence::commit(bool all) {
             const double scale = 1.0 / total;
             for (double& value : beta_) value *= scale;
         }
-        step_level(up, true);
-        step_level(down, true);
+        // The step at this frame's start, if a block ended there.
+        if (t > 0) {
+            const int kind = step_after_[static_cast<std::size_t>((t - 1) % ring_frames_)];
+            if (kind != 0) {
+                step_level(up, kind, true);
+                step_level(down, kind, true);
+            }
+        }
     }
     for (std::int64_t t = next_commit_; t <= last_committed; ++t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);

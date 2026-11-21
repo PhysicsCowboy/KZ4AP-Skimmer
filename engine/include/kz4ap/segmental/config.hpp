@@ -80,6 +80,29 @@ struct SegmentalConfig {
     double level_walk_rise_from_db_s500 = 20.0;
     double level_walk_rise_to_db_s500 = 40.0;
 
+    // --- The walk set by the channel's Doppler spread (DopplerEstimator, evidence.hpp; text-fast-1) ---
+    // s: the frame when the fading is fast; level_frame_s is a whole number of them (the frame then a whole share of it, at least a
+    // sample: 10.67 ms at the widest filter, 8 ms at m = 3). The level is held over level_frame_s as before when the fading is slow.
+    // Heuristic, by measurement on the matched fast-fading set (text-level-1: a walk of 10 nepers per square root of a second reads
+    // 7 to 14 Hz 0.062 with the 21.33 ms frame and 0.010 with this one).
+    double level_fast_frame_s = 4.0 * 4.0 / 1500.0;
+    // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and to which it must fall
+    // again to be slow; 0 leaves the walk as configured. dB re the floor: the median key-down level the spread is read at, at
+    // least. Heuristics.
+    double doppler_fast_hz = 0.0;
+    double doppler_slow_hz = 0.0;
+    double doppler_min_db = 18.3;
+    // nepers per square root of a second per Hz of f_D, and the most: the fast walk, at least level_walk_nepers_per_sqrt_s.
+    // Heuristic: the matched set reads 7 to 14 Hz best at 10 to 14 nepers per square root of a second.
+    double doppler_walk_per_hz = 1.4;
+    double doppler_walk_max = 20.0;
+    // s: the pairs of a run's samples read for the spread stay this far from its end, past the channel's tail (the clips: |rho| at
+    // 26.7 ms 0.797 with every pair, 0.992 off the last 30 ms). Heuristic.
+    double doppler_end_guard_s = 0.030;
+    // runs: the estimator's memory and what it needs before it is used. Heuristics.
+    double doppler_memory_runs = 100.0;
+    double doppler_min_runs = 20.0;
+
     // --- The channel's multipath tail (EchoEstimator, evidence.hpp; text-fast-1) ---
     // A path delayed or a diffuse scatter keeps delivering a mark's power after its fall: on the owner's 35 WPM W1AW clips (80 m,
     // 2026-11-19) the power after the fall stands at -10 dB re the mark from 4 to 12 ms and -15 dB re the mark at 40 ms, incoherent

@@ -208,6 +208,23 @@ void SegmentalDecoder::start() {
         streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
     leader_ = 0;
     choice_started_ = false;
+    doppler_ = std::make_unique<segmental::DopplerEstimator>(shared_->config);
+    walk_fast_ = false;
+    walk_now_ = 0.0;
+}
+
+void SegmentalDecoder::update_walk() {
+    const segmental::SegmentalConfig& c = shared_->config;
+    const double spread = doppler_->spread_hz();
+    const bool loud = doppler_->level_db() >= c.doppler_min_db;
+    const bool fast = loud && (walk_fast_ ? spread >= c.doppler_slow_hz : spread >= c.doppler_fast_hz);
+    const double walk = std::clamp(c.doppler_walk_per_hz * spread, c.level_walk_nepers_per_sqrt_s, c.doppler_walk_max);
+    if (fast == walk_fast_ && (!fast || std::fabs(walk - walk_now_) < 0.5)) return;
+    walk_fast_ = fast;
+    walk_now_ = fast ? walk : 0.0;
+    for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk);
+    if (std::getenv("KZ4AP_ECHO_TRACE"))  // TEMPORARY trace, text-fast-1
+        std::fprintf(stderr, "walk k=%lld runs=%.0f f_D=%.2f Hz level=%.1f dB fast=%d walk=%.1f\n", static_cast<long long>(streams_.front().pushed), doppler_->runs(), spread, doppler_->level_db(), fast ? 1 : 0, walk);
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
@@ -324,6 +341,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
             // is noise only (segmental/config.hpp, level_on_floor).
             const double floor = stream.floor->sigma2(sample.e_fs, hiss);
             const double sigma2 = std::max(floor, stream.leak_floor);
+            if (stream.scale == 1 && doppler_->push(sample.y_fs, floor)) update_walk();
             if (stream.echo->push(sample.e_fs * sample.e_fs, floor)) {
                 stream.evidence->set_echo(stream.echo->shape());
                 if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
@@ -451,6 +469,8 @@ DecodeUpdate SegmentalDecoder::flush() {
     story.tail = search.best_text();
     story.length = story.tail.size();
     if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
+        std::fprintf(stderr, "doppler final runs=%.0f f_D=%.2f Hz level=%.1f dB fast=%d\n", doppler_->runs(), doppler_->spread_hz(), doppler_->level_db(), walk_fast_ ? 1 : 0);
+        for (const Stream& s : streams_) { std::fprintf(stderr, "echo final m=%d on=%d tail:", s.scale, s.echo->shape().on ? 1 : 0); for (double g : s.echo->shape().tail) std::fprintf(stderr, " %.1f", 10.0 * std::log10(g)); std::fprintf(stderr, "\n"); }
         const double end_s = story.tail.empty() ? 0.0 : story.tail.back().end_s;
         for (const DecodedSymbol& s : story.tail)
             if (const char* w = std::getenv("KZ4AP_SYM_FROM"); w != nullptr ? (s.start_s >= std::atof(w) && s.start_s < std::atof(w) + 3.0) : s.end_s > end_s - 3.0) std::fprintf(stderr, "sym '%s' %.4f %.4f\n", s.text.c_str(), s.start_s, s.end_s);
