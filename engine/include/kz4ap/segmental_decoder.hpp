@@ -54,6 +54,11 @@ struct SegmentalParts {
     std::vector<double> leak_response;
     std::size_t leak_first_bin = 0;
     std::size_t leak_hold_blocks = 0;
+    // The channel's own keyed carrier as the analyzer reads it k bins from the channel's center: at most leak_own_bound[k] times
+    // the largest of its three center bins at key-down (derived: own_splatter_bound in segmental_decoder.cpp). Empty with
+    // SegmentalConfig::leak_own 0; and the blocks the own key-down power is held over.
+    std::vector<double> leak_own_bound;
+    std::size_t leak_own_hold_blocks = 0;
 };
 
 // The parts at the widest filter, and at the narrower ones in the order of config.filter_scales.
@@ -147,6 +152,8 @@ private:
         std::vector<double> leak_held;  // FS^2: the leak of the last SegmentalParts::leak_hold_blocks blocks, a ring
         std::size_t leak_next = 0;
         double leak_floor = 0.0;        // FS^2: the noise that asks for, as sigma^2 at this stream's output
+        std::vector<double> own_held;   // FS^2: the largest of the three center bins of the last leak_own_hold_blocks blocks, a ring
+        std::size_t own_next = 0;
     };
     // Chooses the leader from what stands, and at or after the drop time of the channel's age, if `may_drop`, drops what has fallen
     // behind it. True if the leader changed. stream_now_s: s of stream; a channel's age is that less the time of its first sample.

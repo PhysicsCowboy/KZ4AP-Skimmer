@@ -53,6 +53,17 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
         throw std::invalid_argument("segmental: the level grid needs a step above 0 dB and a top above its bottom");
     levels_ = 1 + static_cast<int>(std::round((config.level_max_db_s500 - config.level_min_db_s500) / config.level_step_db));
     if (levels_ > 256) throw std::invalid_argument("segmental: the level grid holds at most 256 levels");
+    if (!(config.level_on_floor == 0.0 || config.level_on_floor == 1.0))
+        throw std::invalid_argument("segmental: level_on_floor must be 0 or 1");
+    if (!(config.level_noise_bottom == 0.0 || config.level_noise_bottom == 1.0))
+        throw std::invalid_argument("segmental: level_noise_bottom must be 0 or 1");
+    if (!(std::isfinite(config.level_noise_above_floor_max_db) && config.level_noise_above_floor_max_db >= 0.0))
+        throw std::invalid_argument("segmental: level_noise_above_floor_max_db must be finite and not negative (dB re the floor)");
+    on_floor_ = config.level_on_floor == 1.0;
+    step_db_ = config.level_step_db;
+    below_ = on_floor_ ? static_cast<int>(std::floor(config.level_noise_above_floor_max_db / config.level_step_db + 1e-9)) : 0;
+    if (below_ > 255) throw std::invalid_argument("segmental: level_noise_above_floor_max_db reaches at most 255 grid steps");
+    table_levels_ = levels_ + below_;
     w_ = noise.w_strong;
     sigma2_per_n0_hz_ = noise.sigma2_per_n0_hz;
     // The relative variance of the key-down amplitude about a level of the grid: the systematic floor's, and the grid's own,
@@ -62,23 +73,29 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     const double step_nepers_for_v = config.level_step_db / 20.0 * std::log(10.0);
     const double f2 = config.model.systematic_floor * config.model.systematic_floor +
                       config.level_grid_in_v * step_nepers_for_v * step_nepers_for_v / 12.0;
-    plain_.resize(static_cast<std::size_t>(levels_));
-    rise_.resize(static_cast<std::size_t>(kEdgeCount * levels_));
-    fall_.resize(static_cast<std::size_t>(kEdgeCount * levels_));
-    for (int level = 0; level < levels_; ++level) {
-        const double s500_db = config.level_min_db_s500 + level * config.level_step_db;
+    // Table index i holds the level min + (i - below_) x step, dB S500 re sigma^2: the grid, and below_ steps under it for a
+    // sigma^2 that stands above the floor the grid is relative to.
+    const bool bottom_clamp = config.level_noise_bottom == 1.0;
+    const auto r2_at = [&](int i) {
+        const double s500_db = config.level_min_db_s500 + (bottom_clamp ? std::max(0, i - below_) : i - below_) * config.level_step_db;
         // a^2 / sigma_y^2 = S500 x 500 Hz / (sigma_y^2 / N0)  (S500 is a^2 over N0 x 500 Hz; derived)
-        const double r2 = std::pow(10.0, s500_db / 10.0) * 500.0 / sigma2_per_n0_hz_;
-        plain_[static_cast<std::size_t>(level)] = make_term(r2, 1.0, f2, 0.0);
+        return std::pow(10.0, s500_db / 10.0) * 500.0 / sigma2_per_n0_hz_;
+    };
+    plain_.resize(static_cast<std::size_t>(table_levels_));
+    rise_.resize(static_cast<std::size_t>(kEdgeCount * table_levels_));
+    fall_.resize(static_cast<std::size_t>(kEdgeCount * table_levels_));
+    for (int i = 0; i < table_levels_; ++i) {
+        const double r2 = r2_at(i);
+        plain_[static_cast<std::size_t>(i)] = make_term(r2, 1.0, f2, 0.0);
         for (int position = 0; position < kEdgeCount; ++position) {
             const double s = tables.s[static_cast<std::size_t>(kEdgeFirst + position)];
             const double v_m = tables.v[static_cast<std::size_t>(kEdgeFirst + position)];
-            rise_[static_cast<std::size_t>(position * levels_ + level)] = make_term(r2, s, f2, v_m);
-            fall_[static_cast<std::size_t>(position * levels_ + level)] = make_term(r2, 1.0 - s, f2, v_m);
+            rise_[static_cast<std::size_t>(position * table_levels_ + i)] = make_term(r2, s, f2, v_m);
+            fall_[static_cast<std::size_t>(position * table_levels_ + i)] = make_term(r2, 1.0 - s, f2, v_m);
         }
     }
     // The short elements' templates.
-    short_.resize(static_cast<std::size_t>(2 * 5 * kShortPositions * levels_));
+    short_.resize(static_cast<std::size_t>(2 * 5 * kShortPositions * table_levels_));
     const auto s_at = [&](int j) { return j < 0 ? 0.0 : j >= 16 ? 1.0 : tables.s[static_cast<std::size_t>(j)]; };
     const auto v_at = [&](int j) { return j < 0 || j >= 16 ? 0.0 : tables.v[static_cast<std::size_t>(j)]; };
     for (int gap = 0; gap < 2; ++gap) {
@@ -92,12 +109,9 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
                 if (p < 16 && q >= 0 && q < 16)
                     v -= 2.0 * tables.c[static_cast<std::size_t>(p)][static_cast<std::size_t>(q)];
                 v = std::max(v, 0.0);
-                for (int level = 0; level < levels_; ++level) {
-                    const double s500_db = config.level_min_db_s500 + level * config.level_step_db;
-                    const double r2 = std::pow(10.0, s500_db / 10.0) * 500.0 / sigma2_per_n0_hz_;
-                    short_[static_cast<std::size_t>(((gap * 5 + length - 1) * kShortPositions + position) * levels_ + level)] =
-                        make_term(r2, s, f2, v);
-                }
+                for (int i = 0; i < table_levels_; ++i)
+                    short_[static_cast<std::size_t>(((gap * 5 + length - 1) * kShortPositions + position) * table_levels_ + i)] =
+                        make_term(r2_at(i), s, f2, v);
             }
         }
     }
@@ -109,6 +123,35 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     walk_p_ = total_p / walk_passes_;
     jump_ = config.level_jump_per_s * config.level_frame_s;
     if (!(jump_ >= 0.0 && jump_ < 1.0)) throw std::invalid_argument("segmental: level_jump_per_s x level_frame_s must lie in [0, 1)");
+    if (!(std::isfinite(config.level_walk_high_nepers_per_sqrt_s) && config.level_walk_high_nepers_per_sqrt_s >= 0.0))
+        throw std::invalid_argument("segmental: level_walk_high_nepers_per_sqrt_s must be finite and not negative (nepers per square root of a second)");
+    if (config.level_walk_high_nepers_per_sqrt_s > 0.0) {
+        if (!(config.level_walk_rise_to_db_s500 > config.level_walk_rise_from_db_s500))
+            throw std::invalid_argument("segmental: level_walk_rise_to_db_s500 must lie above level_walk_rise_from_db_s500");
+        // Column `from`: a Gaussian over the levels, in grid steps, of the variance the walk has from that level over a frame,
+        // folded at both ends (reflecting, as the three-tap passes are), normalized to 1.
+        const int n = levels_;
+        walk_kernel_.assign(static_cast<std::size_t>(n * n), 0.0);
+        for (int from = 0; from < n; ++from) {
+            const double db = config.level_min_db_s500 + from * config.level_step_db;
+            const double t = std::clamp((db - config.level_walk_rise_from_db_s500) /
+                                        (config.level_walk_rise_to_db_s500 - config.level_walk_rise_from_db_s500), 0.0, 1.0);
+            const double walk = config.level_walk_nepers_per_sqrt_s + t * (config.level_walk_high_nepers_per_sqrt_s - config.level_walk_nepers_per_sqrt_s);
+            const double sd_steps = walk * std::sqrt(config.level_frame_s) / step_nepers;
+            double total = 0.0;
+            for (int image = -4 * n; image <= 4 * n; ++image) {
+                // the reflections of level `to` about the ends lie at -1 - to, 2n - 1 - to, ...
+                const int to_raw = image;
+                int to = to_raw;
+                while (to < 0 || to >= n) to = to < 0 ? -1 - to : 2 * n - 1 - to;
+                const double d = (to_raw - from) / std::max(sd_steps, 1e-9);
+                const double g = std::exp(-0.5 * d * d);
+                walk_kernel_[static_cast<std::size_t>(to * n + from)] += g;
+                total += g;
+            }
+            for (int to = 0; to < n; ++to) walk_kernel_[static_cast<std::size_t>(to * n + from)] /= total;
+        }
+    }
 }
 
 double LevelTables::short_score(bool gap, int length, std::int64_t i, const RunningSums& sums) const {
@@ -121,7 +164,8 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
         double top = -1e300;
         double values[kEdgeLevels];
         for (int g = 0; g < context.count; ++g) {
-            values[g] = term_value(short_term(gap, length, position, context.level[static_cast<std::size_t>(g)]), z, z2, w_);
+            values[g] = term_value(short_term(gap, length, position, context.level[static_cast<std::size_t>(g)], context.shift), z, z2,
+                                   w_);
             top = std::max(top, values[g]);
         }
         double sum = 0.0;
@@ -190,6 +234,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     entering_.assign(ring * levels, 0.0);
     x_.assign(ring_samples * levels, 0.0f);
     z_.assign(ring_samples, 0.0);
+    shift_.assign(ring_samples, 0);
     top_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
@@ -198,18 +243,33 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];
 }
 
-void LevelEvidence::push(double e_fs, double sigma2_fs2) {
-    const double z = e_fs / std::sqrt(sigma2_fs2);
+void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2) {
+    // The grid is relative to the floor; sigma^2 above it moves the tables' levels, not the carrier's (config.hpp,
+    // level_on_floor): sigma^2 in whole grid steps above the floor, the nearest. Past below() steps sigma^2 is taken as it is and
+    // the grid is relative to sigma^2 less below() steps: only the excess moves the carrier's level.
+    int shift = 0;
+    double sigma2 = sigma2_fs2;
+    if (tables_.on_floor() && floor_fs2 > 0.0 && sigma2_fs2 > floor_fs2) {
+        const double steps = 10.0 * std::log10(sigma2_fs2 / floor_fs2) / tables_.step_db();
+        if (steps >= tables_.below()) {
+            shift = tables_.below();
+        } else {
+            shift = static_cast<int>(std::lround(steps));
+            sigma2 = floor_fs2 * std::pow(10.0, shift * tables_.step_db() / 10.0);
+        }
+    }
+    const double z = e_fs / std::sqrt(sigma2);
     const double z2 = z * z;
     const std::size_t ring_samples = static_cast<std::size_t>(ring_frames_) * static_cast<std::size_t>(frame_samples_);
     const std::size_t slot = static_cast<std::size_t>(samples_) % ring_samples;
     z_[slot] = z;
+    shift_[slot] = static_cast<std::uint8_t>(shift);
     float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
     const double w = tables_.w();
     const double common = w * z2;  // what x_k(l) holds apart from x[level]
     double top = 0.0;
     for (int level = 0; level < levels_; ++level) {
-        x[level] = static_cast<float>(term_value(tables_.plain(level), z, z2, w));
+        x[level] = static_cast<float>(term_value(tables_.plain(level, shift), z, z2, w));
         top = std::max(top, common + static_cast<double>(x[level]));
     }
     top_[slot] = top;
@@ -250,26 +310,57 @@ void LevelEvidence::finish() {
     for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
-void LevelEvidence::step_level(double* x) const {
-    const double p = tables_.walk_p();
-    const double keep = 1.0 - 2.0 * p;
+void LevelEvidence::step_level(double* x, bool backward) const {
     const int n = levels_;
-    // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
     double buffer[256];
-    double* from = x;
-    double* to = buffer;
-    for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
-        to[0] = keep * from[0] + p * (from[0] + from[1]);
-        for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
-        to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
-        std::swap(from, to);
+    // J: x <- (1 - jump) x + jump x mean over the levels.
+    const auto jump_step = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < n; ++i) sum += x[i];
+        const double jump = tables_.jump();
+        const double mean = sum / n;
+        for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    };
+    const std::vector<double>& kernel = tables_.walk_kernel();
+    if (!kernel.empty()) {
+        // The walk from each level its own: x' = J K x forward, K^T J x backward. K's columns sum to 1, its rows need not, so
+        // the order matters here (review of text-level-1: K^T came before J).
+        if (backward) jump_step();
+        const std::size_t un = static_cast<std::size_t>(n);
+        for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
+        if (!backward) {
+            for (std::size_t to = 0; to < un; ++to) {
+                double acc = 0.0;
+                const double* row = kernel.data() + to * un;
+                for (std::size_t from = 0; from < un; ++from) acc += row[from] * x[from];
+                buffer[to] = acc;
+            }
+        } else {
+            for (std::size_t to = 0; to < un; ++to) {
+                const double* row = kernel.data() + to * un;
+                const double v = x[to];
+                for (std::size_t from = 0; from < un; ++from) buffer[from] += row[from] * v;
+            }
+        }
+        std::copy_n(buffer, n, x);
+        if (!backward) jump_step();
+        return;
     }
-    if (from != x) std::copy_n(from, n, x);
-    double sum = 0.0;
-    for (int i = 0; i < n; ++i) sum += x[i];
-    const double jump = tables_.jump();
-    const double mean = sum / n;
-    for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    {
+        const double p = tables_.walk_p();
+        const double keep = 1.0 - 2.0 * p;
+        // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
+        double* from = x;
+        double* to = buffer;
+        for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
+            to[0] = keep * from[0] + p * (from[0] + from[1]);
+            for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
+            to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
+            std::swap(from, to);
+        }
+        if (from != x) std::copy_n(from, n, x);
+    }
+    jump_step();
 }
 
 void LevelEvidence::end_frame() {
@@ -327,8 +418,8 @@ void LevelEvidence::commit(bool all) {
             const double scale = 1.0 / total;
             for (double& value : beta_) value *= scale;
         }
-        step_level(up);
-        step_level(down);
+        step_level(up, true);
+        step_level(down, true);
     }
     for (std::int64_t t = next_commit_; t <= last_committed; ++t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);
@@ -375,6 +466,7 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         const std::size_t slot = static_cast<std::size_t>(k) % ring_samples;
         const double z = z_[slot];
         const double z2 = z * z;
+        const int shift = shift_[slot];
         const float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
         const double common = w * z2;
         // ln sum P e^x, pulling out the largest exponent
@@ -390,8 +482,8 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             double up_top = -1e300, down_top = -1e300;
             double up[kEdgeLevels], down[kEdgeLevels];
             for (int i = 0; i < edge_count; ++i) {
-                up[i] = term_value(tables_.rise(position, edge_level[i]), z, z2, w);
-                down[i] = term_value(tables_.fall(position, edge_level[i]), z, z2, w);
+                up[i] = term_value(tables_.rise(position, edge_level[i], shift), z, z2, w);
+                down[i] = term_value(tables_.fall(position, edge_level[i], shift), z, z2, w);
                 up_top = std::max(up_top, up[i]);
                 down_top = std::max(down_top, down[i]);
             }
@@ -406,6 +498,7 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         SampleContext context;
         context.z = z;
         context.count = static_cast<std::uint8_t>(edge_count);
+        context.shift = static_cast<std::uint8_t>(shift);
         for (int i = 0; i < edge_count; ++i) {
             context.level[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(edge_level[i]);
             context.probability[static_cast<std::size_t>(i)] = static_cast<float>(edge_p[i]);

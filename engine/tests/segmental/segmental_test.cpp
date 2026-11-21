@@ -7,6 +7,7 @@
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/segmental/search.hpp"
 #include "kz4ap/segmental_decoder.hpp"
+#include "kz4ap/spectrum.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <gtest/gtest.h>
@@ -15,6 +16,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <iostream>
 #include <limits>
 #include <numbers>
@@ -774,6 +776,353 @@ TEST(LeakFloor, IsLeftOutAtAHoldOfZeroAndRefusesWhatCannotBe) {
     SegmentalConfig negative;
     negative.leak_hold_s = -1.0;
     EXPECT_THROW(SegmentalShared(negative, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+}
+
+TEST(LeakFloor, TheChannelsOwnKeyedCarrierIsNotANeighbor) {
+    // text-level-1: a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak (up to 40 dB re the
+    // hiss at +57.78 dB S500). A bin counts only above rho_k times the own key-down power (derived: hard edges anywhere in the window).
+    // The bound is a variant (leak_own 1), not the default.
+    EXPECT_TRUE(SegmentalShared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0}).leak_own_bound.empty());
+    SegmentalConfig on_config;
+    on_config.leak_own = 1.0;
+    const auto shared = std::make_shared<const SegmentalShared>(on_config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared->leak_own_bound.size(), 15u);
+    ASSERT_EQ(shared->leak_own_hold_blocks, 47u);  // 1 s at 21.33 ms a block: 46.875, rounded
+    const auto db = [](double x) { return 10.0 * std::log10(x); };
+    std::cout << "derived: own splatter bound, dB re key-down, k = 3 ... 14:";
+    for (std::size_t k = 3; k < 15; ++k) std::cout << " " << std::round(10.0 * db(shared->leak_own_bound[k])) / 10.0;
+    std::cout << "\n";
+    EXPECT_NEAR(db(shared->leak_own_bound[3]), -10.6, 0.2);
+    EXPECT_NEAR(db(shared->leak_own_bound[14]), -25.1, 0.2);
+    for (std::size_t k = 4; k < 15; ++k) EXPECT_LT(shared->leak_own_bound[k], shared->leak_own_bound[k - 1]);
+    // A keyed carrier, hard edges, alone and with a steady neighbor 6 dB below it 100 Hz away, through the analyzer.
+    SegmentalConfig off_config;
+    off_config.leak_own = 0.0;
+    const auto off = std::make_shared<const SegmentalShared>(off_config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double df = 48000.0 / 2048.0;
+    const int c0 = 40;
+    const double f_own = (c0 + 0.3) * df, f_neighbor = f_own + 100.0;
+    for (const bool neighbor : {false, true}) {
+        std::mt19937 rng(11);
+        std::uniform_int_distribution<int> length(48, 14400);  // 1 ms to 300 ms at 48 kHz
+        std::vector<Sample> x(48000 * 6);
+        bool down = false;
+        std::size_t next = 0;
+        for (std::size_t n = 0; n < x.size(); ++n) {
+            if (n == next) {
+                down = !down;
+                next = n + static_cast<std::size_t>(length(rng));
+            }
+            const double t = static_cast<double>(n) / 48000.0;
+            std::complex<double> s = down ? 0.5 * std::polar(1.0, 2.0 * std::numbers::pi * f_own * t) : 0.0;
+            if (neighbor) s += 0.25 * std::polar(1.0, 2.0 * std::numbers::pi * f_neighbor * t);
+            x[n] = Sample(static_cast<float>(s.real()), static_cast<float>(s.imag()));
+        }
+        SpectrumAnalyzer analyzer(48000, 2048, 1024, false);
+        SegmentalDecoder with(1500.0, shared), without(1500.0, off);
+        double most_with = 0.0, most_without = 0.0, least_with = 1e300, least_without = 1e300;
+        int frames = 0;
+        for (const SpectrumFrame& frame : analyzer.push(x)) {
+            with.set_band_spectrum(frame.power_fs2, c0 + 1024);
+            without.set_band_spectrum(frame.power_fs2, c0 + 1024);
+            if (++frames < 60) continue;  // past the first second's hold
+            most_with = std::max(most_with, with.leak_floor_fs2(1));
+            most_without = std::max(most_without, without.leak_floor_fs2(1));
+            least_with = std::min(least_with, with.leak_floor_fs2(1));
+            least_without = std::min(least_without, without.leak_floor_fs2(1));
+        }
+        ASSERT_GT(frames, 200);
+        if (!neighbor) {
+            // The own keying alone: what it reads without the bound is the defect; with it, next to nothing.
+            EXPECT_GT(most_without, 0.0);
+            EXPECT_LT(most_with, 1e-3 * most_without);
+        } else {
+            // A neighbor 6 dB below stands well above the bound (about -15 dB re the own key-down there): most of it still counts.
+            EXPECT_GT(least_with, 0.5 * least_without);
+        }
+    }
+}
+
+TEST(LevelEvidence, NoiseAboveTheFloorLeavesTheCarriersLevelWhereItIs) {
+    // text-level-1: sigma^2 stepping 30 dB above the floor (a leak floor's 0.2 s holds) under a steady carrier at +50 dB S500 re the
+    // floor. On the floor (the default) the level the belief gives the samples stays; relative to sigma^2 (level_on_floor 0) it moves
+    // by the step.
+    const auto mean_level_db = [](const SegmentalConfig& config, bool stepped_samples) {
+        const SegmentalShared shared = make_shared_parts(config);
+        std::mt19937 rng(5);
+        std::normal_distribution<double> noise(0.0, std::sqrt(0.5));
+        const double r = std::sqrt(std::pow(10.0, 50.0 / 10.0) * 500.0 / shared.output_noise.sigma2_per_n0_hz);
+        RunningSums sums;
+        LevelEvidence evidence(config, shared.level_tables, sums);
+        const auto stepped = [](std::int64_t k) { return k >= 1000 && (k / 75) % 2 == 1; };
+        double total = 0.0;
+        int count = 0;
+        std::int64_t read = 0;
+        for (std::int64_t k = 0; k < 4000; ++k) {
+            const double re = r + noise(rng), im = noise(rng);
+            evidence.push(std::sqrt(re * re + im * im), stepped(k) ? 1000.0 : 1.0, 1.0);
+            for (; read < sums.committed(); ++read) {
+                if (read < 1500 || read % 75 < 20 || read % 75 > 55 || stepped(read) != stepped_samples) continue;
+                const SampleContext& context = sums.context(read);
+                double level = 0.0, p = 0.0;
+                for (int g = 0; g < context.count; ++g) {
+                    level += context.probability[static_cast<std::size_t>(g)] * context.level[static_cast<std::size_t>(g)];
+                    p += context.probability[static_cast<std::size_t>(g)];
+                }
+                total += config.level_min_db_s500 + config.level_step_db * level / p;
+                ++count;
+            }
+        }
+        return total / count;
+    };
+    SegmentalConfig on_floor = small_config();
+    SegmentalConfig on_sigma = small_config();
+    on_sigma.level_on_floor = 0.0;
+    EXPECT_NEAR(mean_level_db(on_floor, false), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_floor, true), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_sigma, false), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_sigma, true), 20.0, 4.0);
+    // The tables below the grid: level l at a shift d is the grid's level l - d.
+    const SegmentalShared shared = make_shared_parts(on_floor);
+    const LevelTables& t = shared.level_tables;
+    EXPECT_EQ(t.below(), 40);  // 60 dB re the floor in 1.5 dB steps
+    EXPECT_EQ(t.plain(30, 20).constant, t.plain(10, 0).constant);
+    EXPECT_EQ(t.rise(2, 30, 20).i0_coeff, t.rise(2, 10).i0_coeff);
+    EXPECT_LT(t.plain(0, 40).constant, 0.0f);
+    SegmentalConfig bad = small_config();
+    bad.level_on_floor = 0.5;
+    EXPECT_THROW(make_shared_parts(bad), std::invalid_argument);
+}
+
+TEST(LevelEvidence, NoiseFarAboveTheFloorIsTakenAsItIsAndTheShiftStopsAtSixtyDecibels) {
+    // Review of text-level-1. s = 10 log10(sigma^2 / F) / 1.5 dB, unrounded: below D = 40 steps (60 dB re F) the shift is the
+    // nearest whole step and sigma^2 is taken at F x 10^(1.5 shift / 10); from D on the shift is D and sigma^2 is taken as it is.
+    // So s in [39.5, 40) gives the shift 40 with sigma^2 still rounded, to 60 dB re F.
+    const SegmentalConfig config = small_config();
+    const SegmentalShared shared = make_shared_parts(config);
+    ASSERT_EQ(shared.level_tables.below(), 40);
+    const double floor = 2.0e-6;  // FS^2
+    struct Case {
+        double sigma2_db;  // dB re the floor
+        int shift;
+        double taken_db;  // the sigma^2 z is taken at, dB re the floor; NaN: sigma^2 as it is
+    };
+    const double as_is = std::numeric_limits<double>::quiet_NaN();
+    const std::vector<Case> cases = {{0.0, 0, 0.0},    {1.0, 1, 1.5},    {2.2, 1, 1.5},   {2.3, 2, 3.0},   {58.4, 39, 58.5},
+                                     {59.4, 40, 60.0}, {60.3, 40, as_is}, {70.0, 40, as_is}, {95.0, 40, as_is}};
+    RunningSums sums;
+    LevelEvidence evidence(config, shared.level_tables, sums);
+    std::mt19937 rng(9);
+    std::uniform_real_distribution<double> envelope(0.0, 0.01);
+    std::vector<double> e(1200);
+    std::int64_t read = 0;
+    int checked = 0;
+    const auto check = [&] {
+        for (; read < sums.committed() && read < static_cast<std::int64_t>(e.size()); ++read) {
+            const Case& c = cases[static_cast<std::size_t>(read) % cases.size()];
+            const double sigma2 = floor * std::pow(10.0, c.sigma2_db / 10.0);
+            const double taken = std::isnan(c.taken_db) ? sigma2 : floor * std::pow(10.0, c.shift * 1.5 / 10.0);
+            const SampleContext& context = sums.context(read);
+            EXPECT_EQ(context.shift, c.shift) << c.sigma2_db << " dB re the floor";
+            EXPECT_DOUBLE_EQ(context.z, e[static_cast<std::size_t>(read)] / std::sqrt(taken)) << c.sigma2_db << " dB re the floor";
+            ++checked;
+        }
+    };
+    for (std::size_t k = 0; k < e.size(); ++k) {
+        e[k] = envelope(rng);
+        evidence.push(e[k], floor * std::pow(10.0, cases[k % cases.size()].sigma2_db / 10.0), floor);
+        check();
+    }
+    evidence.finish();
+    check();
+    EXPECT_EQ(checked, 1200);
+    // With level_on_floor 0 nothing shifts and z is taken at sigma^2 itself.
+    SegmentalConfig on_sigma = small_config();
+    on_sigma.level_on_floor = 0.0;
+    const SegmentalShared shared0 = make_shared_parts(on_sigma);
+    EXPECT_EQ(shared0.level_tables.below(), 0);
+    RunningSums sums0;
+    LevelEvidence evidence0(on_sigma, shared0.level_tables, sums0);
+    for (int k = 0; k < 300; ++k) evidence0.push(0.004, floor * 1000.0, floor);
+    evidence0.finish();
+    ASSERT_GT(sums0.committed(), 100);
+    EXPECT_EQ(sums0.context(100).shift, 0);
+    EXPECT_DOUBLE_EQ(sums0.context(100).z, 0.004 / std::sqrt(floor * 1000.0));
+}
+
+TEST(LevelTables, BelowTheBottomReSigmaIsTheBottomOnlyWithLevelNoiseBottom) {
+    // level_noise_bottom 1 (the default): a table level below -6 dB S500 re sigma^2 holds the bottom's term; 0: the tables go on
+    // down, 1.5 dB a step, to -66 dB S500 re sigma^2. Above the bottom both are the same.
+    SegmentalConfig clamp = small_config();
+    SegmentalConfig open = small_config();
+    open.level_noise_bottom = 0.0;
+    const SegmentalShared with = make_shared_parts(clamp);
+    const SegmentalShared without = make_shared_parts(open);
+    const LevelTables& a = with.level_tables;
+    const LevelTables& b = without.level_tables;
+    ASSERT_EQ(a.below(), 40);
+    ASSERT_EQ(b.below(), 40);
+    for (const int shift : {1, 20, 40}) {
+        // grid level 0 at a shift: below the bottom re sigma^2
+        EXPECT_EQ(a.plain(0, shift).constant, a.plain(0).constant) << shift;
+        EXPECT_EQ(a.plain(0, shift).i0_coeff, a.plain(0).i0_coeff) << shift;
+        EXPECT_EQ(a.rise(3, 0, shift).inverse_v, a.rise(3, 0).inverse_v) << shift;
+        EXPECT_LT(b.plain(0, shift).i0_coeff, b.plain(0).i0_coeff) << shift;  // a lower level: a smaller r
+        EXPECT_NE(b.plain(0, shift).constant, b.plain(0).constant) << shift;
+        // at or above the bottom re sigma^2: the same tables
+        EXPECT_EQ(a.plain(shift, shift).constant, b.plain(shift, shift).constant) << shift;
+        EXPECT_EQ(a.plain(shift + 5, shift).constant, b.plain(5).constant) << shift;
+        EXPECT_EQ(a.short_term(true, 3, 4, shift + 2, shift).i0_coeff, b.short_term(true, 3, 4, 2).i0_coeff) << shift;
+    }
+    // r^2 at the lowest table level, -66 dB S500 re sigma^2: i0_coeff = 2 r / v with v about 1.
+    const double r = std::sqrt(std::pow(10.0, -66.0 / 10.0) * 500.0 / without.output_noise.sigma2_per_n0_hz);
+    EXPECT_NEAR(b.plain(0, 40).i0_coeff, 2.0 * r, 1e-6 * r);
+}
+
+TEST(LevelTables, RefusesTheSwitchesAtValuesOtherThanZeroOrOne) {
+    // level_on_floor, level_noise_bottom and leak_own are switches: 0 or 1, nothing else.
+    for (const double value : {0.5, 2.0, -1.0, std::numeric_limits<double>::quiet_NaN()}) {
+        SegmentalConfig floor_switch = small_config();
+        floor_switch.level_on_floor = value;
+        EXPECT_THROW(make_shared_parts(floor_switch), std::invalid_argument) << "level_on_floor " << value;
+        SegmentalConfig bottom = small_config();
+        bottom.level_noise_bottom = value;
+        EXPECT_THROW(make_shared_parts(bottom), std::invalid_argument) << "level_noise_bottom " << value;
+        SegmentalConfig own = small_config();
+        own.leak_own = value;
+        EXPECT_THROW(make_shared_parts(own), std::invalid_argument) << "leak_own " << value;
+    }
+    for (const double value : {0.0, 1.0}) {
+        SegmentalConfig c = small_config();
+        c.level_on_floor = value;
+        c.level_noise_bottom = value;
+        c.leak_own = value;
+        EXPECT_NO_THROW(make_shared_parts(c)) << value;
+    }
+}
+
+namespace {
+
+// The level's step on unit vectors: column `from` of the forward step's matrix, or of the backward step's.
+std::vector<double> stepped(const LevelEvidence& evidence, int levels, int from, bool backward) {
+    std::vector<double> x(static_cast<std::size_t>(levels), 0.0);
+    x[static_cast<std::size_t>(from)] = 1.0;
+    evidence.step_level(x.data(), backward);
+    return x;
+}
+
+}  // namespace
+
+TEST(LevelEvidence, TheLevelDependentWalksKernelIsNormalizedMatchesThePassesAndStepsBackByItsTranspose) {
+    // Review of text-level-1: the walk variant (level_walk_high_nepers_per_sqrt_s above 0) replaces the three-tap passes by a dense
+    // kernel K[to][from], each column a Gaussian over the levels folded at both ends.
+    SegmentalConfig passes_config = small_config();
+    SegmentalConfig equal_config = small_config();
+    equal_config.level_walk_high_nepers_per_sqrt_s = equal_config.level_walk_nepers_per_sqrt_s;  // the same walk from every level
+    SegmentalConfig rising_config = small_config();
+    rising_config.level_walk_high_nepers_per_sqrt_s = 10.0;
+    const SegmentalShared passes = make_shared_parts(passes_config);
+    const SegmentalShared equal = make_shared_parts(equal_config);
+    const SegmentalShared rising = make_shared_parts(rising_config);
+    EXPECT_TRUE(passes.level_tables.walk_kernel().empty());
+    const int n = rising.level_tables.levels();
+    ASSERT_EQ(n, 61);
+    const double step_nepers = 1.5 / 20.0 * std::log(10.0);
+    const double frame_s = rising_config.level_frame_s;
+    for (const SegmentalShared* shared : {&equal, &rising}) {
+        const std::vector<double>& k = shared->level_tables.walk_kernel();
+        ASSERT_EQ(k.size(), static_cast<std::size_t>(n * n));
+        // Each column sums to 1 and is not negative.
+        for (int from = 0; from < n; ++from) {
+            double sum = 0.0;
+            for (int to = 0; to < n; ++to) {
+                EXPECT_GE(k[static_cast<std::size_t>(to * n + from)], 0.0);
+                sum += k[static_cast<std::size_t>(to * n + from)];
+            }
+            EXPECT_NEAR(sum, 1.0, 1e-12) << "column " << from;
+        }
+    }
+    // Its spread: at +15 dB S500 re the floor (level 14) the walk is 4.8 nepers per root second, at +30 dB (level 24, half way from
+    // +20 to +40 dB) 7.4, at +45 dB (level 34) 10; variance (walk x sqrt(frame) / step)^2 in steps^2, far from both ends.
+    const auto column_variance = [&](const std::vector<double>& k, int from) {
+        double mean = 0.0, second = 0.0;
+        for (int to = 0; to < n; ++to) {
+            mean += to * k[static_cast<std::size_t>(to * n + from)];
+            second += to * to * k[static_cast<std::size_t>(to * n + from)];
+        }
+        return second - mean * mean;
+    };
+    const auto walk_variance = [&](double walk) { return std::pow(walk * std::sqrt(frame_s) / step_nepers, 2.0); };
+    EXPECT_NEAR(column_variance(rising.level_tables.walk_kernel(), 14), walk_variance(4.8), 0.01 * walk_variance(4.8));
+    EXPECT_NEAR(column_variance(rising.level_tables.walk_kernel(), 24), walk_variance(7.4), 0.01 * walk_variance(7.4));
+    EXPECT_NEAR(column_variance(rising.level_tables.walk_kernel(), 34), walk_variance(10.0), 0.01 * walk_variance(10.0));
+    // With equal walks the kernel matches the 25 three-tap passes (the same variance, 16.48 steps^2; a Gaussian against a sum of
+    // 25 three-point steps, whose excess kurtosis is -0.06), the jump included, at every level, ends too.
+    RunningSums sums_a, sums_b, sums_c;
+    const LevelEvidence by_passes(passes_config, passes.level_tables, sums_a);
+    const LevelEvidence by_kernel(equal_config, equal.level_tables, sums_b);
+    const LevelEvidence by_rising(rising_config, rising.level_tables, sums_c);
+    double most = 0.0, most_l1 = 0.0;
+    for (int from = 0; from < n; ++from) {
+        const std::vector<double> a = stepped(by_passes, n, from, false);
+        const std::vector<double> b = stepped(by_kernel, n, from, false);
+        double l1 = 0.0;
+        for (int to = 0; to < n; ++to) {
+            most = std::max(most, std::abs(a[static_cast<std::size_t>(to)] - b[static_cast<std::size_t>(to)]));
+            l1 += std::abs(a[static_cast<std::size_t>(to)] - b[static_cast<std::size_t>(to)]);
+        }
+        most_l1 = std::max(most_l1, l1);
+    }
+    std::cout << "measured: equal walks, kernel against the passes: largest difference " << most << " (the peak 0.098), largest L1 "
+              << most_l1 << "\n";
+    EXPECT_LT(most, 2e-3);
+    EXPECT_LT(most_l1, 0.02);
+    // The passes step the same both ways (symmetric); the kernel's backward step is the forward step's transpose, the jump included:
+    // forward(e_i)[j] = backward(e_j)[i].
+    for (const LevelEvidence* evidence : {&by_passes, &by_kernel, &by_rising}) {
+        std::vector<std::vector<double>> forward, backward;
+        for (int i = 0; i < n; ++i) {
+            forward.push_back(stepped(*evidence, n, i, false));
+            backward.push_back(stepped(*evidence, n, i, true));
+        }
+        double worst = 0.0;
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j)
+                worst = std::max(worst, std::abs(forward[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] -
+                                                 backward[static_cast<std::size_t>(j)][static_cast<std::size_t>(i)]));
+        EXPECT_LT(worst, 1e-15);
+    }
+    // The rising kernel is not symmetric: the transpose matters there.
+    double asymmetry = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const std::vector<double> f = stepped(by_rising, n, i, false);
+        for (int j = 0; j < n; ++j) asymmetry = std::max(asymmetry, std::abs(f[static_cast<std::size_t>(j)] - stepped(by_rising, n, j, false)[static_cast<std::size_t>(i)]));
+    }
+    EXPECT_GT(asymmetry, 1e-3);
+}
+
+TEST(LevelTables, RefusesAWalkThatRisesToALevelNotAboveWhereItRisesFrom) {
+    // With the level-dependent walk on, level_walk_rise_to_db_s500 must lie above level_walk_rise_from_db_s500; the walk itself
+    // must be finite and not negative. With it off (0) the levels are not read.
+    for (const double to : {20.0, 19.0, std::numeric_limits<double>::quiet_NaN()}) {
+        SegmentalConfig c = small_config();
+        c.level_walk_high_nepers_per_sqrt_s = 10.0;
+        c.level_walk_rise_from_db_s500 = 20.0;
+        c.level_walk_rise_to_db_s500 = to;
+        EXPECT_THROW(make_shared_parts(c), std::invalid_argument) << to;
+    }
+    for (const double walk : {-1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        SegmentalConfig c = small_config();
+        c.level_walk_high_nepers_per_sqrt_s = walk;
+        EXPECT_THROW(make_shared_parts(c), std::invalid_argument) << walk;
+    }
+    SegmentalConfig off = small_config();
+    off.level_walk_rise_to_db_s500 = 10.0;  // below rise_from, but the walk is off
+    EXPECT_NO_THROW(make_shared_parts(off));
+    SegmentalConfig on = small_config();
+    on.level_walk_high_nepers_per_sqrt_s = 10.0;
+    on.level_walk_rise_to_db_s500 = 20.5;
+    EXPECT_NO_THROW(make_shared_parts(on));
 }
 
 TEST(SegmentalShared, BuildsQuicklyAtTheRadiosHighestRate) {

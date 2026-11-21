@@ -68,6 +68,54 @@ viterbi::TemplateTables template_of(const segmental::SegmentalConfig& config, co
                                          config.model.edge_rise_s, config.model.edge_rise_min_s, config.model.edge_rise_max_s);
 }
 
+// The most a channel's own carrier, keyed on once and off once with hard edges (no rise: the widest spread) anywhere inside the
+// analyzer's periodic Hann window of n samples, puts in the bin k from the channel's center bin, relative to the largest of its three
+// center bins when it is key-down over the whole window, over tones within half a bin of the center (11 offsets); k = 0 ... last, 0
+// below first. Derived, by computation: the window's partial sums give every on-interval, edges every n / 256 samples.
+std::vector<double> own_splatter_bound(int n, std::size_t first, std::size_t last) {
+    std::vector<double> bound(last + 1, 0.0);
+    constexpr int kPositions = 256;
+    constexpr int kOffsets = 11;
+    const int step = std::max(1, n / kPositions);
+    std::vector<double> window(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) window[static_cast<std::size_t>(i)] = 0.5 - 0.5 * std::cos(2.0 * std::numbers::pi * i / n);
+    using Complex = std::array<double, 2>;
+    const auto dft_partial = [&](double cycles_per_n, std::vector<Complex>& sums) {
+        // sums[p] = sum over i < p x step of w[i] e^(-2 pi j cycles i / n)
+        sums.assign(static_cast<std::size_t>(n / step + 1), Complex{0.0, 0.0});
+        double re = 0.0, im = 0.0;
+        for (int i = 0; i < n; ++i) {
+            if (i % step == 0) sums[static_cast<std::size_t>(i / step)] = {re, im};
+            const double phase = -2.0 * std::numbers::pi * cycles_per_n * i / n;
+            re += window[static_cast<std::size_t>(i)] * std::cos(phase);
+            im += window[static_cast<std::size_t>(i)] * std::sin(phase);
+        }
+        sums.back() = {re, im};
+    };
+    std::vector<Complex> sums;
+    for (int o = 0; o < kOffsets; ++o) {
+        const double delta = -0.5 + static_cast<double>(o) / (kOffsets - 1);  // bins: the tone's offset from the center bin
+        double center = 0.0;
+        for (int j = -1; j <= 1; ++j) {
+            dft_partial(j - delta, sums);
+            center = std::max(center, sums.back()[0] * sums.back()[0] + sums.back()[1] * sums.back()[1]);
+        }
+        for (std::size_t k = first; k <= last; ++k) {
+            for (const int sign : {-1, 1}) {
+                dft_partial(sign * static_cast<double>(k) - delta, sums);
+                double most = 0.0;
+                for (std::size_t a = 0; a < sums.size(); ++a)
+                    for (std::size_t b = a + 1; b < sums.size(); ++b) {
+                        const double re = sums[b][0] - sums[a][0], im = sums[b][1] - sums[a][1];
+                        most = std::max(most, re * re + im * im);
+                    }
+                bound[k] = std::max(bound[k], most / center);
+            }
+        }
+    }
+    return bound;
+}
+
 }  // namespace
 
 SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const ChannelizerConfig& channel)
@@ -99,6 +147,13 @@ SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const Channe
         // A block is the engine's hop, half an FFT.
         const double block_s = 0.5 * channel.fft_size / channel.sample_rate;
         leak_hold_blocks = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(c.leak_hold_s / block_s)));
+        require(c.leak_own == 0.0 || c.leak_own == 1.0, "segmental: leak_own must be 0 or 1");
+        require(std::isfinite(c.leak_own_hold_s) && c.leak_own_hold_s >= 0.0, "segmental: leak_own_hold_s must be finite and not negative (s)");
+        if (c.leak_own == 1.0) {
+            // The window's length in s does not depend on the rate: the tables' FFT is as good as the full rate's.
+            leak_own_bound = own_splatter_bound(tables.fft_size, leak_first_bin, last);
+            leak_own_hold_blocks = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(c.leak_own_hold_s / block_s)));
+        }
     }
 }
 
@@ -254,14 +309,18 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         stream.envelope.clear();
         stream.sampler.push(samples, next_index_, stream.envelope);
         const double spacing = static_cast<double>(stream.parts->channel_samples_per_sample);
-        const double sigma2 = std::max(n0_ * stream.parts->output_noise.sigma2_per_n0_hz, stream.leak_floor);
+        const double hiss = n0_ * stream.parts->output_noise.sigma2_per_n0_hz;
         for (const viterbi::EnvelopeSample& sample : stream.envelope) {
             if (!(n0_ > 0.0)) continue;
             // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
             if (sample.k != stream.expected_k)
                 stream.search->note_sample_time(stream.pushed, spacing * static_cast<double>(sample.k) / rate_);
             stream.expected_k = sample.k + 1;
-            stream.evidence->push(sample.e_fs, stream.floor->sigma2(sample.e_fs, sigma2));
+            // The channel's floor, max(hiss, the channel floor), is what the level's grid is relative to; a neighbor's leak above it
+            // is noise only (segmental/config.hpp, level_on_floor).
+            const double floor = stream.floor->sigma2(sample.e_fs, hiss);
+            const double sigma2 = std::max(floor, stream.leak_floor);
+            stream.evidence->push(sample.e_fs, sigma2, floor);
             stream.search->advance();  // at once: the short elements' context reaches back only so far
             stream.advance_free_key();
             ++stream.pushed;
@@ -400,12 +459,27 @@ void SegmentalDecoder::set_band_spectrum(std::span<const float> power_fs2, int c
         if (parts.leak_response.empty()) continue;
         // L = sum over the bins beside the channel of (P / 1.5) |H_channel|^2 |H_front|^2. A tone of amplitude A reads A^2 in its bin
         // under the analyzer's Hann window and 1.5 A^2 over all its bins (derived), so a neighbor's carrier counts once.
+        // The channel's own key-down power, the largest of its three center bins held over leak_own_hold_s; a bin counts only above
+        // what that carrier, keyed, can put there (leak_own_bound).
+        double own = 0.0;
+        if (!parts.leak_own_bound.empty()) {
+            double now = 0.0;
+            for (std::ptrdiff_t j = -1; j <= 1; ++j)
+                if (center_index + j >= 0 && center_index + j < size) now = std::max(now, static_cast<double>(power_fs2[static_cast<std::size_t>(center_index + j)]));
+            if (stream.own_held.empty()) stream.own_held.assign(parts.leak_own_hold_blocks, 0.0);
+            stream.own_held[stream.own_next++ % stream.own_held.size()] = now;
+            own = *std::max_element(stream.own_held.begin(), stream.own_held.end());
+        }
+        const auto counted = [&](std::size_t k, std::ptrdiff_t bin) {
+            const double p = power_fs2[static_cast<std::size_t>(bin)];
+            return parts.leak_own_bound.empty() ? p : std::max(0.0, p - parts.leak_own_bound[k] * own);
+        };
         double leak = 0.0;
         for (std::size_t k = parts.leak_first_bin; k < parts.leak_response.size(); ++k) {
             const auto offset = static_cast<std::ptrdiff_t>(k);
             const std::ptrdiff_t below = center_index - offset, above = center_index + offset;
-            if (below >= 0 && below < size) leak += parts.leak_response[k] * power_fs2[static_cast<std::size_t>(below)];
-            if (above >= 0 && above < size) leak += parts.leak_response[k] * power_fs2[static_cast<std::size_t>(above)];
+            if (below >= 0 && below < size) leak += parts.leak_response[k] * counted(k, below);
+            if (above >= 0 && above < size) leak += parts.leak_response[k] * counted(k, above);
         }
         leak /= 1.5;
         if (stream.leak_held.empty()) stream.leak_held.assign(parts.leak_hold_blocks, 0.0);

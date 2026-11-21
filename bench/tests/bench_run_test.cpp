@@ -632,7 +632,9 @@ TEST_F(BenchRun, SegmentalReadsPastAStrongNeighborBehindTheNarrowerFiltersSidelo
     const double untapered = cer({"--set", "front_taper_ratio=0"});
     std::cout << "measured: neighbor 100 Hz, +12 dB re wanted: CER " << tapered << " with E = T/4, " << untapered << " with E = 4.235 ms\n";
     EXPECT_LE(tapered, 0.1);
-    EXPECT_GE(untapered, 0.5);  // the control: at 4.235 ms the narrower stream does not earn the lead (measured 0.807)
+    // The control: at 4.235 ms the narrower stream does not earn the lead (measured 0.807; 0.205 since text-level-1, whose level on
+    // the channel's floor no longer moves with the neighbor's leak floor, so the widest filter reads more of it).
+    EXPECT_GE(untapered, tapered + 0.1);
 }
 
 TEST_F(BenchRun, SegmentalReadsALateStationPastACloseNeighborThroughTheDetector) {

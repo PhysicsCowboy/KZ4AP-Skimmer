@@ -39,6 +39,23 @@ struct SegmentalConfig {
     double level_step_db = 1.5;
     // 1: how much of the grid's own variance, step^2 / 12 in nepers^2, goes into V (0 to leave it out)
     double level_grid_in_v = 1.0;
+    // 1 or 0: what the level's grid is relative to. 1, the default: the channel's noise floor, max(hiss, channel floor), which
+    // moves slowly; a neighbor's leak floor above it enters only as noise variance, sigma^2 rounded to whole grid steps above the
+    // floor, and the carrier's level on the grid does not move with it. 0: sigma^2 itself, the leak floor included, as before
+    // text-level-1, where the leak floor's 0.2 s steps (its own carrier's sidebands, at strong levels up to 40 dB re the hiss) moved
+    // a steady carrier's level on the grid by as much inside a mark (docs/signal-processing.md A.8e, "Level filter").
+    double level_on_floor = 1.0;
+    // dB re the floor: how far sigma^2 may stand above the floor and still be counted in whole grid steps; the tables reach that
+    // far below the grid's bottom. Past it sigma^2 is taken as it is and the grid is relative to sigma^2 less this, so that only the
+    // excess moves the carrier's level. Heuristic: the strongest own-carrier leak measured on VE3NEA's +57.78 dB S500 stations stood
+    // 40 dB re the hiss.
+    double level_noise_above_floor_max_db = 60.0;
+    // 1 or 0: whether a level that stands below the grid's bottom re sigma^2 (sigma^2 raised above the floor) is scored as the
+    // bottom, -6 dB S500 re sigma^2, as the grid relative to sigma^2 did. 1, the default: key-down at a level far under the noise
+    // costs next to nothing on bare noise, so a story would bridge a gap for nothing wherever a neighbor's leak raises sigma^2 (with
+    // 0 and the leak bound on, a keyed neighbor at +12 dB re wanted 100 Hz away read worse, and a weaker caller 60 Hz from a
+    // stronger lost calls: the engine's tests). Heuristic, the old grid's bottom carried over.
+    double level_noise_bottom = 1.0;
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
     // s: the look-ahead the level reads past the sample it is used for, at least, and the block the look-ahead is committed
@@ -56,6 +73,12 @@ struct SegmentalConfig {
     // 1/s: the rate at which the level jumps to anywhere on the grid (a new station, a new over). Heuristic, of the size
     // of the model's over rate.
     double level_jump_per_s = 0.05;
+    // nepers per square root of a second, dB S500 re the floor: the walk from a strong level, for fast fading. From a level at or
+    // below level_walk_rise_from_db_s500 the walk is level_walk_nepers_per_sqrt_s; it rises linearly in dB to this at
+    // level_walk_rise_to_db_s500 and stays there above. 0 leaves it out (the walk the same from every level). text-level-1.
+    double level_walk_high_nepers_per_sqrt_s = 0.0;
+    double level_walk_rise_from_db_s500 = 20.0;
+    double level_walk_rise_to_db_s500 = 40.0;
 
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
@@ -87,6 +110,18 @@ struct SegmentalConfig {
     // at 23.4 Hz a bin, and the chain's response past 320 Hz is under -100 dB re 0 Hz.
     double leak_min_offset_hz = 60.0;
     double leak_max_offset_hz = 320.0;
+    // 1 or 0: whether a bin's power counts toward the leak only above what the channel's own keyed carrier can put there. A variant,
+    // not the default: at 1 each bin k from the center counts max(0, P - rho_k P_own), P_own the largest of the three center bins over
+    // the last leak_own_hold_s, rho_k the most a carrier keyed on and off with hard edges inside the analyzer's Hann window puts k bins
+    // away relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -10.6 dB re
+    // key-down at 70.3 Hz to -25.1 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0, the default: every bin's power counts, so a
+    // strong station's own keying, spread by the analyzer's window, reads as a leak of up to 40 dB re the hiss. With the level on the
+    // floor that is noise only, and it reads fast fading better than the bound: on VE3NEA's conditions at f_D 3 Hz, +57.78 dB S500,
+    // paddle 0.052 against 0.064 and hand 0.078 against 0.088, E2 0.5072 against 0.5237 on seed 1's slice (docs/decision-log.md,
+    // 2026-11-21). Measured, not understood: a heuristic the test set chose.
+    double leak_own = 0.0;
+    // s: how long the own key-down power is held. Heuristic.
+    double leak_own_hold_s = 1.0;
 
     // --- A story's fist: the gap stretch (search.hpp) ---
 
