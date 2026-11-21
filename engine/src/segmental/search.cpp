@@ -312,8 +312,11 @@ struct Search::Impl {
     struct Tail {
         double score = -kInf;
         std::int32_t text = viterbi::SharedText::kEmpty;
+        std::int64_t fall = -1;  // the over's last fall, whose tail it takes when it reaches the no-signal story
     };
-    std::array<Tail, kEdgeCount + 1> tails;
+    // By the boundary, mod kTailMax + 7. An over reaches the no-signal story 6 samples after its end, or, with the channel's tail of
+    // n positions, n + 6 samples after, so that a birth's rise window cannot overlap the tail's samples (text-fast-1).
+    std::array<Tail, kTailMax + kEdgeCount + 1> tails;
     // The times of samples: t = origin + m Delta after the last break
     std::vector<std::pair<std::int64_t, double>> breaks;
 
@@ -507,11 +510,14 @@ void Search::Impl::boundary(std::int64_t j) {
     // By the first d the element's age allows (an element is at least 6 samples long): [d - 1] holds the reach over d ... 6.
     std::array<double, kEdgeCount> gap_reach_from;
     std::array<double, kEdgeCount> mark_reach_from;
+    // [d - 1]: what a gap reaches by ending at j + d, the tail aside.
+    std::array<double, kEdgeCount> gap_reach_at;
     {
         double gap_value = 0.0;
         double mark_value = horizon;
         for (int d = kEdgeCount; d >= 1; --d) {
-            gap_value = std::max(gap_value, sums.rise(j + d) + horizon - sums.sum(j + d + kEdgeDone));
+            gap_reach_at[static_cast<std::size_t>(d - 1)] = sums.rise(j + d) + horizon - sums.sum(j + d + kEdgeDone);
+            gap_value = std::max(gap_value, gap_reach_at[static_cast<std::size_t>(d - 1)]);
             mark_value = std::max(mark_value, sums.sum(j + d + kEdgeFirst) + sums.fall(j + d));
             gap_reach_from[static_cast<std::size_t>(d - 1)] = gap_value;
             mark_reach_from[static_cast<std::size_t>(d - 1)] = mark_value;
@@ -521,6 +527,20 @@ void Search::Impl::boundary(std::int64_t j) {
     const double gap_reach = gap_reach_from[0];      // an element at least 5 samples old, and the no-signal story
     const double gap_reach_new = gap_reach_from[kEdgeCount - 1];    // a gap that starts here
     const double mark_reach_new = mark_reach_from[kEdgeCount - 1];  // a mark that starts here
+    // The channel's tail (text-fast-1): what a gap reaches through the horizon with its tail, ending at j + d (its tail then
+    // n = length + d - 6 positions, the next rise's window after them) or going on (n = length + 6); without a tail, gap_reach_from.
+    const auto gap_reach_with_tail = [&](std::int64_t start, int length) {
+        const int filled = sums.tail_filled(start);
+        const std::size_t first = first_d(length);
+        if (filled == 0) return gap_reach_from[first];
+        if (length - kEdgeCount + 1 >= filled) return gap_reach_from[first] + sums.tail(start, filled);
+        double value = sums.tail(start, length + kEdgeCount);
+        for (std::size_t d = first; d < static_cast<std::size_t>(kEdgeCount); ++d)
+            value = std::max(value, gap_reach_at[d] + sums.tail(start, length + static_cast<int>(d) + 1 - kEdgeCount));
+        return value;
+    };
+    // A gap that starts here, less gap_reach_new: 0 with no tail.
+    const double tail_reach_new = gap_reach_with_tail(j, 0) - gap_reach_new;
     const std::int32_t gap_count = static_cast<std::int32_t>(gaps.size());
     const std::int32_t mark_count = static_cast<std::int32_t>(marks.size());
     gap_partial.resize(gaps.size());
@@ -550,7 +570,7 @@ void Search::Impl::boundary(std::int64_t j) {
         const int length = static_cast<int>(j - e.start);
         const ModelTables::FistRow& row = model.row(e.speed);
         const int node = e.node;
-        const double score = e.base + gap_survivals[row.gap_survival_first + std::min(ModelTables::survival_index(length), row.gap_survival_last)] + gap_reach_from[first_d(length)];
+        const double score = e.base + gap_survivals[row.gap_survival_first + std::min(ModelTables::survival_index(length), row.gap_survival_last)] + gap_reach_with_tail(e.start, length);
         const ModelTables::Range& r = row.ends[kElementGap];
         const ModelTables::Range& lg = row.ends[kLetterGap];
         const ModelTables::Range& wg = row.ends[kWordGap];
@@ -558,7 +578,7 @@ void Search::Impl::boundary(std::int64_t j) {
         const bool has_letter = symbol_at[node] != 0;
         const bool letter_ends = has_letter & ends_at(lg, length), word_ends = has_letter & ends_at(wg, length);
         if (element_ends | letter_ends | word_ends) {
-            const double ended_gap = length < kEdgeCount ? e.base + correction(true, length, j) : e.base;
+            const double ended_gap = length < kEdgeCount ? e.base + correction(true, length, j) : e.base + sums.tail(e.start, length - kEdgeCount);
             const std::size_t first_slot = static_cast<std::size_t>(e.speed) * nodes;
             if (element_ends)
                 offer(mark_table, mark_second, mark_touched, first_slot + static_cast<std::size_t>(node), ended_gap + end_cost(r, length),
@@ -645,7 +665,7 @@ void Search::Impl::boundary(std::int64_t j) {
 
     // 3. The slots' scores as partial scores: a gap's as it stands, a mark's with its rise.
     for (const std::int32_t index : gap_touched) {
-        best = std::max(best, gap_slots[static_cast<std::size_t>(index)].score + gap_reach_new);
+        best = std::max(best, gap_slots[static_cast<std::size_t>(index)].score + gap_reach_new + tail_reach_new);
     }
     for (const std::int32_t index : mark_touched) {
         best = std::max(best, mark_slots[static_cast<std::size_t>(index)].score + rise - c11 + mark_reach_new);
@@ -655,6 +675,7 @@ void Search::Impl::boundary(std::int64_t j) {
     // j + 6; and the tail that reaches it now.
     Tail& tail_now = tails[static_cast<std::size_t>(j % static_cast<std::int64_t>(tails.size()))];
     if (tail_now.score > -kInf) {
+        if (tail_now.fall >= 0) tail_now.score += sums.tail(tail_now.fall, kTailMax);
         if (!silent_alive || tail_now.score > silent) {
             text.release(silent_text);
             silent_text = tail_now.text;
@@ -692,7 +713,7 @@ void Search::Impl::boundary(std::int64_t j) {
         }
     }
     if (silent_alive) best = std::max(best, silent + gap_reach);
-    if (silent_end > -kInf) best = std::max(best, silent_end + gap_reach_new);
+    if (silent_end > -kInf) best = std::max(best, silent_end + gap_reach_new + tail_reach_new);
     if (best == -kInf) best = 0.0;
     last_best = best;
     const double floor = best - config.beam_nats;
@@ -702,7 +723,7 @@ void Search::Impl::boundary(std::int64_t j) {
     opened_marks.clear();
     for (const std::int32_t index : gap_touched) {
         const Slot& slot = gap_slots[static_cast<std::size_t>(index)];
-        if (slot.score + gap_reach_new < floor) continue;
+        if (slot.score + gap_reach_new + tail_reach_new < floor) continue;
         if (spacing_on && !may_open(gap_opened[static_cast<std::size_t>(index)], model.open_spacing(index / model.nodes()), slot.score, j)) continue;
         const Element& parent = marks[static_cast<std::size_t>(slot.parent)];
         Element e{};
@@ -829,9 +850,19 @@ void Search::Impl::boundary(std::int64_t j) {
             if (other.space) note_rival(entry, other.text, {Pending{" ", t, t}, letter_end}, 2, silent_end - second_end);
             else note_rival(entry, other.text, {letter_end, Pending{}}, 1, silent_end - second_end);
         }
-        Tail& tail = tails[static_cast<std::size_t>((j + kEdgeCount) % static_cast<std::int64_t>(tails.size()))];
-        tail.score = silent_end + kEdgeCount * model.log_silence();
-        tail.text = entry;
+        // A birth's rise window starts 5 samples after it, so the tail's last position, 10 + n after the fall, must stand before it.
+        const int tail_delay = std::max(kEdgeCount, sums.tail_positions() + kEdgeCount);
+        Tail& tail = tails[static_cast<std::size_t>((j + tail_delay) % static_cast<std::int64_t>(tails.size()))];
+        const double score = silent_end + tail_delay * model.log_silence();
+        // An over's end due at the same boundary from a shorter tail: the better stays.
+        if (tail.score > -kInf && tail.score + (tail.fall >= 0 ? sums.tail(tail.fall, kTailMax) : 0.0) >= score + sums.tail(j, kTailMax)) {
+            text.release(entry);
+        } else {
+            if (tail.score > -kInf) text.release(tail.text);
+            tail.score = score;
+            tail.text = entry;
+            tail.fall = j;
+        }
     }
 
     // 5. Prune: the beam, then elements past their longest length. The best one's text is held until the end of this
@@ -872,7 +903,7 @@ void Search::Impl::boundary(std::int64_t j) {
     const std::size_t ceiling = static_cast<std::size_t>(config.ceiling);
     if (gaps.size() + marks.size() > ceiling) {
         gap_partial.resize(gaps.size());
-        for (std::size_t i = kept_gaps; i < gaps.size(); ++i) gap_partial[i] = gaps[i].base + gap_reach_new;
+        for (std::size_t i = kept_gaps; i < gaps.size(); ++i) gap_partial[i] = gaps[i].base + gap_reach_new + tail_reach_new;
         mark_partial.resize(marks.size());
         for (std::size_t i = kept_marks; i < marks.size(); ++i) mark_partial[i] = marks[i].base + mark_reach_new;
         if (config.ceiling_stretch_bonus_nats > 0.0) {

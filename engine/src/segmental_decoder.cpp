@@ -1,5 +1,8 @@
 #include "kz4ap/segmental_decoder.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
@@ -180,6 +183,7 @@ SegmentalDecoder::Stream::Stream(const SegmentalParts& p, int m)
     : parts(&p),
       scale(m),
       floor(std::make_unique<segmental::ChannelFloor>(p.config)),
+      echo(std::make_unique<segmental::EchoEstimator>(p.config, p.template_tables)),
       sums(std::make_unique<segmental::RunningSums>()),
       evidence(std::make_unique<segmental::LevelEvidence>(p.config, p.level_tables, *sums)),
       search(std::make_unique<segmental::Search>(p.config, p.model_tables, *sums, &p.level_tables)),
@@ -320,6 +324,15 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
             // is noise only (segmental/config.hpp, level_on_floor).
             const double floor = stream.floor->sigma2(sample.e_fs, hiss);
             const double sigma2 = std::max(floor, stream.leak_floor);
+            if (stream.echo->push(sample.e_fs * sample.e_fs, floor)) {
+                stream.evidence->set_echo(stream.echo->shape());
+                if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
+                    const auto& sh = stream.echo->shape();
+                    std::fprintf(stderr, "echo m=%d k=%lld runs=%.0f on=%d tail:", stream.scale, static_cast<long long>(stream.pushed), stream.echo->runs(), sh.on ? 1 : 0);
+                    for (double g : sh.tail) std::fprintf(stderr, " %.1f", 10.0 * std::log10(g));
+                    std::fprintf(stderr, "\n");
+                }
+            }
             stream.evidence->push(sample.e_fs, sigma2, floor);
             stream.search->advance();  // at once: the short elements' context reaches back only so far
             stream.advance_free_key();
@@ -437,6 +450,11 @@ DecodeUpdate SegmentalDecoder::flush() {
     segmental::BestStory story = search.best_story(0);
     story.tail = search.best_text();
     story.length = story.tail.size();
+    if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
+        const double end_s = story.tail.empty() ? 0.0 : story.tail.back().end_s;
+        for (const DecodedSymbol& s : story.tail)
+            if (const char* w = std::getenv("KZ4AP_SYM_FROM"); w != nullptr ? (s.start_s >= std::atof(w) && s.start_s < std::atof(w) + 3.0) : s.end_s > end_s - 3.0) std::fprintf(stderr, "sym '%s' %.4f %.4f\n", s.text.c_str(), s.start_s, s.end_s);
+    }
     return bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
 }
 

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <numeric>
 #include <stdexcept>
 #include <utility>
@@ -12,8 +14,30 @@
 namespace kz4ap::segmental {
 
 void RunningSums::push(double l1, const std::array<double, kEdgeCount>& rise, const std::array<double, kEdgeCount>& fall,
-                       const SampleContext& context) {
+                       const SampleContext& context, const double* tail, int tail_count) {
     const std::int64_t k = count_;
+    // The claim k - 10 ... is past its fall's window: its tail starts empty.
+    if (k >= kEdgeDone) {
+        const std::size_t c = static_cast<std::size_t>(k - kEdgeDone);
+        tail_filled_[c & kMask] = 0;
+        tail_whole_[c & kMask] = 0.0;
+    }
+    tail_positions_ = tail_count;
+    if (tail_count > 0) {
+        if (tail_prefix_.empty()) tail_prefix_.assign((kTailMask + 1) * (kTailMax + 1), 0.0);
+        for (int q = 0; q < tail_count; ++q) {
+            const std::int64_t claim = k - kEdgeDone - q;
+            if (claim < 0) break;
+            const std::size_t c = static_cast<std::size_t>(claim);
+            const int filled = tail_filled_[c & kMask];
+            if (filled != q) continue;  // a shape that changed while this claim's tail was being read: it ends there
+            double* prefix = tail_prefix_.data() + (c & kTailMask) * (kTailMax + 1);
+            if (q == 0) prefix[0] = 0.0;
+            prefix[q + 1] = prefix[q] + tail[q];
+            tail_filled_[c & kMask] = static_cast<std::uint8_t>(q + 1);
+            tail_whole_[c & kMask] = prefix[q + 1];
+        }
+    }
     context_[static_cast<std::size_t>(k) & kContextMask] = context;
     // A claim's window starts empty when its first sample arrives, and C[k + 1] is written with sample k.
     rise_[static_cast<std::size_t>(k) & kMask] = 0.0;
@@ -30,7 +54,7 @@ void RunningSums::push(double l1, const std::array<double, kEdgeCount>& rise, co
 
 namespace {
 
-LevelTables::Term make_term(double r2, double s, double f2, double v_m) {
+LevelTables::Term term_of(double r2, double s, double f2, double v_m) {
     const double v = 1.0 + r2 * (f2 * s * s + v_m);
     const double rs2 = s * s * r2;
     LevelTables::Term term{};
@@ -46,6 +70,8 @@ inline double term_value(const LevelTables::Term& term, double z, double z2, dou
 }
 
 }  // namespace
+
+LevelTables::Term LevelTables::make_term(double r2, double s, double f2, double v_m) { return term_of(r2, s, f2, v_m); }
 
 LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoise& noise,
                          const viterbi::TemplateTables& tables) {
@@ -84,14 +110,21 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     plain_.resize(static_cast<std::size_t>(table_levels_));
     rise_.resize(static_cast<std::size_t>(kEdgeCount * table_levels_));
     fall_.resize(static_cast<std::size_t>(kEdgeCount * table_levels_));
+    f2_ = f2;
+    r2_.resize(static_cast<std::size_t>(table_levels_));
+    for (int position = 0; position < kEdgeCount; ++position) {
+        edge_s_[static_cast<std::size_t>(position)] = tables.s[static_cast<std::size_t>(kEdgeFirst + position)];
+        edge_v_[static_cast<std::size_t>(position)] = tables.v[static_cast<std::size_t>(kEdgeFirst + position)];
+    }
     for (int i = 0; i < table_levels_; ++i) {
         const double r2 = r2_at(i);
-        plain_[static_cast<std::size_t>(i)] = make_term(r2, 1.0, f2, 0.0);
+        r2_[static_cast<std::size_t>(i)] = r2;
+        plain_[static_cast<std::size_t>(i)] = term_of(r2, 1.0, f2, 0.0);
         for (int position = 0; position < kEdgeCount; ++position) {
             const double s = tables.s[static_cast<std::size_t>(kEdgeFirst + position)];
             const double v_m = tables.v[static_cast<std::size_t>(kEdgeFirst + position)];
-            rise_[static_cast<std::size_t>(position * table_levels_ + i)] = make_term(r2, s, f2, v_m);
-            fall_[static_cast<std::size_t>(position * table_levels_ + i)] = make_term(r2, 1.0 - s, f2, v_m);
+            rise_[static_cast<std::size_t>(position * table_levels_ + i)] = term_of(r2, s, f2, v_m);
+            fall_[static_cast<std::size_t>(position * table_levels_ + i)] = term_of(r2, 1.0 - s, f2, v_m);
         }
     }
     // The short elements' templates.
@@ -111,7 +144,7 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
                 v = std::max(v, 0.0);
                 for (int i = 0; i < table_levels_; ++i)
                     short_[static_cast<std::size_t>(((gap * 5 + length - 1) * kShortPositions + position) * table_levels_ + i)] =
-                        make_term(r2_at(i), s, f2, v);
+                        term_of(r2_at(i), s, f2, v);
             }
         }
     }
@@ -173,6 +206,124 @@ double LevelTables::short_score(bool gap, int length, std::int64_t i, const Runn
         score += w_ * z2 + top + fast::log(sum);
     }
     return score;
+}
+
+EchoEstimator::EchoEstimator(const SegmentalConfig& config, const viterbi::TemplateTables& tables) {
+    const double interval_s = config.model.sample_interval_s;
+    if (!(std::isfinite(config.echo_max_s) && config.echo_max_s >= 0.0))
+        throw std::invalid_argument("segmental: echo_max_s must be finite and not negative (s; 0 leaves the tail out)");
+    if (config.echo_max_s == 0.0) return;
+    if (!(std::isfinite(config.echo_run_db) && std::isfinite(config.echo_on_db) && std::isfinite(config.echo_end_db) &&
+          config.echo_end_db <= config.echo_on_db))
+        throw std::invalid_argument("segmental: echo_run_db, echo_on_db and echo_end_db must be finite, echo_end_db at most echo_on_db (dB)");
+    if (!(config.echo_memory_runs >= 1.0 && config.echo_min_runs >= 1.0 && config.echo_min_run_s >= 0.0))
+        throw std::invalid_argument("segmental: echo_memory_runs and echo_min_runs must be at least 1 run, echo_min_run_s not negative (s)");
+    on_ = true;
+    run_ratio_ = std::pow(10.0, config.echo_run_db / 10.0);
+    min_run_ = static_cast<std::size_t>(std::max(1.0, std::ceil(config.echo_min_run_s / interval_s - 1e-9)));
+    forget_ = std::exp(-1.0 / config.echo_memory_runs);
+    min_runs_ = config.echo_min_runs;
+    on_ratio_ = std::pow(10.0, config.echo_on_db / 10.0);
+    end_ratio_ = std::pow(10.0, config.echo_end_db / 10.0);
+    positions_ = std::min(kTailMax, static_cast<int>(std::floor(config.echo_max_s / interval_s + 1e-9)));
+    // h: the fall template's last position at or above half the key-down amplitude
+    half_ = kEdgeFirst;
+    for (int m = 0; m < static_cast<int>(tables.s.size()) && m < kEdgeDone; ++m)
+        if (1.0 - tables.s[static_cast<std::size_t>(m)] >= 0.5) half_ = m;
+    span_ = kEdgeDone + positions_ - half_;
+    sum_.assign(static_cast<std::size_t>(span_), 0.0);
+    count_.assign(static_cast<std::size_t>(span_), 0.0);
+}
+
+bool EchoEstimator::push(double e2_fs2, double floor_fs2) {
+    if (!on_ || !(floor_fs2 > 0.0)) return false;
+    const std::int64_t k = k_++;
+    const bool down = e2_fs2 > run_ratio_ * floor_fs2;
+    if (down && !in_run_) {
+        // a run begins: what was being read of the last one's tail ends here
+        if (profiling_) {
+            close_profile();
+        }
+        in_run_ = true;
+        run_.clear();
+        run_floor_.clear();
+    }
+    if (in_run_) {
+        if (down) {
+            if (run_.size() < 4096) {
+                run_.push_back(e2_fs2);
+                run_floor_.push_back(floor_fs2);
+            }
+        } else {
+            in_run_ = false;
+            end_run(k);
+        }
+    }
+    if (profiling_ && !in_run_) {
+        profile_.push_back((e2_fs2 - floor_fs2) / profile_level_);
+        if (static_cast<int>(profile_.size()) >= span_) {
+            close_profile();
+        }
+    }
+    const bool fresh = fresh_;
+    fresh_ = false;
+    return fresh;
+}
+
+void EchoEstimator::end_run(std::int64_t end) {
+    (void)end;
+    if (run_.size() < min_run_ || run_.size() >= 4096) return;
+    std::vector<double> sorted = run_;
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
+    const double level = sorted[sorted.size() / 2];
+    std::size_t last = 0;
+    for (std::size_t i = 0; i < run_.size(); ++i)
+        if (run_[i] >= level / 4.0) last = i;
+    profiling_ = true;
+    profile_level_ = level;
+    profile_.clear();
+    for (std::size_t i = last; i < run_.size() && static_cast<int>(profile_.size()) < span_; ++i)
+        profile_.push_back((run_[i] - run_floor_[i]) / level);
+    if (static_cast<int>(profile_.size()) >= span_) close_profile();
+}
+
+void EchoEstimator::close_profile() {
+    profiling_ = false;
+    for (std::size_t q = 0; q < sum_.size(); ++q) {
+        sum_[q] *= forget_;
+        count_[q] *= forget_;
+    }
+    for (std::size_t q = 0; q < profile_.size() && q < sum_.size(); ++q) {
+        sum_[q] += profile_[q];
+        count_[q] += 1.0;
+    }
+    runs_ = runs_ * forget_ + 1.0;
+    profile_.clear();
+    if (runs_ < min_runs_) return;
+    if (++since_update_ >= std::max(1, static_cast<int>(min_runs_ / 3.0))) since_update_ = 0;
+    if (since_update_ == 0) update_shape();
+}
+
+void EchoEstimator::update_shape() {
+    const auto mean_at = [&](int m) {
+        const int q = m - half_;
+        if (q < 0 || q >= span_) return 0.0;
+        const double c = count_[static_cast<std::size_t>(q)];
+        return c >= min_runs_ / 3.0 ? sum_[static_cast<std::size_t>(q)] / c : 0.0;
+    };
+    EchoShape shape;
+    const double first = mean_at(kEdgeDone);
+    if (first >= on_ratio_) {
+        shape.on = true;
+        for (int q = 0; q < positions_; ++q) {
+            const double g = mean_at(kEdgeDone + q);
+            if (g < end_ratio_) break;
+            shape.tail.push_back(g);
+        }
+        shape.in_fall.fill(first);
+    }
+    shape_ = shape;
+    fresh_ = true;
 }
 
 ChannelFloor::ChannelFloor(const SegmentalConfig& config) {
@@ -241,6 +392,31 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     // The forward message's prediction into frame 0.
     std::copy_n(alpha_.begin(), levels, entering_.begin());
     for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];
+}
+
+void LevelEvidence::set_echo(const EchoShape& shape) {
+    const int table_levels = tables_.table_levels();
+    echo_on_ = shape.on && !shape.tail.empty();
+    echo_positions_ = echo_on_ ? std::min(kTailMax, static_cast<int>(shape.tail.size())) : 0;
+    if (!echo_on_) return;
+    if (std::getenv("KZ4AP_ECHO_NOTAIL")) echo_positions_ = 0;  // TEMPORARY diagnostics, text-fast-1
+    // The fall's window: the template's term with the tail's power added to its variance, v = 1 + r^2 (f^2 (1 - s)^2 + v_m + g).
+    echo_fall_.resize(static_cast<std::size_t>(kEdgeCount * table_levels));
+    for (int position = 0; position < kEdgeCount; ++position)
+        for (int i = 0; i < table_levels; ++i)
+            echo_fall_[static_cast<std::size_t>(position * table_levels + i)] =
+                LevelTables::make_term(tables_.r2(i), 1.0 - tables_.edge_s(position), tables_.f2(),
+                                       tables_.edge_v(position) + (std::getenv("KZ4AP_ECHO_NOFALL") ? 0.0 : shape.in_fall[static_cast<std::size_t>(position)]));
+    // The tail's positions: noise plus a zero-mean complex Gaussian of power g a^2, against noise alone:
+    // w (z^2 rho / (1 + rho) - ln(1 + rho)), rho = g a^2 / sigma^2 (derived: the ratio of two complex Gaussians' densities).
+    echo_gain_.resize(static_cast<std::size_t>(echo_positions_ * table_levels));
+    echo_cost_.resize(echo_gain_.size());
+    for (int q = 0; q < echo_positions_; ++q)
+        for (int i = 0; i < table_levels; ++i) {
+            const double rho = shape.tail[static_cast<std::size_t>(q)] * tables_.r2(i);
+            echo_gain_[static_cast<std::size_t>(q * table_levels + i)] = static_cast<float>(rho / (1.0 + rho));
+            echo_cost_[static_cast<std::size_t>(q * table_levels + i)] = static_cast<float>(std::log1p(rho));
+        }
 }
 
 void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2) {
@@ -474,7 +650,9 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             double up[kEdgeLevels], down[kEdgeLevels];
             for (int i = 0; i < edge_count; ++i) {
                 up[i] = term_value(tables_.rise(position, edge_level[i], shift), z, z2, w);
-                down[i] = term_value(tables_.fall(position, edge_level[i], shift), z, z2, w);
+                down[i] = echo_on_ ? term_value(echo_fall_[static_cast<std::size_t>(position * tables_.table_levels() + edge_level[i] - shift +
+                                                                                    tables_.below())], z, z2, w)
+                                   : term_value(tables_.fall(position, edge_level[i], shift), z, z2, w);
                 up_top = std::max(up_top, up[i]);
                 down_top = std::max(down_top, down[i]);
             }
@@ -494,7 +672,35 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             context.level[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(edge_level[i]);
             context.probability[static_cast<std::size_t>(i)] = static_cast<float>(edge_p[i]);
         }
-        sums_.push(l1, rise, fall, context);
+        int tail_count = 0;
+        if (echo_on_ && edge_count > 0) {
+            // The tail's positions after a fall: noise plus the tail's power at the belief's levels, against key-up.
+            const int table_levels = tables_.table_levels();
+            const int below = tables_.below();
+            for (int q = 0; q < echo_positions_; ++q) {
+                double values[kEdgeLevels];
+                double value_top = -1e300;
+                for (int i = 0; i < edge_count; ++i) {
+                    const std::size_t at = static_cast<std::size_t>(q * table_levels + edge_level[i] - shift + below);
+                    values[i] = w * (z2 * static_cast<double>(echo_gain_[at]) - static_cast<double>(echo_cost_[at]));
+                    value_top = std::max(value_top, values[i]);
+                }
+                double tail_sum = 0.0;
+                for (int i = 0; i < edge_count; ++i) tail_sum += edge_p[i] * fast::exp_neg(values[i] - value_top);
+                tail_scratch_[q] = value_top + fast::log(tail_sum);
+            }
+            tail_count = echo_positions_;
+        }
+        if (const char* dump = std::getenv("KZ4AP_ECHO_DUMP"); dump != nullptr && frame_samples_ == 8) {  // TEMPORARY, text-fast-1
+            const long long from = std::atoll(dump);
+            if (k >= from && k < from + 1200) {
+                std::fprintf(stderr, "dump %lld z2 %.1f l1 %.1f rise0 %.1f fall5 %.1f top %d:", static_cast<long long>(k), z2, l1, rise[0], fall[5],
+                             edge_count > 0 ? edge_level[0] : -1);
+                for (int q = 0; q < tail_count; ++q) std::fprintf(stderr, " %.1f", tail_scratch_[q]);
+                std::fprintf(stderr, "\n");
+            }
+        }
+        sums_.push(l1, rise, fall, context, tail_scratch_, tail_count);
     }
 }
 

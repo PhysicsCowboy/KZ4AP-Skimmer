@@ -63,13 +63,42 @@ struct SampleContext {
     std::array<float, kEdgeLevels> probability{};
 };
 
+// samples: the most tail positions after a fall's window (SegmentalConfig::echo_max_s at the widest filter, 48 ms).
+inline constexpr int kTailMax = 18;
+
 // What the search reads, sample by sample, as a running sum (1 above). Samples are numbered from 0 as they are pushed.
 class RunningSums {
 public:
     // Appends sample k = committed(): its key-down score l1 (nats) and its scores under each position of the rise's and
     // the fall's window (nats; index m - 5). The context, for elements shorter than 6 samples, is empty if not given.
+    // tail[q], q < tail_count: its score under the channel's tail at position m = 11 + q after a fall claimed at k - 11 - q,
+    // against key-up (nats; EchoEstimator).
     void push(double l1, const std::array<double, kEdgeCount>& rise, const std::array<double, kEdgeCount>& fall,
-              const SampleContext& context = {});
+              const SampleContext& context = {}, const double* tail = nullptr, int tail_count = 0);
+    // nats: the tail's score over the first n samples after the window of a fall claimed at sample i (i + 11 ... i + 10 + n),
+    // as far as they have been pushed and the tail reaches; 0 with no tail. i within the last kRing samples.
+    double tail(std::int64_t i, int n) const {
+        if (n <= 0) return 0.0;
+        const std::size_t c = static_cast<std::size_t>(i);
+        const int filled = tail_filled_[c & kMask];
+        if (n >= filled) return tail_whole_[c & kMask];
+        return tail_prefix_[(c & kTailMask) * (kTailMax + 1) + static_cast<std::size_t>(n)];
+    }
+    // The tail positions of the claim at i pushed so far.
+    int tail_filled(std::int64_t i) const { return tail_filled_[static_cast<std::size_t>(i) & kMask]; }
+    // samples: the tail positions of the last sample pushed (0 with no tail).
+    int tail_positions() const { return tail_positions_; }
+    // The largest of tail(i, n) over n = n0 ... n1.
+    double tail_reach(std::int64_t i, int n0, int n1) const {
+        const std::size_t c = static_cast<std::size_t>(i);
+        const int filled = tail_filled_[c & kMask];
+        if (filled == 0) return 0.0;
+        n0 = std::max(n0, 0);
+        if (n0 >= filled) return tail_whole_[c & kMask];
+        double best = tail(i, n0);
+        for (int n = n0 + 1; n <= std::min(n1, filled); ++n) best = std::max(best, tail(i, n));
+        return best;
+    }
     // The context of a sample within the last 1 024.
     const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
 
@@ -94,6 +123,68 @@ private:
     static constexpr std::size_t kContextMask = 1023;
     std::vector<SampleContext> context_ = std::vector<SampleContext>(kContextMask + 1);
     std::int64_t count_ = 0;
+    // The tail's prefix sums by claim (the last 1 024), its positions filled and its whole (the last kRing); left empty while no
+    // tail is pushed.
+    static constexpr std::size_t kTailMask = 1023;
+    std::vector<double> tail_prefix_;
+    std::vector<std::uint8_t> tail_filled_ = std::vector<std::uint8_t>(kRing, 0);
+    std::vector<double> tail_whole_ = std::vector<double>(kRing, 0.0);
+    int tail_positions_ = 0;
+};
+
+// The channel's tail after a fall, as power re the mark's key-down power at the filter's output (text-fast-1; config.hpp,
+// echo_max_s). Empty (on false) for a clean channel.
+struct EchoShape {
+    bool on = false;
+    // at the fall window's positions m = 5 ... 10: added to the template's variance v_m
+    std::array<double, kEdgeCount> in_fall{};
+    // at the positions m = 11 ... 10 + tail.size() after the claimed fall
+    std::vector<double> tail;
+};
+
+// Learns a stream's tail from its envelope (text-fast-1), as kz4ap-fading measures it: a run is the samples above
+// echo_run_db re the floor; for a run of at least echo_min_run_s, its median power M and its last sample at or above M / 4
+// (-6 dB re the mark), and from there the mean of (e^2 - floor) / M at each later sample until the next run begins, kept with
+// an exponential memory in runs. The last -6 dB sample stands at the fall template's half point, sample h after the claimed fall
+// (h the last m with 1 - s_m >= 0.5), so position m after the claim reads the mean at m - h. The tail is on once its value at
+// m = 11 (the first sample past the fall's window) is at least echo_on_db; it is kept where at least echo_end_db; the fall's
+// window takes that first value at every position, the tail's start being flat (the clips: -10 dB re the mark from 4 to 12 ms).
+class EchoEstimator {
+public:
+    EchoEstimator(const SegmentalConfig& config, const viterbi::TemplateTables& tables);
+    // One sample: e^2 and the floor, FS^2. True when the shape has changed (every echo_min_runs / 3 runs at most once it is in).
+    bool push(double e2_fs2, double floor_fs2);
+    const EchoShape& shape() const { return shape_; }
+    double runs() const { return runs_; }
+
+private:
+    void end_run(std::int64_t end);
+    void close_profile();
+    void update_shape();
+
+    bool on_ = false;
+    double run_ratio_ = 10.0;
+    std::size_t min_run_ = 12;
+    double forget_ = 1.0;
+    double min_runs_ = 30.0;
+    double on_ratio_ = 0.0, end_ratio_ = 0.0;
+    int half_ = 7;
+    int positions_ = 0;  // tail positions at most
+    int span_ = 0;       // profile samples read after the last -6 dB sample
+    std::int64_t k_ = 0;
+    bool in_run_ = false;
+    std::vector<double> run_;  // the run's e^2 - floor ... and e^2, FS^2
+    std::vector<double> run_floor_;
+    // the profile being read: from sample `profile_from_`, its level M
+    bool profiling_ = false;
+    std::int64_t profile_from_ = 0;
+    double profile_level_ = 0.0;
+    std::vector<double> profile_;
+    std::vector<double> sum_, count_;
+    double runs_ = 0.0;
+    int since_update_ = 0;
+    bool fresh_ = false;
+    EchoShape shape_;
 };
 
 // The constants of the level's grid, shared by every channel of a configuration.
@@ -146,8 +237,19 @@ public:
     // matrix, row-major, K[to][from], each column a reflecting Gaussian of its level's variance; empty when the walk is the same
     // from every level (the three-tap passes).
     const std::vector<double>& walk_kernel() const { return walk_kernel_; }
+    // a^2 / sigma_y^2 at table index i (level i - below() re sigma^2, the bottom clamp applied), the terms' f'^2, and the
+    // template's s_m and v_m at m = 5 ... 10, for terms a stream builds itself (LevelEvidence::set_echo).
+    int table_levels() const { return table_levels_; }
+    double r2(int table_index) const { return r2_[static_cast<std::size_t>(table_index)]; }
+    double f2() const { return f2_; }
+    double edge_s(int position) const { return edge_s_[static_cast<std::size_t>(position)]; }
+    double edge_v(int position) const { return edge_v_[static_cast<std::size_t>(position)]; }
+    static Term make_term(double r2, double s, double f2, double v_m);
 
 private:
+    std::vector<double> r2_;
+    double f2_ = 0.0;
+    std::array<double, kEdgeCount> edge_s_{}, edge_v_{};
     int levels_ = 0;
     int below_ = 0;
     int table_levels_ = 0;  // levels_ + below_
@@ -212,6 +314,9 @@ public:
     // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
     // so that the search can reach the last sample.
     void finish();
+    // The channel's tail from here on (EchoEstimator): the fall's terms with its variance and the tail's terms after the fall.
+    // An empty shape takes it out.
+    void set_echo(const EchoShape& shape);
 
 private:
     void end_frame();
@@ -241,6 +346,14 @@ private:
     std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
+
+    // The tail (set_echo): on, its fall terms by position and table level, and its tail terms (rho / (1 + rho), ln(1 + rho)) by
+    // position and table level.
+    bool echo_on_ = false;
+    int echo_positions_ = 0;
+    std::vector<LevelTables::Term> echo_fall_;
+    std::vector<float> echo_gain_, echo_cost_;
+    double tail_scratch_[kTailMax]{};
 };
 
 }  // namespace kz4ap::segmental

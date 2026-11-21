@@ -80,6 +80,30 @@ struct SegmentalConfig {
     double level_walk_rise_from_db_s500 = 20.0;
     double level_walk_rise_to_db_s500 = 40.0;
 
+    // --- The channel's multipath tail (EchoEstimator, evidence.hpp; text-fast-1) ---
+    // A path delayed or a diffuse scatter keeps delivering a mark's power after its fall: on the owner's 35 WPM W1AW clips (80 m,
+    // 2026-11-19) the power after the fall stands at -10 dB re the mark from 4 to 12 ms and -15 dB re the mark at 40 ms, incoherent
+    // with the mark (coherence 0.94 at the fall, 0.24 at 10 ms; kz4ap-fading), so it fills an element gap at 35 WPM. The decoder
+    // learns it per stream from its own envelope and scores the samples after a claimed fall as noise plus a zero-mean Gaussian of
+    // that power, in the search and in the level filter's key chain. Times in s, not dits: a path's delay is the channel's, not
+    // the sender's.
+    // s: the longest tail modeled after the fall's window; 0 leaves the tail out everywhere (the decoder as before text-fast-1).
+    // Heuristic: the clips' tail is still -15 dB re the mark at 40 ms, and an over's end waits that much less 16 ms to rejoin the
+    // no-signal story.
+    double echo_max_s = 0.048;
+    // dB re the floor: a sample is key-down for the estimator above this. Heuristic, kz4ap-fading's.
+    double echo_run_db = 10.0;
+    // s: the shortest run read. Heuristic: a dot at 37 WPM.
+    double echo_min_run_s = 0.032;
+    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used. Heuristics.
+    double echo_memory_runs = 200.0;
+    double echo_min_runs = 30.0;
+    // dB re the mark's key-down power: the tail is modeled when its first value stands at least this high, and it ends where it
+    // falls under echo_end_db. Heuristics: a Rayleigh-faded mark that ends in a fade leaves about -17 dB re the mark behind
+    // its last -6 dB sample at f_D 10 Hz (conjecture: 22% of marks, -10 dB for 10 to 20 ms), which must not read as a tail.
+    double echo_on_db = -15.0;
+    double echo_end_db = -25.0;
+
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
     // s: how far back the floor reads, 0 to leave it out and use the hiss alone. Heuristic.

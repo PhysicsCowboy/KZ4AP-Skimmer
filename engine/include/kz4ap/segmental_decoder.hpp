@@ -138,6 +138,7 @@ private:
         const SegmentalParts* parts;
         int scale;
         std::unique_ptr<segmental::ChannelFloor> floor;
+        std::unique_ptr<segmental::EchoEstimator> echo;  // the channel's tail (text-fast-1)
         std::unique_ptr<segmental::RunningSums> sums;
         std::unique_ptr<segmental::LevelEvidence> evidence;
         std::unique_ptr<segmental::Search> search;
