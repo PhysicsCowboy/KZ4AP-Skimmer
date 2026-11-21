@@ -142,6 +142,10 @@ public:
     double walk_p() const { return walk_p_; }
     int walk_passes() const { return walk_passes_; }
     double jump() const { return jump_; }
+    // The walk from each level when it depends on the level (SegmentalConfig::level_walk_high_nepers_per_sqrt_s): a levels x levels
+    // matrix, row-major, K[to][from], each column a reflecting Gaussian of its level's variance; empty when the walk is the same
+    // from every level (the three-tap passes).
+    const std::vector<double>& walk_kernel() const { return walk_kernel_; }
 
 private:
     int levels_ = 0;
@@ -154,6 +158,7 @@ private:
     double walk_p_ = 0.0;
     int walk_passes_ = 1;
     double jump_ = 0.0;
+    std::vector<double> walk_kernel_;
     std::vector<Term> plain_;
     std::vector<Term> rise_;
     std::vector<Term> fall_;
@@ -211,7 +216,8 @@ public:
 private:
     void end_frame();
     void commit(bool all);
-    void step_level(double* x) const;
+    // forward: x' = K x; backward (the transpose): x' = K^T x. The same for the three-tap passes, which are symmetric.
+    void step_level(double* x, bool backward = false) const;
     void commit_frame(std::int64_t frame, const double* belief);
 
     const LevelTables& tables_;

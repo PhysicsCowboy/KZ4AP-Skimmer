@@ -37,6 +37,15 @@ else()
   target_compile_options(kz4ap-resample PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# How fast one station's carrier fades, on a span of a recording: Doppler spread, slow fading, mark and gap lengths (text-level-1).
+add_executable(kz4ap-fading src/fading_main.cpp)
+target_link_libraries(kz4ap-fading PRIVATE kz4ap::engine)
+if(MSVC)
+  target_compile_options(kz4ap-fading PRIVATE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(kz4ap-fading PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # One station of a recording as audio, to check a decoding by ear (docs/signal-processing.md, A.13). It writes
 # a file only.
 add_executable(kz4ap-listen src/listen_main.cpp)

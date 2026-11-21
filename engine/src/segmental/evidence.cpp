@@ -123,6 +123,35 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     walk_p_ = total_p / walk_passes_;
     jump_ = config.level_jump_per_s * config.level_frame_s;
     if (!(jump_ >= 0.0 && jump_ < 1.0)) throw std::invalid_argument("segmental: level_jump_per_s x level_frame_s must lie in [0, 1)");
+    if (!(std::isfinite(config.level_walk_high_nepers_per_sqrt_s) && config.level_walk_high_nepers_per_sqrt_s >= 0.0))
+        throw std::invalid_argument("segmental: level_walk_high_nepers_per_sqrt_s must be finite and not negative (nepers per square root of a second)");
+    if (config.level_walk_high_nepers_per_sqrt_s > 0.0) {
+        if (!(config.level_walk_rise_to_db_s500 > config.level_walk_rise_from_db_s500))
+            throw std::invalid_argument("segmental: level_walk_rise_to_db_s500 must lie above level_walk_rise_from_db_s500");
+        // Column `from`: a Gaussian over the levels, in grid steps, of the variance the walk has from that level over a frame,
+        // folded at both ends (reflecting, as the three-tap passes are), normalized to 1.
+        const int n = levels_;
+        walk_kernel_.assign(static_cast<std::size_t>(n * n), 0.0);
+        for (int from = 0; from < n; ++from) {
+            const double db = config.level_min_db_s500 + from * config.level_step_db;
+            const double t = std::clamp((db - config.level_walk_rise_from_db_s500) /
+                                        (config.level_walk_rise_to_db_s500 - config.level_walk_rise_from_db_s500), 0.0, 1.0);
+            const double walk = config.level_walk_nepers_per_sqrt_s + t * (config.level_walk_high_nepers_per_sqrt_s - config.level_walk_nepers_per_sqrt_s);
+            const double sd_steps = walk * std::sqrt(config.level_frame_s) / step_nepers;
+            double total = 0.0;
+            for (int image = -4 * n; image <= 4 * n; ++image) {
+                // the reflections of level `to` about the ends lie at -1 - to, 2n - 1 - to, ...
+                const int to_raw = image;
+                int to = to_raw;
+                while (to < 0 || to >= n) to = to < 0 ? -1 - to : 2 * n - 1 - to;
+                const double d = (to_raw - from) / std::max(sd_steps, 1e-9);
+                const double g = std::exp(-0.5 * d * d);
+                walk_kernel_[static_cast<std::size_t>(to * n + from)] += g;
+                total += g;
+            }
+            for (int to = 0; to < n; ++to) walk_kernel_[static_cast<std::size_t>(to * n + from)] /= total;
+        }
+    }
 }
 
 double LevelTables::short_score(bool gap, int length, std::int64_t i, const RunningSums& sums) const {
@@ -281,21 +310,43 @@ void LevelEvidence::finish() {
     for (int i = 0; i <= kHorizon; ++i) sums_.push(0.0, none, none);
 }
 
-void LevelEvidence::step_level(double* x) const {
-    const double p = tables_.walk_p();
-    const double keep = 1.0 - 2.0 * p;
+void LevelEvidence::step_level(double* x, bool backward) const {
     const int n = levels_;
-    // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
     double buffer[256];
-    double* from = x;
-    double* to = buffer;
-    for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
-        to[0] = keep * from[0] + p * (from[0] + from[1]);
-        for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
-        to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
-        std::swap(from, to);
+    const std::vector<double>& kernel = tables_.walk_kernel();
+    if (!kernel.empty()) {
+        // The walk from each level its own: x' = K x forward, K^T x backward.
+        const std::size_t un = static_cast<std::size_t>(n);
+        for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
+        if (!backward) {
+            for (std::size_t to = 0; to < un; ++to) {
+                double acc = 0.0;
+                const double* row = kernel.data() + to * un;
+                for (std::size_t from = 0; from < un; ++from) acc += row[from] * x[from];
+                buffer[to] = acc;
+            }
+        } else {
+            for (std::size_t to = 0; to < un; ++to) {
+                const double* row = kernel.data() + to * un;
+                const double v = x[to];
+                for (std::size_t from = 0; from < un; ++from) buffer[from] += row[from] * v;
+            }
+        }
+        std::copy_n(buffer, n, x);
+    } else {
+        const double p = tables_.walk_p();
+        const double keep = 1.0 - 2.0 * p;
+        // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
+        double* from = x;
+        double* to = buffer;
+        for (int pass = 0; n > 1 && pass < tables_.walk_passes(); ++pass) {
+            to[0] = keep * from[0] + p * (from[0] + from[1]);
+            for (int i = 1; i < n - 1; ++i) to[i] = keep * from[i] + p * (from[i - 1] + from[i + 1]);
+            to[n - 1] = keep * from[n - 1] + p * (from[n - 2] + from[n - 1]);
+            std::swap(from, to);
+        }
+        if (from != x) std::copy_n(from, n, x);
     }
-    if (from != x) std::copy_n(from, n, x);
     double sum = 0.0;
     for (int i = 0; i < n; ++i) sum += x[i];
     const double jump = tables_.jump();
@@ -358,8 +409,8 @@ void LevelEvidence::commit(bool all) {
             const double scale = 1.0 / total;
             for (double& value : beta_) value *= scale;
         }
-        step_level(up);
-        step_level(down);
+        step_level(up, true);
+        step_level(down, true);
     }
     for (std::int64_t t = next_commit_; t <= last_committed; ++t) {
         const std::size_t slot = static_cast<std::size_t>(t % ring_frames_);

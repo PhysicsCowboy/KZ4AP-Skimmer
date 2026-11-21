@@ -73,6 +73,12 @@ struct SegmentalConfig {
     // 1/s: the rate at which the level jumps to anywhere on the grid (a new station, a new over). Heuristic, of the size
     // of the model's over rate.
     double level_jump_per_s = 0.05;
+    // nepers per square root of a second, dB S500 re the floor: the walk from a strong level, for fast fading. From a level at or
+    // below level_walk_rise_from_db_s500 the walk is level_walk_nepers_per_sqrt_s; it rises linearly in dB to this at
+    // level_walk_rise_to_db_s500 and stays there above. 0 leaves it out (the walk the same from every level). text-level-1.
+    double level_walk_high_nepers_per_sqrt_s = 0.0;
+    double level_walk_rise_from_db_s500 = 20.0;
+    double level_walk_rise_to_db_s500 = 40.0;
 
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
