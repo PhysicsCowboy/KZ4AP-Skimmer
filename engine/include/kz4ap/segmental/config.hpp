@@ -1,4 +1,4 @@
-﻿// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
+// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
 // and overs are the viterbi decoder's model, read from `model`; its own values are what the fast form replaces the
 // per-story amplitude and the per-sample search with. Physical units throughout; each value is marked derived, measured
 // or heuristic.
