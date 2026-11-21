@@ -1,7 +1,7 @@
 // kz4ap-fading: how fast one station's carrier fades, measured on a span of an I/Q recording (text-level-1; the owner's "auroral"
 // clips). The station is mixed to 0 Hz, low-passed (Blackman-windowed sinc, cutoff 200 Hz) and decimated to about 1 500 samples/s;
-// its key-down samples are those above +10 dB re the noise (the noise from the 20th percentile of |y|^2 in 10.67 ms blocks, as an
-// exponential's), in runs of at least 8 ms less 3 ms at each end. Within the runs it reports:
+// its key-down samples are those above +10 dB re the noise (the noise the mean of the lowest 20% of the means of |y|^2 over 10.67 ms
+// blocks, 16 samples), in runs of at least 8 ms less 3 ms at each end. Within the runs it reports:
 //   - the complex gain's correlation |rho(tau)| = |sum y[k+tau] y*[k]| / sum |y|^2 over pairs inside one run, the noise taken out of
 //     the power, tau = 1 ... 40 samples; and from it the Doppler spread by the Gaussian model |rho(tau)| = exp(-2 pi^2 sigma^2 tau^2),
 //     least squares on ln |rho| where 0.2 <= |rho| <= 0.97: f_D = 2 sigma (Watterson's and DeepCW's two-sigma width; the
@@ -9,6 +9,9 @@
 //   - the slow fading: the median key-down level per second, dB re the noise, its range and spread.
 //   - the median mark and gap lengths, ms (key-down runs with gaps under 6 ms closed; gaps up to 300 ms).
 //   kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv]
+// Refused, exit status 1 and one line on stderr: an option without its value, a value that is not a number, --seconds not above
+// 0 s, --start below 0 s, a span the file does not hold (no sample read, or too few for one noise block after the low-pass), and
+// a span with no key-down run.
 #include "kz4ap/wav_reader.hpp"
 
 #include <algorithm>
@@ -31,6 +34,19 @@ double median(std::vector<double> v) {
     return v[v.size() / 2];
 }
 
+double number(const std::string& option, const std::string& value) {
+    std::size_t used = 0;
+    double x = 0.0;
+    try {
+        x = std::stod(value, &used);
+    } catch (const std::exception&) {
+        used = 0;
+    }
+    if (used == 0 || used != value.size() || !std::isfinite(x))
+        throw std::runtime_error(option + " needs a finite number, not \"" + value + "\"");
+    return x;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -38,14 +54,18 @@ int main(int argc, char** argv) {
         if (argc < 2) throw std::runtime_error("usage: kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv]");
         std::string file = argv[1], rho_csv;
         double offset_hz = 0.0, start_s = 0.0, seconds = 0.0;
-        for (int i = 2; i + 1 < argc; i += 2) {
-            const std::string a = argv[i], v = argv[i + 1];
-            if (a == "--offset-hz") offset_hz = std::stod(v);
-            else if (a == "--start") start_s = std::stod(v);
-            else if (a == "--seconds") seconds = std::stod(v);
-            else if (a == "--rho") rho_csv = v;
-            else throw std::runtime_error("unknown option " + a);
+        for (int i = 2; i < argc; i += 2) {
+            const std::string a = argv[i];
+            if (a != "--offset-hz" && a != "--start" && a != "--seconds" && a != "--rho") throw std::runtime_error("unknown option " + a);
+            if (i + 1 >= argc) throw std::runtime_error(a + " needs a value");
+            const std::string v = argv[i + 1];
+            if (a == "--offset-hz") offset_hz = number(a, v);
+            else if (a == "--start") start_s = number(a, v);
+            else if (a == "--seconds") seconds = number(a, v);
+            else rho_csv = v;
         }
+        if (!(seconds > 0.0)) throw std::runtime_error("--seconds must be above 0 s (the span to measure)");
+        if (start_s < 0.0) throw std::runtime_error("--start must not be below 0 s (s from the recording's first sample)");
         kz4ap::WavIqReader reader(file);
         const double fs = reader.sample_rate();
         const int decimation = std::max(1, static_cast<int>(std::lround(fs / 1500.0)));
@@ -53,6 +73,9 @@ int main(int argc, char** argv) {
         reader.seek(static_cast<std::uint64_t>(std::llround(start_s * fs)));
         std::vector<kz4ap::Sample> raw(static_cast<std::size_t>(std::llround(seconds * fs)));
         raw.resize(reader.read(raw));
+        if (raw.empty())
+            throw std::runtime_error("no samples read at " + std::to_string(start_s) + " s: the recording holds " +
+                                     std::to_string(static_cast<double>(reader.total_samples()) / fs) + " s");
         // The low-pass: Blackman-windowed sinc, cutoff 200 Hz, 8 decimations each side.
         const int half = 8 * decimation;
         std::vector<double> taps(static_cast<std::size_t>(2 * half + 1));
@@ -75,6 +98,9 @@ int main(int argc, char** argv) {
             y.push_back(acc);
         }
         const std::size_t n = y.size();
+        if (n < 16)
+            throw std::runtime_error("the span holds " + std::to_string(n) + " samples after the low-pass, fewer than one noise block (16, "
+                                     "10.67 ms): a longer --seconds or a start further from the recording's end");
         // The noise: the 20th percentile of the block means of |y|^2 over 16-sample blocks, as an exponential's quantile / 16 averaged
         // values is nearly the mean; taken as the mean of the blocks at or under it (heuristic, for a 30 dB station).
         std::vector<double> blocks;
@@ -102,6 +128,9 @@ int main(int argc, char** argv) {
             if (e - k >= min_len + 2 * trim) runs.push_back({k + trim, e - trim});
             k = e;
         }
+        if (runs.empty())
+            throw std::runtime_error("no key-down run in the span: no run above +10 dB re the noise of 8 ms or more, less 3 ms at each end, at " +
+                                     std::to_string(offset_hz) + " Hz");
         // Mean frequency from the lag-1 phase, removed.
         C lag1 = 0.0;
         for (const auto& [b, e] : runs)
