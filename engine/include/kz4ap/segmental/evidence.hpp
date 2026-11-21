@@ -58,6 +58,7 @@ inline constexpr int kEdgeLevels = 8;
 struct SampleContext {
     double z = 0.0;
     std::uint8_t count = 0;
+    std::uint8_t shift = 0;  // grid steps sigma^2 stands above the level's floor (LevelEvidence::push)
     std::array<std::uint8_t, kEdgeLevels> level{};
     std::array<float, kEdgeLevels> probability{};
 };
@@ -110,25 +111,33 @@ public:
         float i0_coeff;  // 2 r_s / v
     };
     int levels() const { return levels_; }
-    const Term& plain(int level) const { return plain_[static_cast<std::size_t>(level)]; }
+    // Grid steps the tables reach below the grid's bottom: a level is looked up at (level - shift), shift 0 ... below(), where
+    // sigma^2 stands shift steps above the level's floor (LevelEvidence::push).
+    int below() const { return below_; }
+    // A level of the grid, 0 ... levels() - 1, at sigma^2 `shift` steps above the floor, 0 ... below().
+    const Term& plain(int level, int shift = 0) const { return plain_[static_cast<std::size_t>(level - shift + below_)]; }
     // position 0 ... 5: m = 5 ... 10
-    const Term& rise(int position, int level) const {
-        return rise_[static_cast<std::size_t>(position * levels_ + level)];
+    const Term& rise(int position, int level, int shift = 0) const {
+        return rise_[static_cast<std::size_t>(position * table_levels_ + level - shift + below_)];
     }
-    const Term& fall(int position, int level) const {
-        return fall_[static_cast<std::size_t>(position * levels_ + level)];
+    const Term& fall(int position, int level, int shift = 0) const {
+        return fall_[static_cast<std::size_t>(position * table_levels_ + level - shift + below_)];
     }
     // The template of an element of length (1 ... 5 samples) shorter than the edge's window, whose two edges overlap: at
     // position (0 ... length + 5, the sample i + 5 + position after its first edge), for a mark
     // s = s_(p) - s_(p - length), for a gap 1 - s_(p) + s_(p - length), and the variance adds the pair's terms
     // (viterbi/mark_template.hpp, stage 4).
-    const Term& short_term(bool gap, int length, int position, int level) const {
-        return short_[static_cast<std::size_t>((((gap ? 1 : 0) * 5 + length - 1) * kShortPositions + position) * levels_ + level)];
+    const Term& short_term(bool gap, int length, int position, int level, int shift = 0) const {
+        return short_[static_cast<std::size_t>((((gap ? 1 : 0) * 5 + length - 1) * kShortPositions + position) * table_levels_ + level -
+                                               shift + below_)];
     }
     // The score of such an element's samples, whose first edge is at sample i of `sums`, nats.
     double short_score(bool gap, int length, std::int64_t i, const class RunningSums& sums) const;
     double w() const { return w_; }
     double sigma2_per_n0_hz() const { return sigma2_per_n0_hz_; }
+    // dB: the grid's step; and whether the grid is relative to the floor (SegmentalConfig::level_on_floor)
+    double step_db() const { return step_db_; }
+    bool on_floor() const { return on_floor_; }
     // The kernel of the frame-to-frame step: three taps (p, 1 - 2 p, p) applied `passes` times, and the jump's probability.
     double walk_p() const { return walk_p_; }
     int walk_passes() const { return walk_passes_; }
@@ -136,6 +145,10 @@ public:
 
 private:
     int levels_ = 0;
+    int below_ = 0;
+    int table_levels_ = 0;  // levels_ + below_
+    double step_db_ = 1.5;
+    bool on_floor_ = true;
     double w_ = 0.0;
     double sigma2_per_n0_hz_ = 0.0;
     double walk_p_ = 0.0;
@@ -185,8 +198,12 @@ class LevelEvidence {
 public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);
 
-    // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2.
-    void push(double e_fs, double sigma2_fs2);
+    // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2; floor_fs2, the channel's noise
+    // floor there, FS^2, at most sigma2_fs2, what the level's grid is relative to (SegmentalConfig::level_on_floor). sigma^2 is
+    // taken at the floor times 10^(shift x step / 10), shift the nearest whole number of grid steps, 0 ... LevelTables::below(),
+    // and level l scored as level l - shift of the tables. Without a floor, or with level_on_floor 0, the floor is sigma^2.
+    void push(double e_fs, double sigma2_fs2, double floor_fs2);
+    void push(double e_fs, double sigma2_fs2) { push(e_fs, sigma2_fs2, sigma2_fs2); }
     // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
     // so that the search can reach the last sample.
     void finish();
@@ -214,6 +231,7 @@ private:
     std::vector<double> entering_;   // by frame in the ring, then level: the forward message into the frame, key summed out
     std::vector<float> x_;           // by sample in the ring, then level: x_k(l) less w z^2
     std::vector<double> z_;          // by sample in the ring: e / sigma_y
+    std::vector<std::uint8_t> shift_;  // by sample in the ring: grid steps sigma^2 stands above the floor
     std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read

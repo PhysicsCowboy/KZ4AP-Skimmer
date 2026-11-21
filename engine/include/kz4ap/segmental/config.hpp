@@ -39,6 +39,16 @@ struct SegmentalConfig {
     double level_step_db = 1.5;
     // 1: how much of the grid's own variance, step^2 / 12 in nepers^2, goes into V (0 to leave it out)
     double level_grid_in_v = 1.0;
+    // 1 or 0: what the level's grid is relative to. 1, the default: the channel's noise floor, max(hiss, channel floor), which
+    // moves slowly; a neighbor's leak floor above it enters only as noise variance, sigma^2 rounded to whole grid steps above the
+    // floor, and the carrier's level on the grid does not move with it. 0: sigma^2 itself, the leak floor included, as before
+    // text-level-1, where the leak floor's 0.2 s steps (its own carrier's sidebands, at strong levels up to 40 dB re the hiss) moved
+    // a steady carrier's level on the grid by as much inside a mark (docs/signal-processing.md A.8e, "Level filter").
+    double level_on_floor = 1.0;
+    // dB re the floor: how far sigma^2 may stand above the floor and still be counted in whole grid steps; the tables reach that
+    // far below the grid's bottom. Past it sigma^2 is taken at this. Heuristic: the strongest own-carrier leak measured on
+    // VE3NEA's +57.78 dB S500 stations stood 40 dB re the hiss.
+    double level_noise_above_floor_max_db = 60.0;
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
     // s: the look-ahead the level reads past the sample it is used for, at least, and the block the look-ahead is committed
@@ -87,6 +97,16 @@ struct SegmentalConfig {
     // at 23.4 Hz a bin, and the chain's response past 320 Hz is under -100 dB re 0 Hz.
     double leak_min_offset_hz = 60.0;
     double leak_max_offset_hz = 320.0;
+    // 1 or 0: whether a bin's power counts toward the leak only above what the channel's own keyed carrier can put there. 1, the
+    // default: each bin k from the center counts max(0, P - rho_k P_own), P_own the largest of the three center bins over the last
+    // leak_own_hold_s, rho_k the most a carrier keyed on and off with hard edges inside the analyzer's Hann window puts k bins away
+    // relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -12.0 dB re
+    // key-down at 70.3 Hz to -26.6 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0: every bin's power counts, as before
+    // text-level-1, when a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak at up to 40 dB
+    // re the hiss and turned its deep fades into gaps (docs/signal-processing.md A.8e, "A neighbor's leak").
+    double leak_own = 1.0;
+    // s: how long the own key-down power is held. Heuristic.
+    double leak_own_hold_s = 1.0;
 
     // --- A story's fist: the gap stretch (search.hpp) ---
 
