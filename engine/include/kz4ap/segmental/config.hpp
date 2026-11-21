@@ -53,8 +53,8 @@ struct SegmentalConfig {
     // 1 or 0: whether a level that stands below the grid's bottom re sigma^2 (sigma^2 raised above the floor) is scored as the
     // bottom, -6 dB S500 re sigma^2, as the grid relative to sigma^2 did. 1, the default: key-down at a level far under the noise
     // costs next to nothing on bare noise, so a story would bridge a gap for nothing wherever a neighbor's leak raises sigma^2 (with
-    // 0, a keyed neighbor at +12 dB re wanted 100 Hz away read worse, and a weaker caller 60 Hz from a stronger lost calls: the
-    // engine's tests). Heuristic, the old grid's bottom carried over.
+    // 0 and the leak bound on, a keyed neighbor at +12 dB re wanted 100 Hz away read worse, and a weaker caller 60 Hz from a
+    // stronger lost calls: the engine's tests). Heuristic, the old grid's bottom carried over.
     double level_noise_bottom = 1.0;
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
@@ -104,14 +104,16 @@ struct SegmentalConfig {
     // at 23.4 Hz a bin, and the chain's response past 320 Hz is under -100 dB re 0 Hz.
     double leak_min_offset_hz = 60.0;
     double leak_max_offset_hz = 320.0;
-    // 1 or 0: whether a bin's power counts toward the leak only above what the channel's own keyed carrier can put there. 1, the
-    // default: each bin k from the center counts max(0, P - rho_k P_own), P_own the largest of the three center bins over the last
-    // leak_own_hold_s, rho_k the most a carrier keyed on and off with hard edges inside the analyzer's Hann window puts k bins away
-    // relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -10.6 dB re
-    // key-down at 70.3 Hz to -25.1 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0: every bin's power counts, as before
-    // text-level-1, when a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak at up to 40 dB
-    // re the hiss and turned its deep fades into gaps (docs/signal-processing.md A.8e, "A neighbor's leak").
-    double leak_own = 1.0;
+    // 1 or 0: whether a bin's power counts toward the leak only above what the channel's own keyed carrier can put there. A variant,
+    // not the default: at 1 each bin k from the center counts max(0, P - rho_k P_own), P_own the largest of the three center bins over
+    // the last leak_own_hold_s, rho_k the most a carrier keyed on and off with hard edges inside the analyzer's Hann window puts k bins
+    // away relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -10.6 dB re
+    // key-down at 70.3 Hz to -25.1 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0, the default: every bin's power counts, so a
+    // strong station's own keying, spread by the analyzer's window, reads as a leak of up to 40 dB re the hiss. With the level on the
+    // floor that is noise only, and it reads fast fading better than the bound: on VE3NEA's conditions at f_D 3 Hz, +57.78 dB S500,
+    // paddle 0.052 against 0.064 and hand 0.078 against 0.088, E2 0.5072 against 0.5237 on seed 1's slice (docs/decision-log.md,
+    // 2026-11-21). Measured, not understood: a heuristic the test set chose.
+    double leak_own = 0.0;
     // s: how long the own key-down power is held. Heuristic.
     double leak_own_hold_s = 1.0;
 

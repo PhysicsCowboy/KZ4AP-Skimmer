@@ -248,8 +248,7 @@ std::vector<Sample> two_callers() {
 TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
     const Scene r = run(two_callers());
     for (const auto& [id, end] : r.ended) EXPECT_NE(end, TrackEnd::Copy) << "track " << id << " at " << r.freq_hz.at(id) << " Hz";
-    // B's calls are read on its own tracks (how many differs by a call or two with the compiler's arithmetic; 4 before text-level-1,
-    // 3 since, its level on the channel's floor).
+    // B's calls are read on its own tracks (how many differs by a call or two with the compiler's arithmetic).
     std::size_t calls = 0;
     std::string texts;
     for (const auto& [id, text] : r.text) {
@@ -257,7 +256,7 @@ TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
         calls += count(text, "KQ2RP");
         texts += " [" + text + "]";
     }
-    EXPECT_GE(calls, 3u) << texts;
+    EXPECT_GE(calls, 4u) << texts;
 }
 
 TEST(EngineCopies, WithoutItsOwnPowerTheWeakerCallerWouldBeTakenForACopy) {

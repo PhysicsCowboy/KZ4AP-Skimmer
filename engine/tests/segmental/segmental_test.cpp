@@ -781,7 +781,11 @@ TEST(LeakFloor, IsLeftOutAtAHoldOfZeroAndRefusesWhatCannotBe) {
 TEST(LeakFloor, TheChannelsOwnKeyedCarrierIsNotANeighbor) {
     // text-level-1: a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak (up to 40 dB re the
     // hiss at +57.78 dB S500). A bin counts only above rho_k times the own key-down power (derived: hard edges anywhere in the window).
-    const auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    // The bound is a variant (leak_own 1), not the default.
+    EXPECT_TRUE(SegmentalShared(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0}).leak_own_bound.empty());
+    SegmentalConfig on_config;
+    on_config.leak_own = 1.0;
+    const auto shared = std::make_shared<const SegmentalShared>(on_config, ChannelizerConfig{48000, 2048, 64, 150.0});
     ASSERT_EQ(shared->leak_own_bound.size(), 15u);
     ASSERT_EQ(shared->leak_own_hold_blocks, 47u);  // 1 s at 21.33 ms a block: 46.875, rounded
     const auto db = [](double x) { return 10.0 * std::log10(x); };
