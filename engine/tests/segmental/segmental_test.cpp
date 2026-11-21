@@ -7,6 +7,7 @@
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/segmental/search.hpp"
 #include "kz4ap/segmental_decoder.hpp"
+#include "kz4ap/spectrum.hpp"
 #include "kz4ap/viterbi/observation.hpp"
 
 #include <gtest/gtest.h>
@@ -15,6 +16,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <iostream>
 #include <limits>
 #include <numbers>
@@ -774,6 +776,118 @@ TEST(LeakFloor, IsLeftOutAtAHoldOfZeroAndRefusesWhatCannotBe) {
     SegmentalConfig negative;
     negative.leak_hold_s = -1.0;
     EXPECT_THROW(SegmentalShared(negative, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+}
+
+TEST(LeakFloor, TheChannelsOwnKeyedCarrierIsNotANeighbor) {
+    // text-level-1: a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak (up to 40 dB re the
+    // hiss at +57.78 dB S500). A bin counts only above rho_k times the own key-down power (derived: hard edges anywhere in the window).
+    const auto shared = std::make_shared<const SegmentalShared>(SegmentalConfig{}, ChannelizerConfig{48000, 2048, 64, 150.0});
+    ASSERT_EQ(shared->leak_own_bound.size(), 15u);
+    ASSERT_EQ(shared->leak_own_hold_blocks, 47u);  // 1 s at 21.33 ms a block: 46.875, rounded
+    const auto db = [](double x) { return 10.0 * std::log10(x); };
+    std::cout << "derived: own splatter bound, dB re key-down, k = 3 ... 14:";
+    for (std::size_t k = 3; k < 15; ++k) std::cout << " " << std::round(10.0 * db(shared->leak_own_bound[k])) / 10.0;
+    std::cout << "\n";
+    EXPECT_NEAR(db(shared->leak_own_bound[3]), -10.6, 0.2);
+    EXPECT_NEAR(db(shared->leak_own_bound[14]), -25.1, 0.2);
+    for (std::size_t k = 4; k < 15; ++k) EXPECT_LT(shared->leak_own_bound[k], shared->leak_own_bound[k - 1]);
+    // A keyed carrier, hard edges, alone and with a steady neighbor 6 dB below it 100 Hz away, through the analyzer.
+    SegmentalConfig off_config;
+    off_config.leak_own = 0.0;
+    const auto off = std::make_shared<const SegmentalShared>(off_config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    const double df = 48000.0 / 2048.0;
+    const int c0 = 40;
+    const double f_own = (c0 + 0.3) * df, f_neighbor = f_own + 100.0;
+    for (const bool neighbor : {false, true}) {
+        std::mt19937 rng(11);
+        std::uniform_int_distribution<int> length(48, 14400);  // 1 ms to 300 ms at 48 kHz
+        std::vector<Sample> x(48000 * 6);
+        bool down = false;
+        std::size_t next = 0;
+        for (std::size_t n = 0; n < x.size(); ++n) {
+            if (n == next) {
+                down = !down;
+                next = n + static_cast<std::size_t>(length(rng));
+            }
+            const double t = static_cast<double>(n) / 48000.0;
+            std::complex<double> s = down ? 0.5 * std::polar(1.0, 2.0 * std::numbers::pi * f_own * t) : 0.0;
+            if (neighbor) s += 0.25 * std::polar(1.0, 2.0 * std::numbers::pi * f_neighbor * t);
+            x[n] = Sample(static_cast<float>(s.real()), static_cast<float>(s.imag()));
+        }
+        SpectrumAnalyzer analyzer(48000, 2048, 1024, false);
+        SegmentalDecoder with(1500.0, shared), without(1500.0, off);
+        double most_with = 0.0, most_without = 0.0, least_with = 1e300, least_without = 1e300;
+        int frames = 0;
+        for (const SpectrumFrame& frame : analyzer.push(x)) {
+            with.set_band_spectrum(frame.power_fs2, c0 + 1024);
+            without.set_band_spectrum(frame.power_fs2, c0 + 1024);
+            if (++frames < 60) continue;  // past the first second's hold
+            most_with = std::max(most_with, with.leak_floor_fs2(1));
+            most_without = std::max(most_without, without.leak_floor_fs2(1));
+            least_with = std::min(least_with, with.leak_floor_fs2(1));
+            least_without = std::min(least_without, without.leak_floor_fs2(1));
+        }
+        ASSERT_GT(frames, 200);
+        if (!neighbor) {
+            // The own keying alone: what it reads without the bound is the defect; with it, next to nothing.
+            EXPECT_GT(most_without, 0.0);
+            EXPECT_LT(most_with, 1e-3 * most_without);
+        } else {
+            // A neighbor 6 dB below stands well above the bound (about -15 dB re the own key-down there): most of it still counts.
+            EXPECT_GT(least_with, 0.5 * least_without);
+        }
+    }
+}
+
+TEST(LevelEvidence, NoiseAboveTheFloorLeavesTheCarriersLevelWhereItIs) {
+    // text-level-1: sigma^2 stepping 30 dB above the floor (a leak floor's 0.2 s holds) under a steady carrier at +50 dB S500 re the
+    // floor. On the floor (the default) the level the belief gives the samples stays; relative to sigma^2 (level_on_floor 0) it moves
+    // by the step.
+    const auto mean_level_db = [](const SegmentalConfig& config, bool stepped_samples) {
+        const SegmentalShared shared = make_shared_parts(config);
+        std::mt19937 rng(5);
+        std::normal_distribution<double> noise(0.0, std::sqrt(0.5));
+        const double r = std::sqrt(std::pow(10.0, 50.0 / 10.0) * 500.0 / shared.output_noise.sigma2_per_n0_hz);
+        RunningSums sums;
+        LevelEvidence evidence(config, shared.level_tables, sums);
+        const auto stepped = [](std::int64_t k) { return k >= 1000 && (k / 75) % 2 == 1; };
+        double total = 0.0;
+        int count = 0;
+        std::int64_t read = 0;
+        for (std::int64_t k = 0; k < 4000; ++k) {
+            const double re = r + noise(rng), im = noise(rng);
+            evidence.push(std::sqrt(re * re + im * im), stepped(k) ? 1000.0 : 1.0, 1.0);
+            for (; read < sums.committed(); ++read) {
+                if (read < 1500 || read % 75 < 20 || read % 75 > 55 || stepped(read) != stepped_samples) continue;
+                const SampleContext& context = sums.context(read);
+                double level = 0.0, p = 0.0;
+                for (int g = 0; g < context.count; ++g) {
+                    level += context.probability[static_cast<std::size_t>(g)] * context.level[static_cast<std::size_t>(g)];
+                    p += context.probability[static_cast<std::size_t>(g)];
+                }
+                total += config.level_min_db_s500 + config.level_step_db * level / p;
+                ++count;
+            }
+        }
+        return total / count;
+    };
+    SegmentalConfig on_floor = small_config();
+    SegmentalConfig on_sigma = small_config();
+    on_sigma.level_on_floor = 0.0;
+    EXPECT_NEAR(mean_level_db(on_floor, false), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_floor, true), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_sigma, false), 50.0, 2.0);
+    EXPECT_NEAR(mean_level_db(on_sigma, true), 20.0, 4.0);
+    // The tables below the grid: level l at a shift d is the grid's level l - d.
+    const SegmentalShared shared = make_shared_parts(on_floor);
+    const LevelTables& t = shared.level_tables;
+    EXPECT_EQ(t.below(), 40);  // 60 dB re the floor in 1.5 dB steps
+    EXPECT_EQ(t.plain(30, 20).constant, t.plain(10, 0).constant);
+    EXPECT_EQ(t.rise(2, 30, 20).i0_coeff, t.rise(2, 10).i0_coeff);
+    EXPECT_LT(t.plain(0, 40).constant, 0.0f);
+    SegmentalConfig bad = small_config();
+    bad.level_on_floor = 0.5;
+    EXPECT_THROW(make_shared_parts(bad), std::invalid_argument);
 }
 
 TEST(SegmentalShared, BuildsQuicklyAtTheRadiosHighestRate) {

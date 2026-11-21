@@ -460,6 +460,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"level_grid_in_v", &config.level_grid_in_v},
         {"level_on_floor", &config.level_on_floor},
         {"level_noise_above_floor_max_db", &config.level_noise_above_floor_max_db},
+        {"level_noise_bottom", &config.level_noise_bottom},
         {"level_frame_s", &config.level_frame_s},
         {"level_lookahead_s", &config.level_lookahead_s},
         {"level_commit_s", &config.level_commit_s},

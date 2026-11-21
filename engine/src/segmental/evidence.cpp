@@ -55,6 +55,8 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
     if (levels_ > 256) throw std::invalid_argument("segmental: the level grid holds at most 256 levels");
     if (!(config.level_on_floor == 0.0 || config.level_on_floor == 1.0))
         throw std::invalid_argument("segmental: level_on_floor must be 0 or 1");
+    if (!(config.level_noise_bottom == 0.0 || config.level_noise_bottom == 1.0))
+        throw std::invalid_argument("segmental: level_noise_bottom must be 0 or 1");
     if (!(std::isfinite(config.level_noise_above_floor_max_db) && config.level_noise_above_floor_max_db >= 0.0))
         throw std::invalid_argument("segmental: level_noise_above_floor_max_db must be finite and not negative (dB re the floor)");
     on_floor_ = config.level_on_floor == 1.0;
@@ -73,8 +75,9 @@ LevelTables::LevelTables(const SegmentalConfig& config, const viterbi::OutputNoi
                       config.level_grid_in_v * step_nepers_for_v * step_nepers_for_v / 12.0;
     // Table index i holds the level min + (i - below_) x step, dB S500 re sigma^2: the grid, and below_ steps under it for a
     // sigma^2 that stands above the floor the grid is relative to.
+    const bool bottom_clamp = config.level_noise_bottom == 1.0;
     const auto r2_at = [&](int i) {
-        const double s500_db = config.level_min_db_s500 + (i - below_) * config.level_step_db;
+        const double s500_db = config.level_min_db_s500 + (bottom_clamp ? std::max(0, i - below_) : i - below_) * config.level_step_db;
         // a^2 / sigma_y^2 = S500 x 500 Hz / (sigma_y^2 / N0)  (S500 is a^2 over N0 x 500 Hz; derived)
         return std::pow(10.0, s500_db / 10.0) * 500.0 / sigma2_per_n0_hz_;
     };
@@ -213,13 +216,18 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
 
 void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2) {
     // The grid is relative to the floor; sigma^2 above it moves the tables' levels, not the carrier's (config.hpp,
-    // level_on_floor): sigma^2 in whole grid steps above the floor, the nearest, at most below().
+    // level_on_floor): sigma^2 in whole grid steps above the floor, the nearest. Past below() steps sigma^2 is taken as it is and
+    // the grid is relative to sigma^2 less below() steps: only the excess moves the carrier's level.
     int shift = 0;
     double sigma2 = sigma2_fs2;
     if (tables_.on_floor() && floor_fs2 > 0.0 && sigma2_fs2 > floor_fs2) {
         const double steps = 10.0 * std::log10(sigma2_fs2 / floor_fs2) / tables_.step_db();
-        shift = std::min(tables_.below(), static_cast<int>(std::lround(steps)));
-        sigma2 = floor_fs2 * std::pow(10.0, shift * tables_.step_db() / 10.0);
+        if (steps >= tables_.below()) {
+            shift = tables_.below();
+        } else {
+            shift = static_cast<int>(std::lround(steps));
+            sigma2 = floor_fs2 * std::pow(10.0, shift * tables_.step_db() / 10.0);
+        }
     }
     const double z = e_fs / std::sqrt(sigma2);
     const double z2 = z * z;

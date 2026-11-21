@@ -1,4 +1,4 @@
-// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
+﻿// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
 // and overs are the viterbi decoder's model, read from `model`; its own values are what the fast form replaces the
 // per-story amplitude and the per-sample search with. Physical units throughout; each value is marked derived, measured
 // or heuristic.
@@ -46,9 +46,16 @@ struct SegmentalConfig {
     // a steady carrier's level on the grid by as much inside a mark (docs/signal-processing.md A.8e, "Level filter").
     double level_on_floor = 1.0;
     // dB re the floor: how far sigma^2 may stand above the floor and still be counted in whole grid steps; the tables reach that
-    // far below the grid's bottom. Past it sigma^2 is taken at this. Heuristic: the strongest own-carrier leak measured on
-    // VE3NEA's +57.78 dB S500 stations stood 40 dB re the hiss.
+    // far below the grid's bottom. Past it sigma^2 is taken as it is and the grid is relative to sigma^2 less this, so that only the
+    // excess moves the carrier's level. Heuristic: the strongest own-carrier leak measured on VE3NEA's +57.78 dB S500 stations stood
+    // 40 dB re the hiss.
     double level_noise_above_floor_max_db = 60.0;
+    // 1 or 0: whether a level that stands below the grid's bottom re sigma^2 (sigma^2 raised above the floor) is scored as the
+    // bottom, -6 dB S500 re sigma^2, as the grid relative to sigma^2 did. 1, the default: key-down at a level far under the noise
+    // costs next to nothing on bare noise, so a story would bridge a gap for nothing wherever a neighbor's leak raises sigma^2 (with
+    // 0, a keyed neighbor at +12 dB re wanted 100 Hz away read worse, and a weaker caller 60 Hz from a stronger lost calls: the
+    // engine's tests). Heuristic, the old grid's bottom carried over.
+    double level_noise_bottom = 1.0;
     // s: the level's frame, over which it is held constant: 8 samples, 21.33 ms, as the viterbi newborn's prediction step
     double level_frame_s = 8.0 * 4.0 / 1500.0;
     // s: the look-ahead the level reads past the sample it is used for, at least, and the block the look-ahead is committed
@@ -100,8 +107,8 @@ struct SegmentalConfig {
     // 1 or 0: whether a bin's power counts toward the leak only above what the channel's own keyed carrier can put there. 1, the
     // default: each bin k from the center counts max(0, P - rho_k P_own), P_own the largest of the three center bins over the last
     // leak_own_hold_s, rho_k the most a carrier keyed on and off with hard edges inside the analyzer's Hann window puts k bins away
-    // relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -12.0 dB re
-    // key-down at 70.3 Hz to -26.6 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0: every bin's power counts, as before
+    // relative to its key-down center bins, over tones within half a bin of the center (derived, computed at start: -10.6 dB re
+    // key-down at 70.3 Hz to -25.1 dB re key-down at 328.1 Hz at 23.44 Hz bins). 0: every bin's power counts, as before
     // text-level-1, when a strong station's own keying, spread by the analyzer's window, read as a neighbor's leak at up to 40 dB
     // re the hiss and turned its deep fades into gaps (docs/signal-processing.md A.8e, "A neighbor's leak").
     double leak_own = 1.0;
