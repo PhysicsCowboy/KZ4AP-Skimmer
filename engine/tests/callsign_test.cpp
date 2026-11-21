@@ -2066,37 +2066,142 @@ TEST(CallSearch, OneSignedReadingIsEnoughForAOneByOneAtTwoPoints) {
     EXPECT_NE(s.row("W9W"), nullptr);
 }
 
-// The CWT's exchange, a name and a member's number in cut digits (DREW 2T7A, 2071): never signed, so not reported however often it
-// is read. A real call of that shape that signs is (4A7A, Mexico), and Croatia's 9A is outside the shape.
-TEST(CallSearch, ACutNumbersShapeIsReportedOnlySigned) {
-    const auto run = [](double form) {
+// The CWT's exchange, a name and a member's number in cut digits (DREW 2T7A, 2071), is never signed, so unlisted it needs
+// cut_number_points: one reading fewer is not enough, that many are. A real call of that shape that signs needs
+// cut_number_points_signed (4A7A, Mexico, a signed reading and a bare one), and Croatia's 9A is outside the shape.
+TEST(CallSearch, ACutNumbersShapeNeedsItsBar) {
+    const CallSearchConfig defaults;
+    const int bar = static_cast<int>(defaults.cut_number_points);
+    ASSERT_GT(bar, 2);
+    ASSERT_EQ(defaults.cut_number_points_signed, 2.0);
+    const auto run = [](double form, int times) {
         CallSearchConfig config;
         config.cut_number_form = form;
         auto s = std::make_unique<Stage>(config);
         s->born(1, 1000.0);
         s->born(2, 3000.0);
         s->born(3, 5000.0);
-        for (int i = 0; i < 5; ++i) s->text(1, 1000.0, "DREW 2T7A TU ", 20.0 * i);
-        for (int i = 0; i < 2; ++i) s->text(2, 3000.0, "CQ DE 4A7A K ", 20.0 * i);
+        s->born(4, 7000.0);
+        for (int i = 0; i < times; ++i) s->text(1, 1000.0, "DREW 2T7A TU ", 20.0 * i);
+        s->text(2, 3000.0, "CQ DE 4A7A K ", 0.0);
+        s->text(2, 3000.0, "4A7A ", 20.0);
         for (int i = 0; i < 2; ++i) s->text(3, 5000.0, "9A2CT ", 20.0 * i);
-        s->search.advance(150.0);
+        for (int i = 0; i < 2; ++i) s->text(4, 7000.0, "4T4T ", 20.0 * i);  // two bare readings: any other call would pass
+        s->search.advance(20.0 * times + 60.0);
         return s;
     };
-    const auto fixed = run(CallSearchConfig{}.cut_number_form);
-    EXPECT_EQ(fixed->row("2T7A"), nullptr);
-    EXPECT_NE(fixed->row("4A7A"), nullptr);
-    EXPECT_NE(fixed->row("9A2CT"), nullptr);
-    const auto off = run(0.0);
+    const auto short_of = run(defaults.cut_number_form, bar - 1);
+    EXPECT_EQ(short_of->row("2T7A"), nullptr);
+    EXPECT_EQ(short_of->row("4T4T"), nullptr);
+    EXPECT_NE(short_of->row("4A7A"), nullptr);
+    EXPECT_NE(short_of->row("9A2CT"), nullptr);
+    EXPECT_NE(run(defaults.cut_number_form, bar)->row("2T7A"), nullptr);
+    // As any call (0): two bare readings are enough.
+    const auto off = run(0.0, 2);
     EXPECT_NE(off->row("2T7A"), nullptr);
-    // From a list only (1): the signed 4A7A is lost without one.
-    const auto listed_only = run(1.0);
+    EXPECT_NE(off->row("4T4T"), nullptr);
+    // From a list only (1): the signed 4A7A is lost without one, and the number however often it is read.
+    const auto listed_only = run(1.0, bar + 2);
     EXPECT_EQ(listed_only->row("2T7A"), nullptr);
     EXPECT_EQ(listed_only->row("4A7A"), nullptr);
     EXPECT_NE(listed_only->row("9A2CT"), nullptr);
+}
+
+// The review's case: a DX station running the CWT need not sign by the Role rule (CWT is no keyword, so CQ CWT 8T2BH TU 8T2BH TU
+// reads bare; only a CQ or K after the call would sign it); heard cut_number_points times bare, it is reported. A listed one needs what
+// any listed call needs.
+TEST(CallSearch, ADxStationRunningTheCwtIsReportedOnItsBar) {
+    auto known = std::make_shared<KnownCalls>();
+    known->add("8T2BH");
+    const auto reported = [&](int times, bool listed) {
+        Stage s(CallSearchConfig{}, listed ? known : nullptr);
+        s.born(1, 1000.0);
+        for (int i = 0; i < times; ++i) s.text(1, 1000.0, i == 0 ? "CQ CWT 8T2BH " : "TU 8T2BH ", 20.0 * i);
+        s.search.advance(20.0 * times + 30.0);
+        return s.row("8T2BH") != nullptr;
+    };
+    const int bar = static_cast<int>(CallSearchConfig{}.cut_number_points);
+    EXPECT_FALSE(reported(bar - 1, false));
+    EXPECT_TRUE(reported(bar, false));
+    EXPECT_TRUE(reported(2, true));
+}
+
+// A 1x1 named by another is held to the same bar: named twice it is not reported, three times it is.
+TEST(CallSearch, AOneByOneNamedTwiceIsNotReportedButThreeTimesIs) {
+    const auto reported = [](int times) {
+        Stage s;
+        s.born(1, 1000.0);
+        for (int i = 0; i < times; ++i) s.text(1, 1000.0, "N4A DE K1ABC ", 20.0 * i);
+        s.search.advance(20.0 * times + 30.0);
+        return s.row("N4A") != nullptr;
+    };
+    EXPECT_FALSE(reported(2));
+    EXPECT_TRUE(reported(3));
+}
+
+// Signed, for the bar, means a counted occurrence signed: inside the pooled window and not held by a variant at its place. A signed
+// DE N4A K where N4AB, read four times, holds N4A does not lower the bar, so two bare readings elsewhere are not enough; a signed
+// reading where nothing holds it does, with one bare reading. The List's Signed (CallRow::framed) counts every reading, held or not.
+TEST(CallSearch, ASignedReadingHeldByAVariantDoesNotSignAOneByOne) {
+    const auto run = [](double short_points, bool held) {
+        CallSearchConfig config;
+        config.short_points = short_points;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, 5000.0);
+        if (held) {
+            for (int i = 0; i < 4; ++i) s->text(1, 1000.0, "DE N4AB K ", 20.0 * i);
+            s->text(1, 1000.0, "DE N4A K ", 80.0);
+            for (int i = 0; i < 2; ++i) s->text(2, 5000.0, "N4A ", 100.0 + 20.0 * i);
+        } else {
+            s->text(1, 1000.0, "DE N4A K ", 80.0);
+            s->text(2, 5000.0, "N4A ", 100.0);
+        }
+        s->search.advance(200.0);
+        return s;
+    };
+    const double bar = CallSearchConfig{}.short_points;
+    EXPECT_EQ(run(bar, true)->row("N4A"), nullptr);
+    EXPECT_NE(run(bar, true)->row("N4AB"), nullptr);
+    const auto counted = run(bar, false);
+    ASSERT_NE(counted->row("N4A"), nullptr);
+    EXPECT_TRUE(counted->row("N4A")->framed);
+    // With the bar at the signed value the held case passes on its two counted points, and its row shows Signed from the held reading.
+    const auto lowered = run(CallSearchConfig{}.short_points_signed, true);
+    ASSERT_NE(lowered->row("N4A"), nullptr);
+    EXPECT_TRUE(lowered->row("N4A")->framed);
+}
+
+// The bar is the test that withdraws too (pooled): a 1x1 reported on three bare readings, one of them at a place where a variant then
+// holds it, leaves the list with two left; with the bar off (0) two are enough and it stays.
+TEST(CallSearch, TheOneByOnesBarAppliesOnWithdrawal) {
+    for (const double short_points : {CallSearchConfig{}.short_points, 0.0}) {
+        CallSearchConfig config;
+        config.short_points = short_points;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 5000.0);
+        for (int i = 0; i < 2; ++i) s.text(1, 1000.0, "N4A ", 20.0 * i);
+        s.text(2, 5000.0, "N4A ", 40.0);
+        s.search.advance(70.0);
+        ASSERT_NE(s.row("N4A"), nullptr) << short_points;
+        for (int i = 0; i < 4; ++i) s.text(2, 5000.0, "N4AB ", 100.0 + 20.0 * i);
+        s.search.advance(200.0);
+        EXPECT_NE(s.row("N4AB"), nullptr) << short_points;
+        if (short_points > 0.0) {
+            EXPECT_EQ(s.row("N4A"), nullptr);
+            EXPECT_EQ(s.search.withdrawn(), 1u);
+        } else {
+            EXPECT_NE(s.row("N4A"), nullptr);
+            EXPECT_EQ(s.search.withdrawn(), 0u);
+        }
+    }
 }
 
 TEST(CallSearch, TheShortCallDefaults) {
     EXPECT_EQ(CallSearchConfig{}.short_points, 3.0);
     EXPECT_EQ(CallSearchConfig{}.short_points_signed, 2.0);
     EXPECT_EQ(CallSearchConfig{}.cut_number_form, 2.0);
+    EXPECT_EQ(CallSearchConfig{}.cut_number_points, 5.0);
+    EXPECT_EQ(CallSearchConfig{}.cut_number_points_signed, 2.0);
 }

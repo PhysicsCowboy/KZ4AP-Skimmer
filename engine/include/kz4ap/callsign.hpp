@@ -75,8 +75,9 @@ bool only_tiny_pieces(std::string_view base);
 
 // A base call of three characters, one letter, a digit, one letter (N4A, W6S, G2M): the 1x1 form (CallSearchConfig::short_points).
 bool is_short_call(std::string_view base);
-// A base call whose prefix is a digit and A, N or T, then its digit (2T7A, 3N4D, 5T7R), outside 9A, 7N and 8N (Croatia's and Japan's
-// series, which most real calls of this shape are): the shape of a number sent in cut digits (CallSearchConfig::cut_number_form).
+// A base call whose prefix is a digit 2 to 9 and A, N or T, then its digit (2T7A, 3N4D, 5T7R), outside 9A, 7N and 8N (Croatia's and
+// Japan's series, which most real calls of this shape are): the shape of a number sent in cut digits (CallSearchConfig::cut_number_form).
+// Not 1 or 0 first: a number's 1 and 0 are themselves sent cut, as A and T, so a cut number never starts with either digit.
 bool is_cut_number_form(std::string_view base);
 
 // Levenshtein distance, stopping once it exceeds `limit` (it then returns limit + 1).
@@ -391,11 +392,18 @@ struct CallSearchConfig {
     double short_points = 3.0;
     double short_points_signed = 2.0;
     // A call with the shape of a number sent in cut digits (is_cut_number_form: 2T7A, 3N4D, 5A3BOB; A for 1, N for 9, T for 0, as
-    // the CWT's members' numbers are sent): 1, from a list only; 2, unlisted, only with an occurrence counted that had the role
-    // Sender; 0, as any call. Measured (call-short-1): outside 9A, 7N and 8N, 4 of the 11 370 base calls three or more RBN skimmers
-    // spotted on 2026-11-17, 2026-11-18 and 2017-08-21 have it (5A1AL, 5N80Y, 5T5T, 9N1HA), while the replays of the 2026-11-18
-    // CWT reported 29 such strings. Heuristic, chosen by measurement.
+    // the CWT's members' numbers are sent): 2, the default, unlisted, it needs cut_number_points_signed when some occurrence counted
+    // had the role Sender, else cut_number_points, as the 1x1's bar works (short_points); 1, from a list only; 0, as any call. Not
+    // a signed reading required: a DX station running the CWT (CQ CWT 8T2BH) never signs by the Role rule, and a call heard often
+    // enough is reported (the owner's ruling, review of call-short-1). Measured (call-short-1): outside 9A, 7N and 8N, 4 of the
+    // 11 370 base calls three or more RBN skimmers spotted on 2026-11-17, 2026-11-18 and 2017-08-21 have it (5A1AL, 5N80Y, 5T5T,
+    // 9N1HA), while the replays of the 2026-11-18 CWT reported 27 such strings. The bar, chosen by measurement on that CWT (review of
+    // call-short-1): 3, 4 and 5 points remove 7, 10 and 13 of the 25 numbers a signed reading required removed, with no window-confirmed
+    // call lost and no generated false call added; 5, the lowest to remove most. The runners' own numbers (2T7A, 3N7N), read in every
+    // exchange, pass any bar of several repeats. Heuristic.
     double cut_number_form = 2.0;
+    double cut_number_points = 5.0;
+    double cut_number_points_signed = 2.0;
 };
 
 // One line of the list.
@@ -464,7 +472,7 @@ private:
         double margin = 0;  // nats: the best of the margins of the readings it holds that are whole or glued words (CallReading::margin_nats)
         bool flat = false;  // its points are a flat stripped reading's (CallSearchConfig::flat_stripped)
         std::string covers;  // CallReading::covers of a joined reading it holds, the first one
-        bool sender = false;  // some reading of it had the role Sender (CallSearchConfig::short_points_signed)
+        bool sender = false;  // some reading of it had the role Sender (CallSearchConfig::short_points_signed, cut_number_points_signed)
     };
     struct Candidate {
         std::string base;

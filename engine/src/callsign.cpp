@@ -1164,11 +1164,13 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
 
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
-    // An unlisted call of three characters needs at least this, whatever else it passes on (CallSearchConfig::short_points).
-    const double short_need = !c.known && is_short_call(c.base) ? (s.sender ? config_.short_points_signed : config_.short_points) : 0.0;
-    if (points < short_need) return false;
-    // A number's shape in cut digits, unlisted: only signed (CallSearchConfig::cut_number_form).
-    if (config_.cut_number_form == 2.0 && !c.known && !s.sender && is_cut_number_form(c.base)) return false;
+    // An unlisted call of three characters, or of a number's shape in cut digits, needs at least this, fewer points when an occurrence
+    // counted signed, whatever else it passes on (CallSearchConfig::short_points, cut_number_points).
+    double need = 0.0;
+    if (!c.known && is_short_call(c.base)) need = s.sender ? config_.short_points_signed : config_.short_points;
+    else if (!c.known && config_.cut_number_form == 2.0 && is_cut_number_form(c.base))
+        need = s.sender ? config_.cut_number_points_signed : config_.cut_number_points;
+    if (points < need) return false;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
     if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
     if (c.known) return points >= (s.framed || s.sure ? config_.points_known : config_.points_known_bare);
