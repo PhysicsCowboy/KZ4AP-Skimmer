@@ -223,8 +223,6 @@ void SegmentalDecoder::update_walk() {
     walk_fast_ = fast;
     walk_now_ = fast ? walk : 0.0;
     for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk);
-    if (std::getenv("KZ4AP_ECHO_TRACE"))  // TEMPORARY trace, text-fast-1
-        std::fprintf(stderr, "walk k=%lld runs=%.0f f_D=%.2f Hz level=%.1f dB fast=%d walk=%.1f\n", static_cast<long long>(streams_.front().pushed), doppler_->runs(), spread, doppler_->level_db(), fast ? 1 : 0, walk);
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
@@ -350,12 +348,6 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
             if (stream.scale == 1 && doppler_->push(sample.y_fs, floor)) update_walk();
             if (stream.echo->push(sample.e_fs * sample.e_fs, floor)) {
                 stream.evidence->set_echo(stream.echo->shape());
-                if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
-                    const auto& sh = stream.echo->shape();
-                    std::fprintf(stderr, "echo m=%d k=%lld runs=%.0f on=%d tail:", stream.scale, static_cast<long long>(stream.pushed), stream.echo->runs(), sh.on ? 1 : 0);
-                    for (double g : sh.tail) std::fprintf(stderr, " %.1f", 10.0 * std::log10(g));
-                    std::fprintf(stderr, "\n");
-                }
             }
             stream.evidence->push(sample.e_fs, sigma2, floor);
             stream.search->advance();  // at once: the short elements' context reaches back only so far
@@ -474,13 +466,6 @@ DecodeUpdate SegmentalDecoder::flush() {
     segmental::BestStory story = search.best_story(0);
     story.tail = search.best_text();
     story.length = story.tail.size();
-    if (std::getenv("KZ4AP_ECHO_TRACE")) {  // TEMPORARY trace, text-fast-1
-        std::fprintf(stderr, "doppler final runs=%.0f f_D=%.2f Hz level=%.1f dB fast=%d\n", doppler_->runs(), doppler_->spread_hz(), doppler_->level_db(), walk_fast_ ? 1 : 0);
-        for (const Stream& s : streams_) { std::fprintf(stderr, "echo final m=%d on=%d tail:", s.scale, s.echo->shape().on ? 1 : 0); for (double g : s.echo->shape().tail) std::fprintf(stderr, " %.1f", 10.0 * std::log10(g)); std::fprintf(stderr, "\n"); }
-        const double end_s = story.tail.empty() ? 0.0 : story.tail.back().end_s;
-        for (const DecodedSymbol& s : story.tail)
-            if (const char* w = std::getenv("KZ4AP_SYM_FROM"); w != nullptr ? (s.start_s >= std::atof(w) && s.start_s < std::atof(w) + 3.0) : s.end_s > end_s - 3.0) std::fprintf(stderr, "sym '%s' %.4f %.4f\n", s.text.c_str(), s.start_s, s.end_s);
-    }
     return bring_up_to_date(story, static_cast<double>(next_index_) / rate_);
 }
 

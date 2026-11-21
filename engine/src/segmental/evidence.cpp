@@ -5,8 +5,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <numbers>
 #include <numeric>
 #include <stdexcept>
@@ -316,11 +314,6 @@ void EchoEstimator::update_shape() {
     };
     EchoShape shape;
     const double first = mean_at(kEdgeDone);
-    if (std::getenv("KZ4AP_ECHO_PROFILE")) {  // TEMPORARY, text-fast-1
-        std::fprintf(stderr, "profile h=%d:", half_);
-        for (int q = 0; q < span_; ++q) std::fprintf(stderr, " %.1f(%.0f)", count_[q] > 0 ? 10.0 * std::log10(std::max(1e-9, sum_[q] / count_[q])) : -99.0, count_[q]);
-        std::fprintf(stderr, "\n");
-    }
     if (first >= on_ratio_) {
         shape.on = true;
         for (int q = 0; q < positions_; ++q) {

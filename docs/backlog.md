@@ -485,6 +485,13 @@ for the new decoder only.
 
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
 
+**Status 2026-11-21 (`text-fast-1`), segmental decoder:** the walk and the frame now follow the Doppler spread the decoder measures
+(from 3 Hz, at +10 dB S500 or more): VE3NEA's conditions at f_D 3 Hz read 0.073, 0.033, 0.023, 0.025, 0.024 (hand) and 0.055, 0.028,
+0.020, 0.019, 0.021 (paddle) at +13.78, +17.78, +27.78, +37.78, +57.78 dB S500, against 0.103 to 0.083 and 0.072 to 0.052 before
+(DeepCW 0.04 and 0.02 at the top); the matched fast-fading set's 7 to 14 Hz and 21 to 42 Hz cells 0.032 to 0.008 and 0.026 to 0.017
+from 0.17 and 0.31. Open: under +10 dB S500 the walk stays slow (the fast one cost B2 there); DEV2 has no fast-fading cell above
++10 dB S500 (the item "Strong fading in the development set" below); the short-fade limit at strong levels is smaller, not gone.
+
 **Status 2026-11-21 (`text-level-1`), segmental decoder:** on VE3NEA's conditions at f_D 3 Hz, after the level grid moved
 onto the channel's floor, CER stays at about 0.07 to 0.08 (hand) and 0.045 to 0.052 (paddle) from +17.78 to
 +57.78 dB S500, where DeepCW falls to 0.04 and 0.02. Traced: a fade of 20 to 30 dB lasting 10 to 20 ms inside a mark is cheaper
@@ -747,6 +754,17 @@ section 4.3.1.
 
 ### Fast fading with an echo: the owner's "auroral" clips (found 2026-11-21, `text-level-1`; the owner's top plain-text priority)
 
+**Status 2026-11-21 (`text-fast-1`):** both causes modeled, by default. The clips' decorrelation is mostly the tail: kz4ap-fading's
+ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mark's end into another path's tail give, and the decoder's
+estimator, inside the marks only, reads f_D about 4.6 Hz, not 9 to 10 Hz; the tail itself is incoherent with the mark (coherence 0.94
+at the fall, 0.24 at 10 ms) and lasts past 40 ms (−15 dB re the mark there). The decoder now learns the tail per stream and scores a
+gap's first samples against noise plus that power, and sets the level's walk and frame from the spread it measures (decision log,
+2026-11-21; signal-processing.md A.8e, "The channel's tail and the walk set by the Doppler spread"). The clips read 0.341 and 0.234
+against the owner's copy (`text-level-1` 0.443 and 0.766; DeepCW 0.398 and 0.338). Open: the tail in the level filter (a third key
+state was tried and cost the clips: 0.659 and 0.584), in the next rise's window, and a tail that changes within a track; the
+generator's two-path option, so that a matched set with a tail exists (the tests' channel is the only synthetic one); more clips of
+the owner's (aurora, long path) to see whether the shape holds; where the remaining errors on the clips are.
+
 Two clips of W1AW's 35 WPM practice text on 80 m (the 2026-11-19 recording, 3581.504 kHz, 1049 to 1080 s and 879 to 910 s, about 26
 to 28 dB re the noise key-down; the owner copied both nearly completely, and hears an auroral feel and fading) read at no-space CER
 0.44 to 0.77 against his copy, with main and with `text-level-1` alike; DeepCW reads 0.398 and 0.338, nn-morse 0.295 and 0.351.
@@ -779,6 +797,9 @@ speed (120 a seed), and an edge cell for half of them, hard edges (0.8 ms 10-90%
 station's own keying splatter is in the set. Its own signal-seed code (not B2's 2), so that its noise is independent, and its
 own builder entry in `DEV2_BUILDERS` as B3, scored with B2's rules; about a tenth more time per seed. What it would have caught:
 the level grid's defect (a strong station's own keying read as a leak floor moved its level inside marks; hand, f_D 0.1 Hz, +57.78 dB S500), and it holds the fast-fading cases of the item above.
+`text-fast-1` adds a need: f_D cells above 5 Hz (to 40 Hz, as the matched set's) at +10 dB S500 and up, where the Doppler walk acts, and
+a two-path cell with a diffuse tail 10 to 15 dB under the mark for 20 to 50 ms, where the tail model acts; neither is in DEV2, so its
+whole-set runs show only that both leave the other groups alone.
 
 ### Benchmark scenarios to add first
 
