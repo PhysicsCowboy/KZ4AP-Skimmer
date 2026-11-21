@@ -487,7 +487,8 @@ for the new decoder only.
 
 **Status 2026-11-21 (`text-level-1`), segmental decoder:** on VE3NEA's conditions at f_D 3 Hz, after the level grid moved
 onto the channel's floor, CER stays at about 0.07 to 0.08 (hand) and 0.045 to 0.052 (paddle) from +17.78 to
-+57.78 dB S500, where DeepCW falls to 0.04 and 0.02. Traced: a fade of 20 to 30 dB lasting 10 to 20 ms inside a mark is cheaper
++57.78 dB S500, where DeepCW falls to 0.04 and 0.02. Traced: a fade to 20 to 30 dB below the mark's level (dB re its key-down
+power) lasting 10 to 20 ms inside a mark is cheaper
 as a short gap (its prior paid once, the short element's template dipping as the fade does) than as a mark (about 10 nats a
 sample for the belief's distance); a 7-dot dash reads as M. A larger systematic floor (f = 0.2) about halves it on two recordings of each style of those
 conditions but costs A2, B2, C2, F2 and I2 on the development set (decision log, 2026-11-21). Candidates: the phase (a Rayleigh
@@ -755,10 +756,11 @@ Measured with `kz4ap-fading` (bench/src/fading_main.cpp; `build/tl-1/clips/`, gi
   (clip03) and 0.985, 0.944, 0.875, 0.749 (clip11); a Gaussian fit gives f_D = 2σ_D = 9.3 and 10.0 Hz. The same tool on our port of
   VE3NEA's generator reads f_D 3, 10, 30 Hz as 3.6, 9.6, 20.4 Hz (|ρ| at 26.7 ms 0.956, 0.730, 0.237), so the clips' core is about
   f_D 10 Hz; their faster drop at the shortest lag (0.983 against 0.996) says a few % of the power is spread wider.
-- **Slow fading.** The median key-down level per second: 3.4 and 3.6 dB rms, ranges 13.4 and 14.8 dB over 30 s.
+- **Slow fading.** The median key-down level per second, dB re the noise: a spread of 3.4 and 3.6 dB rms and ranges (largest less
+  smallest) of 13.4 and 14.8 dB over 30 s.
 - **An echo.** After a mark falls 6 dB, the power stays at −9 to −13 dB re the mark for 20 to 30 ms before reaching the noise
-  (−26 to −28 dB): a delayed copy or a scattered tail, about 10 dB down. A clean synthetic carrier falls to the noise within 2.7 ms;
-  at f_D 10 Hz it falls to −16 to −25 dB. That is what stretches the marks (median 58 to 62 ms against 40.7 ms for a 32 WPM
+  (−26 to −28 dB re the mark): a delayed copy or a scattered tail, about 10 dB below the mark. A clean synthetic carrier falls to
+  the noise within 2.7 ms; at f_D 10 Hz it falls to −16 to −25 dB re the mark. That is what stretches the marks (median 58 to 62 ms against 40.7 ms for a 32 WPM
   machine through the same tool) and fills the gaps (median 13 to 14 ms against 34.7 ms).
 What was tried (decision log, 2026-11-21): a channel floor at the 35th percentile with no margin, which covers the echo, reads the
 clips 0.364 and 0.364 but costs DEV2 +0.12 (A2, B2, F2, S2); a faster level walk reads the matched fast-fading set much better (the item on the amplitude model under fast fading)
@@ -779,6 +781,18 @@ speed (120 a seed), and an edge cell for half of them, hard edges (0.8 ms 10-90%
 station's own keying splatter is in the set. Its own signal-seed code (not B2's 2), so that its noise is independent, and its
 own builder entry in `DEV2_BUILDERS` as B3, scored with B2's rules; about a tenth more time per seed. What it would have caught:
 the level grid's defect (a strong station's own keying read as a leak floor moved its level inside marks; hand, f_D 0.1 Hz, +57.78 dB S500), and it holds the fast-fading cases of the item above.
+
+### σ² in steps finer than the level grid's (found 2026-11-21, review of `text-level-1`)
+
+With the level on the channel's floor, the segmental decoder takes σ² at F × 10^(1.5 d / 10), d the nearest whole 1.5 dB grid
+step above the floor, so z can be taken at up to 0.75 dB re σ² below σ² itself, below the leak floor when that sets σ². The 2017
+caller K4RUM (the recording KC2LRC-2, 73 Hz from a run station) is lost by it. σ² rounded up, and z at the true σ² with only the
+tables' shift rounded, both keep K4RUM but cost E2 +0.0078 and +0.0096 against main, where the nearest costs +0.0044
+(`docs/signal-processing.md`, A.8e, Limitations). To try: shifts finer than a step, by interpolating each term between the two
+table rows either side of the unrounded shift (in its constants, or in the value x), or by tables in 0.5 dB sub-steps below the
+grid (120 rows for 60 dB re F, the levels themselves still 1.5 dB apart). Measure on E2 (both seeds, oracle and detector's path),
+the strong pairs, and the three replay sets (2026-11-17, 2026-11-18, 2017) with the RBN judge, K4RUM among them. E2's cost of the
+level on the floor is not the rounding's (neither alternative reads it better), so its cause is a question of its own.
 
 ### Benchmark scenarios to add first
 
