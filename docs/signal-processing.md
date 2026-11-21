@@ -4356,8 +4356,9 @@ forward and backward messages run over the same grid. With `level_on_floor` 0 th
 **The forward message** (`LevelEvidence::push`), α over (key up or down) × level, flat at the start. Per sample: x_k(l) = wz² +
 (float held value); top = max(0, max_l x_k(l)); new up = (0.92 up + 0.08 down)·e^(−top), new down = (0.92 down + 0.08 up)·e^(x_k(l)
 − top); scaled to sum 1. If the total is not finite and positive, α starts over flat (the guard of review F6). The key's step
-comes first, then the sample. Every 8th sample: `end_frame` steps the level on each key state (below) and stores
-entering(t + 1) = α_up + α_down, by level.
+comes first, then the sample. At each frame's end, every 4th sample at m = 1 (text-fast-1: frames and blocks, below), `end_frame`,
+at a block's end (every 8th sample while the walk is slow), steps the level on each key state (below), and stores entering(t + 1) =
+α_up + α_down, by level.
 
 **The level's step** (`step_level`). `walk_passes` = ⌈(4.8² × 21.33 ms) / (2 step²) / 0.33⌉ = 25 passes of (p, 1 − 2p, p), p =
 8.2406/25 = 0.3296, the end values reflected; then x_l ← (1 − jump) x_l + jump × mean over l, jump = 1.0667 × 10⁻³. The step
@@ -4378,12 +4379,13 @@ themselves: the two differ by at most 1.4 × 10⁻³ in a column whose peak is 0
 `LevelEvidence.TheLevelDependentWalksKernelIsNormalizedMatchesThePassesAndStepsBackByItsTranspose`). Cost per step n² = 3 721
 multiply-adds against the passes' 25 × 3 × 61 = 4 575 (derived), not vectorized alike.
 
-**The backward message and commit** (`LevelEvidence::commit`). When frames ended − next uncommitted ≥ 16: β starts flat at the
-last ended frame's end. For t from last down to the next uncommitted: where t is to be committed (the first 8), P̂_t(l) ∝
-entering(t)(l) × (β_up(l) + β_down(l)), normalized; then β passes back through t's samples, last first (seen up = up·e^(−top),
+**The backward message and commit** (`LevelEvidence::commit`), written in 21.33 ms frames as while the walk is slow (in the code's
+10.67 ms frames twice the counts, and each block's first frame's entering and its end's β; below). When frames ended − next
+uncommitted ≥ 16: β starts flat at the last ended frame's end. For t from last down to the next uncommitted: where t is to be
+committed (the first 8), P̂_t(l) ∝ entering(t)(l) × (β_up(l) + β_down(l)), normalized; then β passes back through t's samples, last first (seen up = up·e^(−top),
 seen down = down·e^(x − top), new up = 0.92 seen up + 0.08 seen down, new down likewise, scaled to sum 1), then the level's step.
 So the first frame of a commit reads 15 frames ahead and its last 8, plus its own within-frame position: sample latency 64 to
-127 samples. The ring holds 18 frames. `finish` ends a partial frame, commits all with the look-ahead there is, and pushes 17
+127 samples. The ring holds 18 frames (36 of 10.67 ms). `finish` ends a partial frame, commits all with the look-ahead there is, and pushes 17
 samples of zero evidence.
 
 **Committing a frame** (`commit_frame`). Levels with P̂ ≥ 10⁻⁴ are active, unnormalized (at most 256). They are grouped in
