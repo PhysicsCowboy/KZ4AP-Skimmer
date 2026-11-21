@@ -313,9 +313,19 @@ void LevelEvidence::finish() {
 void LevelEvidence::step_level(double* x, bool backward) const {
     const int n = levels_;
     double buffer[256];
+    // J: x <- (1 - jump) x + jump x mean over the levels.
+    const auto jump_step = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < n; ++i) sum += x[i];
+        const double jump = tables_.jump();
+        const double mean = sum / n;
+        for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    };
     const std::vector<double>& kernel = tables_.walk_kernel();
     if (!kernel.empty()) {
-        // The walk from each level its own: x' = K x forward, K^T x backward.
+        // The walk from each level its own: x' = J K x forward, K^T J x backward. K's columns sum to 1, its rows need not, so
+        // the order matters here (review of text-level-1: K^T came before J).
+        if (backward) jump_step();
         const std::size_t un = static_cast<std::size_t>(n);
         for (std::size_t i = 0; i < un; ++i) buffer[i] = 0.0;
         if (!backward) {
@@ -333,7 +343,10 @@ void LevelEvidence::step_level(double* x, bool backward) const {
             }
         }
         std::copy_n(buffer, n, x);
-    } else {
+        if (!backward) jump_step();
+        return;
+    }
+    {
         const double p = tables_.walk_p();
         const double keep = 1.0 - 2.0 * p;
         // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
@@ -347,11 +360,7 @@ void LevelEvidence::step_level(double* x, bool backward) const {
         }
         if (from != x) std::copy_n(from, n, x);
     }
-    double sum = 0.0;
-    for (int i = 0; i < n; ++i) sum += x[i];
-    const double jump = tables_.jump();
-    const double mean = sum / n;
-    for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    jump_step();
 }
 
 void LevelEvidence::end_frame() {
