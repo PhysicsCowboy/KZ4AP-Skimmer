@@ -481,6 +481,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"doppler_memory_runs", &config.doppler_memory_runs},
         {"doppler_min_runs", &config.doppler_min_runs},
         {"echo_run_db", &config.echo_run_db},
+        {"echo_min_db", &config.echo_min_db},
         {"echo_min_run_s", &config.echo_min_run_s},
         {"echo_memory_runs", &config.echo_memory_runs},
         {"echo_min_runs", &config.echo_min_runs},

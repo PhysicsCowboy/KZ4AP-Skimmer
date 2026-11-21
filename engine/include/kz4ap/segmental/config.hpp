@@ -1,4 +1,4 @@
-﻿// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
+// The segmental decoder's configuration: the fast form of the Bayesian decoder (segmental/search.hpp). Its timing, text
 // and overs are the viterbi decoder's model, read from `model`; its own values are what the fast form replaces the
 // per-story amplitude and the per-sample search with. Physical units throughout; each value is marked derived, measured
 // or heuristic.
@@ -96,9 +96,10 @@ struct SegmentalConfig {
     // Heuristic: the matched set reads 7 to 14 Hz best at 10 to 14 nepers per square root of a second.
     double doppler_walk_per_hz = 1.4;
     double doppler_walk_max = 20.0;
-    // s: the pairs of a run's samples read for the spread stay this far from its end, past the channel's tail (the clips: |rho| at
-    // 26.7 ms 0.797 with every pair, 0.992 off the last 30 ms). Heuristic.
-    double doppler_end_guard_s = 0.030;
+    // s: the pairs read for the spread lie between a run's first and last samples at or above -6 dB re its median power, this far
+    // inside them, so that neither the front filter's edges nor the channel's tail is read (the clips: |rho| at 26.7 ms 0.797 with
+    // every pair of the run, 0.992 off its last 30 ms; kz4ap-fading). Heuristic: 3 samples at the widest filter, its edge's half.
+    double doppler_end_guard_s = 0.008;
     // runs: the estimator's memory and what it needs before it is used. Heuristics.
     double doppler_memory_runs = 100.0;
     double doppler_min_runs = 20.0;
@@ -114,8 +115,11 @@ struct SegmentalConfig {
     // Heuristic: the clips' tail is still -15 dB re the mark at 40 ms, and an over's end waits that much less 16 ms to rejoin the
     // no-signal story.
     double echo_max_s = 0.048;
-    // dB re the floor: a sample is key-down for the estimator above this. Heuristic, kz4ap-fading's.
+    // dB re the floor: a sample is key-down for the estimator above this (heuristic, kz4ap-fading's); and a run is read only if its
+    // median stands at least echo_min_db: near the run threshold the mean after a run's end reads -7 to -14 dB re the mark on VE3NEA's
+    // clean stations at 12 to 15 dB re the floor (a bias of the threshold, measured). Heuristic.
     double echo_run_db = 10.0;
+    double echo_min_db = 20.0;
     // s: the shortest run read. Heuristic: a dot at 37 WPM.
     double echo_min_run_s = 0.032;
     // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used. Heuristics.

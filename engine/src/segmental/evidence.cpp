@@ -221,6 +221,7 @@ EchoEstimator::EchoEstimator(const SegmentalConfig& config, const viterbi::Templ
         throw std::invalid_argument("segmental: echo_memory_runs and echo_min_runs must be at least 1 run, echo_min_run_s not negative (s)");
     on_ = true;
     run_ratio_ = std::pow(10.0, config.echo_run_db / 10.0);
+    min_level_ = std::pow(10.0, config.echo_min_db / 10.0);
     min_run_ = static_cast<std::size_t>(std::max(1.0, std::ceil(config.echo_min_run_s / interval_s - 1e-9)));
     forget_ = std::exp(-1.0 / config.echo_memory_runs);
     min_runs_ = config.echo_min_runs;
@@ -277,6 +278,7 @@ void EchoEstimator::end_run(std::int64_t end) {
     std::vector<double> sorted = run_;
     std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
     const double level = sorted[sorted.size() / 2];
+    if (level < min_level_ * run_floor_[run_floor_.size() / 2]) return;
     std::size_t last = 0;
     for (std::size_t i = 0; i < run_.size(); ++i)
         if (run_[i] >= level / 4.0) last = i;
@@ -426,8 +428,21 @@ bool DopplerEstimator::push(std::complex<double> y_fs, double floor_fs2) {
 void DopplerEstimator::end_run() {
     const int n = static_cast<int>(run_.size());
     if (n >= 4096) return;
-    const int first = trim_, end = n - guard_;  // pairs k, k + lag in [first, end)
-    if (end - first <= lag_) return;
+    // The mark's own samples: from its first to its last sample at or above -6 dB re the run's median power, less the front
+    // filter's edge at each end; so neither the rise nor the fall nor a tail after it is read.
+    std::vector<double> power(run_.size());
+    for (std::size_t k = 0; k < run_.size(); ++k) power[k] = std::norm(run_[k]);
+    std::vector<double> sorted = power;
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
+    const double median = sorted[sorted.size() / 2];
+    int first_half = -1, last_half = -1;
+    for (int k = 0; k < n; ++k)
+        if (power[static_cast<std::size_t>(k)] >= median / 4.0) {
+            if (first_half < 0) first_half = k;
+            last_half = k;
+        }
+    const int first = first_half + guard_, end = last_half + 1 - guard_;  // pairs k, k + lag in [first, end)
+    if (first_half < 0 || end - first <= lag_) return;
     std::complex<double> cross = 0.0;
     double p0 = 0.0, p1 = 0.0;
     for (int k = first; k + lag_ < end; ++k) {
@@ -435,13 +450,10 @@ void DopplerEstimator::end_run() {
         p0 += std::norm(run_[static_cast<std::size_t>(k)]) - run_floor_[static_cast<std::size_t>(k)];
         p1 += std::norm(run_[static_cast<std::size_t>(k + lag_)]) - run_floor_[static_cast<std::size_t>(k + lag_)];
     }
-    std::vector<double> ratio(run_.size());
-    for (std::size_t k = 0; k < run_.size(); ++k) ratio[k] = std::norm(run_[k]) / run_floor_[k];
-    std::nth_element(ratio.begin(), ratio.begin() + static_cast<std::ptrdiff_t>(ratio.size() / 2), ratio.end());
     cross_ = cross_ * forget_ + cross;
     power0_ = power0_ * forget_ + p0;
     power1_ = power1_ * forget_ + p1;
-    level_sum_ = level_sum_ * forget_ + 10.0 * std::log10(ratio[ratio.size() / 2]);
+    level_sum_ = level_sum_ * forget_ + 10.0 * std::log10(median / run_floor_[run_floor_.size() / 2]);
     runs_ = runs_ * forget_ + 1.0;
     level_db_ = level_sum_ / runs_;
     const double rho = power0_ > 0.0 && power1_ > 0.0 ? std::abs(cross_) / std::sqrt(power0_ * power1_) : 1.0;
@@ -477,6 +489,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     beta_block_.assign(levels, 0.0);
     block_frames_ = slow_block_;
     fast_jump_ = config.level_jump_per_s * frame_samples_ * config.model.sample_interval_s;
+    fast_block_jump_ = tables.jump();
     frame_s_ = frame_samples_ * config.model.sample_interval_s;
     // The forward message's prediction into frame 0.
     std::copy_n(alpha_.begin(), levels, entering_.begin());
@@ -604,8 +617,8 @@ void LevelEvidence::step_level(double* x, int kind, bool backward) const {
         }
         std::copy_n(buffer, n, x);
     } else {
-        const double p = kind == 2 ? fast_p_ : tables_.walk_p();
-        const int passes = kind == 2 ? fast_passes_ : tables_.walk_passes();
+        const double p = kind == 2 ? fast_p_ : kind == 3 ? fast_block_p_ : tables_.walk_p();
+        const int passes = kind == 2 ? fast_passes_ : kind == 3 ? fast_block_passes_ : tables_.walk_passes();
         const double keep = 1.0 - 2.0 * p;
         // Three taps, ends reflecting, from one buffer into the other: a loop a compiler can make into vectors, as an update in place is not.
         double* from = x;
@@ -620,7 +633,7 @@ void LevelEvidence::step_level(double* x, int kind, bool backward) const {
     }
     double sum = 0.0;
     for (int i = 0; i < n; ++i) sum += x[i];
-    const double jump = kind == 2 ? fast_jump_ : tables_.jump();
+    const double jump = kind == 2 ? fast_jump_ : kind == 3 ? fast_block_jump_ : tables_.jump();
     const double mean = sum / n;
     for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
 }
@@ -633,7 +646,7 @@ void LevelEvidence::end_frame() {
     // At a block's end the level steps, and the next block takes the mode asked for (set_walk).
     int kind = 0;
     if (++block_fill_ >= block_frames_) {
-        kind = fast_ ? 2 : 1;
+        kind = !fast_ ? 1 : block_frames_ == 1 ? 2 : 3;
         step_level(alpha_.data(), kind);
         step_level(alpha_.data() + levels, kind);
         fast_ = fast_next_;
@@ -644,8 +657,13 @@ void LevelEvidence::end_frame() {
             const double total_p = fast_walk_ * fast_walk_ * frame_s_ / (2.0 * step_nepers * step_nepers);
             fast_passes_ = std::max(1, static_cast<int>(std::ceil(total_p / 0.33)));
             fast_p_ = total_p / fast_passes_;
+            const double block_p = total_p * slow_block_;
+            fast_block_passes_ = std::max(1, static_cast<int>(std::ceil(block_p / 0.33)));
+            fast_block_p_ = block_p / fast_block_passes_;
         }
-        block_frames_ = fast_ ? 1 : slow_block_;
+        // Fast: a frame to a block, unless the channel's tail is modeled, where a short frame lets the level follow the tail into
+        // the gaps (the clips: 0.352 and 0.247 with the long frame, 0.841 and 0.766 with the short; heuristic by measurement).
+        block_frames_ = fast_ && !echo_on_ ? 1 : slow_block_;
         block_fill_ = 0;
         block_first_ = frames_;
     }
