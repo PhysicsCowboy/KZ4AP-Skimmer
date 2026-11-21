@@ -341,9 +341,11 @@ class LevelEvidence {public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);
 
     // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2; floor_fs2, the channel's noise
-    // floor there, FS^2, at most sigma2_fs2, what the level's grid is relative to (SegmentalConfig::level_on_floor). sigma^2 is
-    // taken at the floor times 10^(shift x step / 10), shift the nearest whole number of grid steps, 0 ... LevelTables::below(),
-    // and level l scored as level l - shift of the tables. Without a floor, or with level_on_floor 0, the floor is sigma^2.
+    // floor there, FS^2, at most sigma2_fs2, what the level's grid is relative to (SegmentalConfig::level_on_floor). With
+    // s = 10 log10(sigma^2 / floor) / step, unrounded: below LevelTables::below() steps, shift = the nearest whole number to s
+    // (so below() itself for s in [below() - 0.5, below())) and sigma^2 is taken at the floor times 10^(shift x step / 10); from
+    // below() steps on, shift = below() and sigma^2 is taken as it is. Level l is scored as level l - shift of the tables.
+    // Without a floor, or with level_on_floor 0, the floor is sigma^2.
     void push(double e_fs, double sigma2_fs2, double floor_fs2);
     void push(double e_fs, double sigma2_fs2) { push(e_fs, sigma2_fs2, sigma2_fs2); }
     // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
@@ -357,12 +359,18 @@ class LevelEvidence {public:
     void set_walk(bool fast, double walk_nepers_per_sqrt_s);
     bool fast() const { return fast_; }
 
+    // The level's step between frames, on a vector over the grid's levels: forward x' = J K x, backward its transpose
+    // x' = K^T J x, K the walk (the three-tap passes, or LevelTables::walk_kernel when the walk depends on the level) and J the
+    // jump, (1 - jump) I + jump / levels, which is symmetric. With the three-tap passes K is symmetric and its rows sum to 1, so
+    // J and K commute and the step is the same both ways. Public for the tests.
+    void step_level(double* x, bool backward = false) const { step_kind(x, 1, backward); }
+
 private:
     void end_frame();
     void commit(bool all);
-    // The step at a block's end, kind 1 (the configured walk over level_frame_s) or 2 (the fast walk over one frame): forward
-    // x' = K x; backward (the transpose) x' = K^T x. The same for the three-tap passes, which are symmetric.
-    void step_level(double* x, int kind, bool backward = false) const;
+    // The step at a block's end, kind 1 (the configured walk over level_frame_s, step_level's), 2 (the fast walk over one frame) or 3
+    // (the fast walk over level_frame_s): forward x' = J K x, backward x' = K^T J x, K the walk (the passes or a matrix) and J the jump.
+    void step_kind(double* x, int kind, bool backward = false) const;
     void commit_frame(std::int64_t frame, const double* belief);
 
     const LevelTables& tables_;

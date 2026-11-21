@@ -599,7 +599,7 @@ void LevelEvidence::finish() {
 
 namespace {
 
-// A walk over n levels as a matrix K[to][from], each column a Gaussian of sd_steps grid steps about rom, folded at both ends
+// A walk over n levels as a matrix K[to][from], each column a Gaussian of sd_steps grid steps about from, folded at both ends
 // (reflecting, as the three-tap passes are), normalized to 1 (the method of images).
 std::vector<double> walk_matrix(int n, double sd_steps) {
     std::vector<double> kernel(static_cast<std::size_t>(n * n), 0.0);
@@ -642,13 +642,26 @@ void apply_matrix(const std::vector<double>& kernel, int n, double* x, bool back
 
 }  // namespace
 
-void LevelEvidence::step_level(double* x, int kind, bool backward) const {
+void LevelEvidence::step_kind(double* x, int kind, bool backward) const {
     const int n = levels_;
-    // The fast walk's matrix, or the walk from each level its own (level_walk_high_nepers_per_sqrt_s): x' = K x forward, K^T x backward.
+    // J: x <- (1 - jump) x + jump x mean over the levels, the jump over the block's length.
+    const auto jump_step = [&] {
+        double sum = 0.0;
+        for (int i = 0; i < n; ++i) sum += x[i];
+        const double jump = kind == 2 ? fast_jump_ : kind == 3 ? fast_block_jump_ : tables_.jump();
+        const double mean = sum / n;
+        for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    };
+    // The fast walk's matrix (text-fast-1), or the walk from each level its own (level_walk_high_nepers_per_sqrt_s): x' = J K x
+    // forward, K^T J x backward. K's columns sum to 1, its rows need not, so the order matters (review of text-level-1).
     const std::vector<double>& kernel = kind == 2 ? fast_kernel_ : kind == 3 ? fast_block_kernel_ : tables_.walk_kernel();
     if (!kernel.empty()) {
+        if (backward) jump_step();
         apply_matrix(kernel, n, x, backward);
-    } else {
+        if (!backward) jump_step();
+        return;
+    }
+    {
         double buffer[256];
         const double p = tables_.walk_p();
         const double keep = 1.0 - 2.0 * p;
@@ -663,11 +676,7 @@ void LevelEvidence::step_level(double* x, int kind, bool backward) const {
         }
         if (from != x) std::copy_n(from, n, x);
     }
-    double sum = 0.0;
-    for (int i = 0; i < n; ++i) sum += x[i];
-    const double jump = kind == 2 ? fast_jump_ : kind == 3 ? fast_block_jump_ : tables_.jump();
-    const double mean = sum / n;
-    for (int i = 0; i < n; ++i) x[i] = (1.0 - jump) * x[i] + jump * mean;
+    jump_step();
 }
 
 void LevelEvidence::end_frame() {
@@ -679,8 +688,8 @@ void LevelEvidence::end_frame() {
     int kind = 0;
     if (++block_fill_ >= block_frames_) {
         kind = !fast_ ? 1 : block_frames_ == 1 ? 2 : 3;
-        step_level(alpha_.data(), kind);
-        step_level(alpha_.data() + levels, kind);
+        step_kind(alpha_.data(), kind);
+        step_kind(alpha_.data() + levels, kind);
         fast_ = fast_next_;
         if (fast_ && fast_walk_next_ != fast_walk_) {
             // The walk's variance over a frame is W^2 T nepers^2, its sd W sqrt(T) / step in grid steps; over a block of
@@ -755,8 +764,8 @@ void LevelEvidence::commit(bool all) {
         if (t > 0) {
             const int kind = step_after_[static_cast<std::size_t>((t - 1) % ring_frames_)];
             if (kind != 0) {
-                step_level(up, kind, true);
-                step_level(down, kind, true);
+                step_kind(up, kind, true);
+                step_kind(down, kind, true);
             }
         }
     }
