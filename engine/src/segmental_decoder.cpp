@@ -131,6 +131,8 @@ SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const Channe
       level_tables(c, output_noise, template_tables),
       model_tables(c) {
     (void)segmental::ChannelFloor(c);  // refuses its settings here, before any channel opens
+    (void)segmental::EchoEstimator(c, template_tables);  // and the tail's and the Doppler walk's (text-fast-1)
+    (void)segmental::DopplerEstimator(c, output_noise.rho);
     require(std::isfinite(c.leak_hold_s) && c.leak_hold_s >= 0.0, "segmental: leak_hold_s must be finite and not negative (s)");
     require(std::isfinite(c.leak_floor_db), "segmental: leak_floor_db must be finite (dB re the leak)");
     require(c.leak_min_offset_hz >= 0.0 && c.leak_max_offset_hz > c.leak_min_offset_hz && std::isfinite(c.leak_max_offset_hz),
@@ -208,7 +210,7 @@ void SegmentalDecoder::start() {
         streams_.emplace_back(shared_->narrower[i], shared_->config.filter_scales[i + 1]);
     leader_ = 0;
     choice_started_ = false;
-    doppler_ = std::make_unique<segmental::DopplerEstimator>(shared_->config);
+    doppler_ = std::make_unique<segmental::DopplerEstimator>(shared_->config, shared_->output_noise.rho);
     walk_fast_ = false;
     walk_short_ = true;
     walk_now_ = 0.0;
@@ -217,15 +219,19 @@ void SegmentalDecoder::start() {
 void SegmentalDecoder::update_walk() {
     const segmental::SegmentalConfig& c = shared_->config;
     const double spread = doppler_->spread_hz();
-    const bool loud = doppler_->level_db() >= c.doppler_min_db && doppler_->shape() >= c.doppler_min_shape;
+    const bool loud = doppler_->level_db() >= c.doppler_min_db && doppler_->shape_ok(c.doppler_shape_lo, c.doppler_shape_hi) &&
+                      doppler_->runs_hz() >= c.doppler_min_runs_ratio * spread;
     const bool fast = loud && (walk_fast_ ? spread >= c.doppler_slow_hz : spread >= c.doppler_fast_hz);
     const double walk = std::clamp(c.doppler_walk_per_hz * spread, c.level_walk_nepers_per_sqrt_s, c.doppler_walk_max);
-    const bool short_frames = spread >= c.doppler_short_frame_hz;
-    if (fast == walk_fast_ && (!fast || (std::fabs(walk - walk_now_) < 0.5 && short_frames == walk_short_))) return;
+    // Short frames only once the tail is decided, where the runs are strong enough to learn one (review of text-fast-1: a fresh track
+    // ran them for 3 to 5 s before its tail was in): a short frame lets the level follow a tail into the gaps.
+    bool decided = doppler_->level_db() < c.echo_min_db || c.echo_max_s == 0.0;
+    for (const Stream& stream : streams_) decided = decided || stream.echo->decided();
+    if (fast == walk_fast_ && (!fast || (std::fabs(walk - walk_now_) < 0.5 && decided == walk_short_))) return;
     walk_fast_ = fast;
-    walk_short_ = short_frames;
+    walk_short_ = decided;
     walk_now_ = fast ? walk : 0.0;
-    for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk, short_frames);
+    for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk, decided);
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }

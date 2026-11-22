@@ -647,7 +647,8 @@ void Search::Impl::boundary(std::int64_t j) {
     // The same ends at the other stretches. Only those inside the beam of the best so far, which the final best can only
     // raise: this keeps the bookkeeping of a stretch nobody needs off every birth on noise, without changing what opens.
     {
-        const double stretched_floor = best - config.beam_nats - gap_reach_new - (model.log_stretched() - model.log_plain());
+        // As the opening test below: a gap opened here reaches gap_reach_new and its tail's (review of text-fast-1).
+        const double stretched_floor = best - config.beam_nats - gap_reach_new - tail_reach_new - (model.log_stretched() - model.log_plain());
         for (const Stretched& s : stretched) {
             if (s.end < stretched_floor) continue;
             const double score = s.end - model.log_plain() + model.log_stretched();

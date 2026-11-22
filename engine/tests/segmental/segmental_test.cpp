@@ -1406,9 +1406,6 @@ TEST(RunningSums, ATailIsSummedFromTheFallsWindowOn) {
             if (n < kPositions) direct += value(i + kEdgeDone + n, n);
         }
         EXPECT_EQ(sums.tail_filled(i), kPositions);
-        double best = sums.tail(i, 2);
-        for (int n = 3; n <= 5; ++n) best = std::max(best, sums.tail(i, n));
-        EXPECT_DOUBLE_EQ(sums.tail_reach(i, 2, 5), best);
     }
     // No tail pushed: nothing to add.
     RunningSums clean;
@@ -1506,48 +1503,103 @@ std::vector<std::complex<double>> fading_gain(double f_d_hz, double rate, std::s
     return gain;
 }
 
-TEST(DopplerEstimator, ReadsAFadingCarriersSpreadAndNoneOnASteadyOne) {
-    // Marks of 100 ms and gaps of 60 ms at +30 dB re the floor, 375 samples/s (the widest filter's), noise of 1: the spread read off
-    // the marks' insides, f_D = 2 sigma_D.
-    const SegmentalConfig config;
-    for (const double f_d : {0.0, 10.0, 20.0}) {
-        DopplerEstimator estimator(config);
-        const std::size_t count = 375 * 120;
-        const auto gain = f_d > 0.0 ? fading_gain(f_d, 375.0, count, 41) : std::vector<std::complex<double>>(count, 1.0);
-        std::mt19937 rng(42);
-        std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
-        for (std::size_t k = 0; k < count; ++k) {
+// The widest filter's noise correlation at lags 0 ... 6 (OutputNoise::rho), for the estimator's tests.
+std::array<double, 7> widest_noise_rho() { return make_shared_parts(SegmentalConfig{}).output_noise.rho; }
+
+// Marks of 100 ms and gaps of 60 ms at +30 dB re the floor through gain, plus other (another carrier, or none), at 375 samples/s
+// (the widest filter's), white noise of 1 (FS^2) a sample, into the estimator; runs times over.
+void key_into(DopplerEstimator& estimator, const std::vector<std::complex<double>>& gain, const std::vector<std::complex<double>>& other,
+              unsigned seed, int times = 1) {
+    std::mt19937 rng(seed);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    for (int r = 0; r < times; ++r)
+        for (std::size_t k = 0; k < gain.size(); ++k) {
             const bool down = k % 60 < 38;
-            const std::complex<double> y = (down ? std::sqrt(1000.0) * gain[k] : 0.0) + std::complex<double>(unit(rng), unit(rng));
+            const std::complex<double> y = (down ? std::sqrt(1000.0) * gain[k] + other[k] : 0.0) + std::complex<double>(unit(rng), unit(rng));
             estimator.push(y, 1.0);
         }
+}
+
+TEST(DopplerEstimator, ReadsAFadingCarriersSpreadAndShapeAndNoneOnASteadyOne) {
+    // f_D = 2 sigma_D read at 21.33 ms; a Gaussian spread keeps its shape at the five shorter lags and reads run by run at 0.6 to 0.8 of
+    // the vector sum's (measured); a steady carrier reads none.
+    const SegmentalConfig config;
+    const std::size_t count = 375 * 120;
+    const std::vector<std::complex<double>> none(count, 0.0);
+    for (const double f_d : {0.0, 3.0, 5.0, 10.0, 20.0, 30.0}) {
+        DopplerEstimator estimator(config, widest_noise_rho());
+        key_into(estimator, f_d > 0.0 ? fading_gain(f_d, 375.0, count, 41) : std::vector<std::complex<double>>(count, 1.0), none, 42);
         ASSERT_GE(estimator.runs(), config.doppler_min_runs) << f_d;
-        if (f_d == 0.0) EXPECT_LT(estimator.spread_hz(), 1.0);
-        else EXPECT_NEAR(estimator.spread_hz(), f_d, 0.25 * f_d) << f_d;
-        // A Gaussian spectrum: ln |rho(21.33 ms)| / ln |rho(10.67 ms)| = 4.
-        if (f_d > 0.0) EXPECT_NEAR(estimator.shape(), 4.0, 1.0) << f_d;
-        EXPECT_NEAR(estimator.level_db(), f_d > 0.0 ? 28.0 : 30.0, 3.0) << f_d;  // a Rayleigh mark's median power is -1.6 dB re its mean
+        std::cout << "f_D " << f_d << " Hz: reads " << estimator.spread_hz() << " Hz, run by run " << estimator.runs_hz() << " Hz; shape at 3 to 7 samples";
+        for (int tau = 3; tau <= 7; ++tau) std::cout << " " << estimator.shape(tau);
+        std::cout << "\n";
+        if (f_d == 0.0) {
+            EXPECT_LT(estimator.spread_hz(), 1.0);
+            continue;
+        }
+        EXPECT_NEAR(estimator.spread_hz(), f_d, 0.25 * f_d) << f_d;
+        if (f_d <= 20.0) EXPECT_TRUE(estimator.shape_ok(config.doppler_shape_lo, config.doppler_shape_hi)) << f_d;
+        EXPECT_GE(estimator.runs_hz(), config.doppler_min_runs_ratio * estimator.spread_hz()) << f_d;
+        EXPECT_NEAR(estimator.level_db(), 28.0, 3.0) << f_d;  // a Rayleigh mark's median power is -1.6 dB re its mean
     }
 }
 
-TEST(DopplerEstimator, ANeighborsBeatReadsAsSpreadButNotAsItsShape) {
-    // A steady carrier at +30 dB re the floor with a steady neighbor 60 Hz away at -6 dB re it, keyed together: |rho| at 21.33 ms
-    // falls as a spread's would, but ln |rho| is not 4 times its value at 10.67 ms (a beat's is r (cos 2 pi df tau - 1)), so the walk
-    // stays slow (doppler_min_shape).
+TEST(DopplerEstimator, ANeighborsBeatIsNotASpreadFromThirtyHertzOut) {
+    // A steady carrier at +30 dB re the floor with a steady neighbor keyed with it, df = 30 to 120 Hz away, at 0.05 and 0.25 of its
+    // power (before any filter; the widest filter takes 18.8 dB off at 100 Hz): it may read as a spread at 21.33 ms, but never with a
+    // spread's shape at all five shorter lags (ln |rho| ~ r (cos 2 pi df tau - 1); review of text-fast-1: one ratio aliased every
+    // 93.75 Hz).
     const SegmentalConfig config;
-    DopplerEstimator estimator(config);
-    std::mt19937 rng(43);
-    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
-    for (std::size_t k = 0; k < 375 * 120; ++k) {
-        const bool down = k % 60 < 38;
-        const double t = static_cast<double>(k) / 375.0;
-        const std::complex<double> neighbor = std::sqrt(250.0) * std::polar(1.0, 2.0 * std::numbers::pi * 60.0 * t);
-        const std::complex<double> y = (down ? std::sqrt(1000.0) + neighbor : 0.0) + std::complex<double>(unit(rng), unit(rng));
-        estimator.push(y, 1.0);
-    }
-    EXPECT_GT(estimator.spread_hz(), config.doppler_fast_hz);
-    EXPECT_LT(estimator.shape(), config.doppler_min_shape);
+    const std::size_t count = 375 * 120;
+    const std::vector<std::complex<double>> steady(count, 1.0);
+    for (const double r : {0.05, 0.25})
+        for (double df = 30.0; df <= 120.0; df += 2.5) {
+            std::vector<std::complex<double>> neighbor(count);
+            for (std::size_t k = 0; k < count; ++k)
+                neighbor[k] = std::sqrt(1000.0 * r) * std::polar(1.0, 2.0 * std::numbers::pi * df * static_cast<double>(k) / 375.0);
+            DopplerEstimator estimator(config, widest_noise_rho());
+            key_into(estimator, steady, neighbor, 43);
+            const bool fast = estimator.spread_hz() >= config.doppler_fast_hz && estimator.shape_ok(config.doppler_shape_lo, config.doppler_shape_hi);
+            EXPECT_FALSE(fast) << "r " << r << ", " << df << " Hz: reads " << estimator.spread_hz() << " Hz";
+        }
 }
+
+TEST(DopplerEstimator, StationsTakingTurnsAFewHertzApartAreNotASpread) {
+    // A run station and his caller in one channel, steady carriers 4 Hz apart, +30 dB re the floor, keying in turn: summed as vectors
+    // the runs read a spread, but each run is one station, so its products turn alike and its own magnitude reads none.
+    const SegmentalConfig config;
+    const std::size_t count = 375 * 120;
+    std::vector<std::complex<double>> turns(count);
+    for (std::size_t k = 0; k < count; ++k)
+        turns[k] = std::polar(1.0, 2.0 * std::numbers::pi * ((k / 600) % 2 == 0 ? 2.0 : -2.0) * static_cast<double>(k) / 375.0);  // 1.6 s overs
+    DopplerEstimator estimator(config, widest_noise_rho());
+    key_into(estimator, turns, std::vector<std::complex<double>>(count, 0.0), 44);
+    EXPECT_GT(estimator.spread_hz(), config.doppler_fast_hz);
+    EXPECT_LT(estimator.runs_hz(), config.doppler_min_runs_ratio * estimator.spread_hz());
+}
+
+TEST(DopplerEstimator, KeepsReadingAfterItsMemoryIsFull) {
+    // The memory's weight converges to 1 / (1 - e^(-1/100)) = 100.5 runs and stops changing in a double after about 3 250 runs; the
+    // estimate must still say it changed at every run taken (review of text-fast-1): 6 000 runs of a steady carrier, then 600 of a
+    // 10 Hz spread, which it must follow.
+    const SegmentalConfig config;
+    DopplerEstimator estimator(config, widest_noise_rho());
+    const std::size_t count = 60 * 1000;  // 1 000 runs
+    key_into(estimator, std::vector<std::complex<double>>(count, 1.0), std::vector<std::complex<double>>(count, 0.0), 45, 6);
+    EXPECT_GE(estimator.taken(), 6000);
+    EXPECT_LT(estimator.spread_hz(), 1.0);
+    std::mt19937 rng(46);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    const auto gain = fading_gain(10.0, 375.0, 60 * 600, 47);
+    int updates = 0;
+    for (std::size_t k = 0; k < gain.size(); ++k) {
+        const bool down = k % 60 < 38;
+        updates += estimator.push((down ? std::sqrt(1000.0) * gain[k] : 0.0) + std::complex<double>(unit(rng), unit(rng)), 1.0) ? 1 : 0;
+    }
+    EXPECT_GE(updates, 590);
+    EXPECT_NEAR(estimator.spread_hz(), 10.0, 3.0);
+}
+
 // A channel's samples at 1 500 samples/s: a text keyed at 35 WPM (51 samples a dot), +30 dB S500, through a fading gain of f_D (or none),
 // with another path's, a zero-mean complex Gaussian fading at 5 Hz of `tail` x the mark's power, for `tail_samples` after each fall;
 // then the decoder's text, its walk and its tail.
@@ -1654,6 +1706,20 @@ TEST(SegmentalDoppler, AFastFadingCarrierSetsTheFastWalkAndReadsBetter) {
     EXPECT_FALSE(steady.walk_fast);
     EXPECT_FALSE(steady.echo.on);
     EXPECT_LT(cer(steady.text, steady.read), 0.005);
+}
+
+TEST(SegmentalDoppler, SlowFadingReadsAsBeforeTheTailAndTheWalkToTheSymbol) {
+    // f_D 1 Hz at +30 dB S500, 35 WPM: the walk stays slow and no tail is learned, so the decoder reads every symbol as with both
+    // left out and the frame unsplit (the path before text-fast-1).
+    SegmentalConfig before;
+    before.echo_max_s = 0.0;
+    before.doppler_fast_hz = 0.0;
+    before.level_fast_frame_s = 0.0;
+    const Channel35 now = decode_35_wpm(SegmentalConfig{}, 1.0, 0.0, 0, 63);
+    const Channel35 old = decode_35_wpm(before, 1.0, 0.0, 0, 63);
+    EXPECT_FALSE(now.walk_fast);
+    EXPECT_FALSE(now.echo.on);
+    EXPECT_EQ(now.read, old.read);
 }
 
 }  // namespace

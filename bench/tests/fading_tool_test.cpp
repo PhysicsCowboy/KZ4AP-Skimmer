@@ -156,6 +156,8 @@ TEST_F(FadingTool, RefusesAMissingValueABadNumberAndASpanThatIsNotPositiveBefore
     expect_refused({missing, "--seconds", "1x"}, "--seconds needs a finite number");
     expect_refused({missing, "--seconds", "nan"}, "--seconds needs a finite number");
     expect_refused({missing, "--width", "3"}, "unknown option --width");
+    expect_refused({missing, "--seconds", "1", "--end-guard-ms", "-1"}, "--end-guard-ms must not be below 0 ms");
+    expect_refused({missing, "--seconds", "1", "--fall"}, "--fall needs a value");
 }
 
 TEST_F(FadingTool, RefusesASpanTheFileDoesNotHoldAndASpanWithNoKeyDown) {
@@ -177,6 +179,22 @@ TEST_F(FadingTool, MeasuresAKeyedFadingCarrier) {
     ASSERT_TRUE(std::regex_search(o.out, m, std::regex(R"(f_D = 2 sigma_D ([0-9.]+) Hz)"))) << o.out;
     const double f_d = std::stod(m[1].str());
     EXPECT_TRUE(std::isfinite(f_d) && f_d > 0.0) << o.out;
+}
+
+TEST_F(FadingTool, WritesTheFallAndReadsOffTheRunsEnds) {
+    // --fall writes the fall after a mark per sample with its coherence; --end-guard-ms sets the span left off each run's end (text-fast-1).
+    const fs::path wav = dir_ / "keyed.wav", fall = dir_ / "fall.csv";
+    write_wav(wav, signal(4.0, 0.001, true));
+    const Outcome o = run({wav.string(), "--offset-hz", "300", "--start", "0", "--seconds", "4", "--fall", fall.string(), "--end-guard-ms", "10"});
+    ASSERT_EQ(o.status, 0) << o.err;
+    EXPECT_NE(o.out.find("off the runs' last 10 ms"), std::string::npos) << o.out;
+    const std::string table = slurp(fall);
+    EXPECT_EQ(table.rfind("ms,db_re_mark,runs,coherence", 0), 0u) << table.substr(0, 80);
+    EXPECT_GT(std::count(table.begin(), table.end(), '\n'), 10) << table.substr(0, 200);
+    // The coherence at the fall itself, the first row: near 1 (the same path, 2 ms before).
+    std::smatch m;
+    ASSERT_TRUE(std::regex_search(table, m, std::regex(R"(\n0,[-0-9.e]+,[0-9]+,([0-9.e-]+)\r?\n)"))) << table.substr(0, 200);
+    EXPECT_GT(std::stod(m[1].str()), 0.5) << table.substr(0, 200);
 }
 
 }  // namespace

@@ -89,17 +89,6 @@ public:
     int tail_filled(std::int64_t i) const { return tail_filled_[static_cast<std::size_t>(i) & kMask]; }
     // samples: the tail positions of the last sample pushed (0 with no tail).
     int tail_positions() const { return tail_positions_; }
-    // The largest of tail(i, n) over n = n0 ... n1.
-    double tail_reach(std::int64_t i, int n0, int n1) const {
-        const std::size_t c = static_cast<std::size_t>(i);
-        const int filled = tail_filled_[c & kMask];
-        if (filled == 0) return 0.0;
-        n0 = std::max(n0, 0);
-        if (n0 >= filled) return tail_whole_[c & kMask];
-        double best = tail(i, n0);
-        for (int n = n0 + 1; n <= std::min(n1, filled); ++n) best = std::max(best, tail(i, n));
-        return best;
-    }
     // The context of a sample within the last 1 024.
     const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
 
@@ -157,6 +146,8 @@ public:
     bool push(double e2_fs2, double floor_fs2);
     const EchoShape& shape() const { return shape_; }
     double runs() const { return runs_; }
+    // Whether a shape has been made yet (on or off): from echo_min_runs strong runs.
+    bool decided() const { return decided_; }
 
 private:
     void end_run(std::int64_t end);
@@ -186,6 +177,7 @@ private:
     double runs_ = 0.0;
     int since_update_ = 0;
     bool fresh_ = false;
+    bool decided_ = false;
     EchoShape shape_;
 };
 
@@ -303,46 +295,62 @@ private:
     double floor_ = 0.0;      // FS^2; 0 until it is used
 };
 
-// The channel's Doppler spread from the widest filter's complex output (text-fast-1), as kz4ap-fading reads it: a run is the
-// samples above echo_run_db re the floor; within a run, in each stretch of samples at or above -10 dB re its median power, from
-// doppler_end_guard_s inside its ends (past the front filter's edges; a gap a tail fills splits the run), the pairs tau = round(21.33 ms / Delta) apart give
-//     |rho(tau)| = |sum y[k + tau] y*[k]| / sqrt(sum (|y[k]|^2 - floor) sum (|y[k + tau]|^2 - floor)),
-// kept with an exponential memory in runs, and the Gaussian spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives
-// f_D = 2 sigma_D (Watterson's and DeepCW's width). A constant frequency offset turns every product alike and leaves |rho|. The same at
-// tau / 2 tells a spread from a neighbor's beat inside the filter: ln |rho(tau)| / ln |rho(tau / 2)| is 4 for a Gaussian spectrum.
+// The channel's Doppler spread from the widest filter's complex output (text-fast-1). A run is the samples above echo_run_db re
+// the floor; within a run, in each stretch of samples at or above -10 dB re its median power, from doppler_end_guard_s inside its
+// ends (past the front filter's edges; a gap a tail fills splits the run), the pairs k, k + tau for tau = 3 ... 8 samples (8 to
+// 21.33 ms at the widest filter) give, per lag,
+//     C(tau) = sum (y[k + tau] y*[k] - F rho_n(tau)),  |rho(tau)| = |C(tau)| / sqrt(sum (|y[k]|^2 - F) sum (|y[k + tau]|^2 - F)),
+// rho_n the front filter's noise correlation (OutputNoise::rho; derived), kept with an exponential memory in runs; and the Gaussian
+// spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives f_D = 2 sigma_D (Watterson's and DeepCW's width) at tau = 8.
+// Two checks tell a spread from what reads as one:
+// - the shape: for a spread ln |rho(8)| / ln |rho(tau)| = (8 / tau)^2 at every lag; a neighbor's beat inside the filter, ln |rho| ~
+//   r (cos 2 pi df tau - 1), cannot follow that at all five lags 3 ... 7 at once beyond about 28 Hz (derived; shape_ok());
+// - each run's own: a constant frequency offset turns every product of a run alike and leaves its |C|, but offsets that differ
+//   between the stations a channel holds in turn (a run station and his callers) turn the runs' C apart and read as a spread when
+//   the runs are summed as vectors; summed as each run's |C| they do not (runs_hz).
 // The level is the runs' median power re the floor, dB, averaged with the same memory.
 class DopplerEstimator {
 public:
-    explicit DopplerEstimator(const SegmentalConfig& config);
-    // One sample: y, FS, and the floor, FS^2. True at a run's end once the estimate is in.
+    // noise_rho: the front filter's noise correlation at lags 0 ... 6 samples (OutputNoise::rho).
+    DopplerEstimator(const SegmentalConfig& config, const std::array<double, 7>& noise_rho);
+    // One sample: y, FS, and the floor, FS^2. True at the end of every run the estimate takes, once it holds doppler_min_runs.
     bool push(std::complex<double> y_fs, double floor_fs2);
-    // Hz: f_D = 2 sigma_D; dB re the floor: the runs' median level.
+    // Hz: f_D = 2 sigma_D at the longest lag, from the runs summed as vectors; and from each run's |C| summed: 0.62 to 0.76 of it for
+    // a Gaussian spread of 2 to 30 Hz (measured, runs of 100 ms), about 0 where stations a few Hz apart take turns in the channel.
     double spread_hz() const { return spread_hz_; }
-    // ln |rho(tau)| / ln |rho(tau / 2)|, 1: 4 for a spread, low for a neighbor's beat (0 while |rho| reads 1).
-    double shape() const { return shape_; }
+    double runs_hz() const { return runs_hz_; }
+    // Whether ln |rho(8)| / ln |rho(tau)| lies within [lo, hi] times (8 / tau)^2 at every lag tau = 3 ... 7.
+    bool shape_ok(double lo, double hi) const;
+    // The ratio at a lag over its Gaussian value, 1 for a Gaussian spread; 0 where it cannot be read.
+    double shape(int tau) const;
     double level_db() const { return level_db_; }
+    // runs: the estimator's memory's weight, at most 1 / (1 - forget).
     double runs() const { return runs_; }
+    std::int64_t taken() const { return taken_; }
 
 private:
-    void end_run();
+    static constexpr int kFirstLag = 3, kLags = 6;  // tau = 3 ... 8 samples at the widest filter
+    // True if the run entered the estimate.
+    bool end_run();
     bool on_ = false;
     double run_ratio_ = 10.0;
-    int lag_ = 8;
-    int trim_ = 2;
-    int guard_ = 11;
-    double tau_s_ = 0.0;
+    int guard_ = 3;
+    double interval_s_ = 0.0;
     double forget_ = 1.0, min_runs_ = 20.0;
+    std::array<double, kLags> noise_rho_{};
     bool in_run_ = false;
     std::vector<std::complex<double>> run_;
     std::vector<double> run_floor_;
-    std::complex<double> cross_ = 0.0;
-    double power0_ = 0.0, power1_ = 0.0, level_sum_ = 0.0, runs_ = 0.0;
-    double spread_hz_ = 0.0, level_db_ = -1e9;
-    std::complex<double> cross_half_ = 0.0;
-    double half0_ = 0.0, half1_ = 0.0, shape_ = 0.0;
+    std::array<std::complex<double>, kLags> cross_{};
+    std::array<double, kLags> power0_{}, power1_{}, rho_{};
+    double cross_runs_ = 0.0;  // the runs' |C(8)|, each run's own, summed
+    double level_sum_ = 0.0, runs_ = 0.0;
+    std::int64_t taken_ = 0;
+    double spread_hz_ = 0.0, runs_hz_ = 0.0, level_db_ = -1e9;
 };
 
-class LevelEvidence {public:
+class LevelEvidence {
+public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);
 
     // One envelope sample: e_fs, FS; sigma2_fs2, the noise at the front filter's output, FS^2; floor_fs2, the channel's noise
@@ -361,6 +369,7 @@ class LevelEvidence {public:
     void set_echo(const EchoShape& shape);
     // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
     // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
+    // short_frames false keeps the frame at level_frame_s for now (the tail not yet decided).
     void set_walk(bool fast, double walk_nepers_per_sqrt_s, bool short_frames = true);
     bool fast() const { return fast_; }
 
@@ -408,7 +417,7 @@ private:
     int block_fill_ = 0;
     int block_frames_ = 1;
     bool fast_ = false, fast_next_ = false;
-    bool short_ = true, short_next_ = true;  // the fast walk's frames short (a spread past doppler_short_frame_hz)
+    bool short_ = true, short_next_ = true;
     double fast_walk_ = 0.0, fast_walk_next_ = 0.0;
     double fast_jump_ = 0.0;
     double fast_block_jump_ = 0.0;

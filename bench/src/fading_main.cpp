@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
         }
         if (!(seconds > 0.0)) throw std::runtime_error("--seconds must be above 0 s (the span to measure)");
         if (start_s < 0.0) throw std::runtime_error("--start must not be below 0 s (s from the recording's first sample)");
+        if (end_guard_ms < 0.0) throw std::runtime_error("--end-guard-ms must not be below 0 ms (the span left off each run's end)");
         kz4ap::WavIqReader reader(file);
         const double fs = reader.sample_rate();
         const int decimation = std::max(1, static_cast<int>(std::lround(fs / 1500.0)));

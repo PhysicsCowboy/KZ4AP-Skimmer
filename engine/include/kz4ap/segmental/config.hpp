@@ -86,8 +86,6 @@ struct SegmentalConfig {
     // Heuristic, by measurement on the matched fast-fading set (text-level-1: a walk of 10 nepers per square root of a second reads
     // 7 to 14 Hz 0.062 with the 21.33 ms frame and 0.010 with this one).
     double level_fast_frame_s = 4.0 * 4.0 / 1500.0;
-    // Hz: the spread from which the fast walk's frames are level_fast_frame_s; under it the fast walk steps over level_frame_s.
-    double doppler_short_frame_hz = 0.0;
     // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and under which it must fall
     // again to be slow; 0 leaves the walk as configured everywhere. dB re the floor: the runs' median key-down level the spread must
     // be read at, at least (18.3 dB re the floor is +10 dB S500 at the widest filter). Heuristics: the estimator reads a steady or
@@ -99,11 +97,17 @@ struct SegmentalConfig {
     // nepers per square root of a second per Hz of f_D, and the most: the fast walk, at least level_walk_nepers_per_sqrt_s.
     // Heuristic: the matched set reads 7 to 14 Hz best at 10 to 14 nepers per square root of a second.
     double doppler_walk_per_hz = 1.4;
-    // 1: the least ln |rho(21.33 ms)| / ln |rho(10.67 ms)| the walk is fast at: 4 for a Gaussian spectrum (and any smooth one while
-    // |rho| is near 1), a neighbor's beat 30 to 60 Hz away under about 1.2 (derived, for a weak neighbor). Heuristic, by measurement:
-    // without it a neighbor's beat took the fast walk on 16% to 18% of the 2026-11-18 CWT's tracks and cost confirmed calls (WA2SCB,
-    // KE2BVB on 40 m 2026-11-17).
-    double doppler_min_shape = 2.5;
+    // 1: the shape's band: the walk is fast only where ln |rho(21.33 ms)| / ln |rho(tau)| lies within [lo, hi] times its Gaussian value
+    // (21.33 ms / tau)^2 at every lag tau = 8, 10.67, 13.33, 16 and 18.67 ms. A neighbor's beat inside the filter, ln |rho| ~ r (cos 2 pi df
+    // tau - 1), stays inside it at all five only within about 28 Hz of the wanted station (derived, computed over 20 to 300 Hz and r =
+    // 1e-4 to 1); a Gaussian spread of 2 to 30 Hz reads [shape here, measured]. Heuristic: the band [0.4, 1.6].
+    double doppler_shape_lo = 0.4;
+    double doppler_shape_hi = 1.6;
+    // 1: the least spread read from each run's own magnitude, as a share of the spread read from the runs' vector sum, the walk is
+    // fast at: a Gaussian spread of 2 to 30 Hz reads 0.62 to 0.76 (measured, the test's runs of 100 ms), stations a few Hz apart taking
+    // turns about 0. Heuristic, by measurement: without it a run station's channel on the 2026-11-18 CWT, his callers a few Hz from him,
+    // took the fast walk and lost KE3TW (20 m), as WA2SCB on 40 m 2026-11-17.
+    double doppler_min_runs_ratio = 0.5;
     double doppler_walk_max = 20.0;
     // s: the pairs read for the spread lie between a run's first and last samples at or above -6 dB re its median power, this far
     // inside them, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its

@@ -168,7 +168,7 @@ private:
     // The channel's Doppler spread, read on the widest stream, and the walk it sets on every stream (text-fast-1).
     std::unique_ptr<segmental::DopplerEstimator> doppler_;
     bool walk_fast_ = false;
-    bool walk_short_ = true;
+    bool walk_short_ = true;  // the fast walk's frames short: the tail decided
     double walk_now_ = 0.0;  // nepers per square root of a second
     void update_walk();
     std::size_t leader_ = 0;
