@@ -38,6 +38,11 @@
 // ln(1 / speed_count) as before, and ln(1 - pi) for g = 1 or ln(pi / (stretches - 1)) for any other (pi: gap_stretch_prior).
 // It keeps it to the over's end. So standard text pays ln(1 - pi) once per over, and a stretch a story has no use for falls
 // out of the beam within a few letters.
+//
+// A fist's weight w (text-weight-1): a keyer's weighting, VE3NEA's imbalance. Every mark lasts w T_s longer and the gap after it
+// w T_s shorter (the fist's shift, viterbi/fist.hpp): dots and dashes shift by +w, element gaps by -w, letter and word gaps by -w
+// too unless SegmentalConfig::fist_weight_letter_gaps is off. A fist is then (speed, weight, stretch), taken together at the
+// first mark's end, paying ln(1 - pi_w) for w = 0 or ln(pi_w / (weights - 1)) for another (pi_w: fist_weight_prior), once per over.
 #pragma once
 
 #include "kz4ap/decoder.hpp"
@@ -56,7 +61,7 @@
 
 namespace kz4ap::segmental {
 
-// The fist's duration tables for every fist (speed x gap stretch) and kind, and the text's costs by node: built once, shared
+// The fist's duration tables for every fist (speed x weight x gap stretch) and kind, and the text's costs by node: built once, shared
 // by every channel.
 class ModelTables {
 public:
@@ -75,9 +80,9 @@ public:
     // The optimistic survival of a mark (either label) and of a gap (any kind, with the kind's cost), nats, by length; a
     // length past the table reads its last entry.
     double mark_survival(int fist, int length) const {
-        const int speed = speed_of(fist);
-        return mark_survival_[static_cast<std::size_t>(mark_survival_offset_[static_cast<std::size_t>(speed)] +
-                                                       std::min(length, mark_survival_length_[static_cast<std::size_t>(speed)] - 1))];
+        const int group = group_of(fist);
+        return mark_survival_[static_cast<std::size_t>(mark_survival_offset_[static_cast<std::size_t>(group)] +
+                                                       std::min(length, mark_survival_length_[static_cast<std::size_t>(group)] - 1))];
     }
     double gap_survival(int fist, int length) const {
         return gap_survival_[static_cast<std::size_t>(gap_survival_offset_[static_cast<std::size_t>(fist)] +
@@ -89,7 +94,7 @@ public:
     static int survival_index(int length) {
         return length < kSurvivalFineLengths ? length : kSurvivalFineLengths + ((length - kSurvivalFineLengths) >> 4);
     }
-    int mark_hi(int fist) const { return mark_hi_[static_cast<std::size_t>(speed_of(fist))]; }
+    int mark_hi(int fist) const { return mark_hi_[static_cast<std::size_t>(group_of(fist))]; }
     int gap_hi(int fist) const { return gap_hi_[static_cast<std::size_t>(fist)]; }
 
     // The same values for the search's loop, which reads them for every open element at every boundary: one fist's lengths in one row.
@@ -109,25 +114,35 @@ public:
     const double* gap_survivals() const { return gap_survival_.data(); }
     const std::uint8_t* symbol_at_nodes() const { return has_symbol_.data(); }
     const std::uint8_t* children_at_nodes() const { return has_children_.data(); }
-    // A birth's first mark at a length: what it can end as, in the order of the speeds and labels, and the best speed's survival.
+    // A birth's first mark at a length: what it can end as, in the order of the speeds, weights and labels, and the best one's survival.
     struct OpenEnd {
-        double log_end;  // nats: ln P_label(speed, length)
-        int fist;        // the speed's first fist, g = 1
+        double log_end;  // nats: ln P_label(speed, weight, length) + the weight's prior
+        int fist;        // the group's first fist, g = 1
         int speed;
+        int group;       // (speed, weight)
         int child;       // the node of its label
-        bool stretched;  // the speed has other stretches
+        bool stretched;  // the group has other stretches
+        bool weighted;   // a weight other than 0: offered only inside the beam of the best so far, as the stretches
     };
     std::span<const OpenEnd> open_ends(int length) const {
         const auto first = static_cast<std::size_t>(open_end_first_[static_cast<std::size_t>(length)]);
         return std::span<const OpenEnd>(open_ends_).subspan(first, static_cast<std::size_t>(open_end_first_[static_cast<std::size_t>(length) + 1]) - first);
     }
     double open_survival(int length) const { return open_survival_[static_cast<std::size_t>(length)]; }
+    // samples: the longest a birth's first mark may last, the longest mark of any speed and weight
+    int open_hi() const { return open_hi_; }
     // samples: SegmentalConfig::open_spacing_dots at a fist's speed
     int open_spacing(int fist) const { return open_spacing_[static_cast<std::size_t>(fist)]; }
-    // The fists, in the order of their speeds: speed s's are first_fist(s) ... first_fist(s + 1) - 1, g = 1 first.
+    // The fists, in the order of their speeds: speed s's are first_fist(s) ... first_fist(s + 1) - 1, w = 0 and g = 1 first. Within a
+    // speed, its groups (speed, weight), w = 0 first: group q's fists are first_of_group(q) ... first_of_group(q + 1) - 1, g = 1 first.
     int fists() const { return fists_; }
     int first_fist(int speed) const { return first_fist_[static_cast<std::size_t>(speed)]; }
     int speed_of(int fist) const { return speed_of_[static_cast<std::size_t>(fist)]; }
+    int groups() const { return static_cast<int>(group_speed_.size()); }
+    int first_of_group(int group) const { return first_of_group_[static_cast<std::size_t>(group)]; }
+    int group_of(int fist) const { return group_of_[static_cast<std::size_t>(fist)]; }
+    // dots: the fist's weight w
+    double weight_of(int fist) const { return group_weight_[static_cast<std::size_t>(group_of(fist))]; }
     // 1: the fist's gap stretch g
     double stretch_of(int fist) const { return stretch_of_[static_cast<std::size_t>(fist)]; }
     // nats: what taking g = 1 costs, and any other (see above)
@@ -166,19 +181,24 @@ private:
     std::vector<OpenEnd> open_ends_;
     std::vector<int> open_end_first_;         // by length, and the count at the end
     std::vector<double> open_survival_;       // by length
+    int open_hi_ = 0;
     std::vector<int> open_spacing_;           // by fist
     std::vector<Range> ranges_;
     std::vector<double> log_end_;
     std::vector<double> mark_survival_;
     std::vector<double> gap_survival_;
-    std::vector<int> mark_survival_offset_;  // by speed
+    std::vector<int> mark_survival_offset_;  // by group
     std::vector<int> mark_survival_length_;
     std::vector<int> gap_survival_offset_;   // by fist
     std::vector<int> gap_survival_length_;
-    std::vector<int> mark_hi_;               // by speed
+    std::vector<int> mark_hi_;               // by group
     std::vector<int> gap_hi_;                // by fist
     std::vector<int> first_fist_;            // by speed, and the fists' count at the end
     std::vector<int> speed_of_;              // by fist
+    std::vector<int> group_of_;              // by fist
+    std::vector<int> first_of_group_;        // by group, and the fists' count at the end
+    std::vector<int> group_speed_;           // by group
+    std::vector<double> group_weight_;       // by group, dots
     std::vector<double> stretch_of_;         // by fist
     double log_plain_ = 0.0;
     double log_stretched_ = 0.0;

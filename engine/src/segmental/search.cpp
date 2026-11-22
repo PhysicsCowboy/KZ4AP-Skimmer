@@ -53,53 +53,105 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
 
     // The fists. A stretch of n steps reads a letter or word gap at speed s as speed s + n x gap_stretch_speed_steps does, so
     // the gaps' tables are kept per such a speed and shared. A speed keeps the stretches whose gap unit is within gap_unit_max_s.
+    // A weight w moves every mark by +w T_s and the gap after it by -w T_s (letter and word gaps too with fist_weight_letter_gaps):
+    // a Fist of its own, the model's shifts plus these. The weights' order is 0 first, then the others as configured.
+    const std::vector<double>& weights = config.fist_weights_dots;
+    if (std::count(weights.begin(), weights.end(), 0.0) != 1)
+        throw std::invalid_argument("segmental: fist_weights_dots must hold 0, once");
+    for (const double w : weights)
+        if (!(std::fabs(w) < 1.0)) throw std::invalid_argument("segmental: every weight must lie strictly between -1 and +1 dots");
+    if (!(config.fist_weight_prior >= 0.0 && config.fist_weight_prior < 1.0))
+        throw std::invalid_argument("segmental: fist_weight_prior must lie in [0, 1)");
+    if (weights.size() > 1 && !(config.fist_weight_prior > 0.0))
+        throw std::invalid_argument("segmental: weights other than 0 need fist_weight_prior above 0");
+    std::vector<double> order{0.0};
+    for (const double w : weights)
+        if (w != 0.0) order.push_back(w);
+    const int weight_count = static_cast<int>(order.size());
     const int extra = (config.gap_stretches - 1) * config.gap_stretch_speed_steps;
-    viterbi::ViterbiConfig longer = model;
-    longer.speed_count = speeds_ + extra;
-    const viterbi::Fist fist(longer);
+    const int table_speeds = speeds_ + extra;
+    std::vector<std::array<double, 5>> shifts_of;  // by weight: dots
+    std::vector<viterbi::Fist> fist_of;            // by weight
+    for (const double w : order) {
+        viterbi::ViterbiConfig longer = model;
+        longer.speed_count = table_speeds;
+        std::array<double, 5>& shifts = longer.fist_shifts_dots;
+        shifts[kDot] += w;
+        shifts[kDash] += w;
+        shifts[kElementGap] -= w;
+        if (config.fist_weight_letter_gaps) {
+            shifts[kLetterGap] -= w;
+            shifts[kWordGap] -= w;
+        }
+        shifts_of.push_back(shifts);
+        fist_of.emplace_back(longer);
+    }
     const auto dot_s = [&](int speed) { return model.dot_min_ms * std::pow(model.speed_ratio, speed) / 1000.0; };
-    std::vector<int> gap_speed;
+    std::vector<int> gap_speed;     // by fist
+    std::vector<int> weight_index;  // by fist, into order
+    std::vector<int> group_weight_index;
     first_fist_.resize(static_cast<std::size_t>(speeds_) + 1);
     for (int speed = 0; speed < speeds_; ++speed) {
         first_fist_[static_cast<std::size_t>(speed)] = static_cast<int>(speed_of_.size());
-        for (int n = 0; n < config.gap_stretches; ++n) {
-            const int stepped = speed + n * config.gap_stretch_speed_steps;
-            if (n > 0 && dot_s(stepped) > config.gap_unit_max_s) break;
-            speed_of_.push_back(speed);
-            gap_speed.push_back(stepped);
-            stretch_of_.push_back(dot_s(stepped) / dot_s(speed));
+        for (int k = 0; k < weight_count; ++k) {
+            const int group = static_cast<int>(group_speed_.size());
+            group_speed_.push_back(speed);
+            group_weight_.push_back(order[static_cast<std::size_t>(k)]);
+            group_weight_index.push_back(k);
+            first_of_group_.push_back(static_cast<int>(speed_of_.size()));
+            const int stretches = k == 0 || config.fist_weight_stretched ? config.gap_stretches : 1;
+            for (int n = 0; n < stretches; ++n) {
+                const int stepped = speed + n * config.gap_stretch_speed_steps;
+                if (n > 0 && dot_s(stepped) > config.gap_unit_max_s) break;
+                speed_of_.push_back(speed);
+                group_of_.push_back(group);
+                gap_speed.push_back(stepped);
+                weight_index.push_back(k);
+                stretch_of_.push_back(dot_s(stepped) / dot_s(speed));
+            }
         }
     }
     fists_ = static_cast<int>(speed_of_.size());
     first_fist_[static_cast<std::size_t>(speeds_)] = fists_;
-    if (fists_ > 254) throw std::invalid_argument("segmental: at most 254 fists (speed x gap stretch)");
+    first_of_group_.push_back(fists_);
+    if (fists_ > 65534) throw std::invalid_argument("segmental: at most 65 534 fists (speed x weight x gap stretch)");
     log_plain_ = config.gap_stretches > 1 ? std::log1p(-config.gap_stretch_prior) : 0.0;
     log_stretched_ = config.gap_stretches > 1 ? std::log(config.gap_stretch_prior / (config.gap_stretches - 1)) : 0.0;
+    std::vector<double> log_weight(static_cast<std::size_t>(weight_count), 0.0);
+    if (weight_count > 1) {
+        log_weight[0] = std::log1p(-config.fist_weight_prior);
+        for (int k = 1; k < weight_count; ++k) log_weight[static_cast<std::size_t>(k)] = std::log(config.fist_weight_prior / (weight_count - 1));
+    }
+    // The weight whose shifts letter and word gaps read.
+    const auto gap_weight = [&](int k) { return config.fist_weight_letter_gaps ? k : 0; };
 
-    // Each kind's lengths per speed of its own: dots, dashes and element gaps at the speed itself, letter and word gaps at the
-    // stepped speed.
-    const int table_speeds = speeds_ + extra;
-    std::vector<Range> by_speed(static_cast<std::size_t>(5 * table_speeds));
-    for (int kind = 0; kind < 5; ++kind) {
-        const double sigma = model.fist_sigmas[static_cast<std::size_t>(kind)];
-        const int kind_speeds = kind < kLetterGap ? speeds_ : table_speeds;
-        for (int speed = 0; speed < kind_speeds; ++speed) {
-            if (kind >= kLetterGap && std::find(gap_speed.begin(), gap_speed.end(), speed) == gap_speed.end()) continue;
+    // Each kind's lengths per speed of its own and weight: dots, dashes and element gaps at the speed itself, letter and word gaps at
+    // the stepped speed. Made as first asked for, kind by kind.
+    std::vector<Range> by_speed(static_cast<std::size_t>(5 * weight_count * table_speeds));
+    std::vector<std::uint8_t> made(by_speed.size(), 0);
+    const auto table = [&](int kind, int speed, int k) {
+        const std::size_t index = static_cast<std::size_t>((kind * weight_count + k) * table_speeds + speed);
+        if (made[index] == 0) {
+            const double sigma = model.fist_sigmas[static_cast<std::size_t>(kind)];
             const double dot_samples = dot_s(speed) / model.sample_interval_s;
             const double median = model.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_samples;
-            const double shift = model.fist_shifts_dots[static_cast<std::size_t>(kind)] * dot_samples;
+            const double shift = shifts_of[static_cast<std::size_t>(k)][static_cast<std::size_t>(kind)] * dot_samples;
             const int lo = std::max(1, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
             const int hi = std::max(lo, static_cast<int>(std::ceil(shift + median * std::exp(config.duration_z_max * sigma))));
-            by_speed[static_cast<std::size_t>(kind * table_speeds + speed)] = Range{lo, hi, static_cast<int>(log_end_.size())};
+            by_speed[index] = Range{lo, hi, static_cast<int>(log_end_.size())};
             for (int length = lo; length <= hi; ++length)
-                log_end_.push_back(fist.log_end(static_cast<viterbi::Kind>(kind), speed, length));
+                log_end_.push_back(fist_of[static_cast<std::size_t>(k)].log_end(static_cast<viterbi::Kind>(kind), speed, length));
+            made[index] = 1;
         }
-    }
+        return by_speed[index];
+    };
     ranges_.resize(static_cast<std::size_t>(5 * fists_));
     for (int kind = 0; kind < 5; ++kind) {
         for (int f = 0; f < fists_; ++f) {
-            const int speed = kind < kLetterGap ? speed_of_[static_cast<std::size_t>(f)] : gap_speed[static_cast<std::size_t>(f)];
-            ranges_[static_cast<std::size_t>(kind * fists_ + f)] = by_speed[static_cast<std::size_t>(kind * table_speeds + speed)];
+            const int k = weight_index[static_cast<std::size_t>(f)];
+            const bool own = kind < kLetterGap;
+            const int speed = own ? speed_of_[static_cast<std::size_t>(f)] : gap_speed[static_cast<std::size_t>(f)];
+            ranges_[static_cast<std::size_t>(kind * fists_ + f)] = table(kind, speed, own ? k : gap_weight(k));
         }
     }
 
@@ -109,25 +161,28 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     word_gap_cost_ = -(std::log(p) + std::log1p(-q));
     over_end_cost_ = -(std::log(p) + std::log(q));
 
-    mark_hi_.assign(static_cast<std::size_t>(speeds_), 0);
+    const int group_count = groups();
+    mark_hi_.assign(static_cast<std::size_t>(group_count), 0);
     gap_hi_.assign(static_cast<std::size_t>(fists_), 0);
     for (int f = 0; f < fists_; ++f) {
-        const int speed = speed_of_[static_cast<std::size_t>(f)];
+        const int group = group_of(f);
         for (int kind = 0; kind < 5; ++kind) {
             const int hi = range(kind, f).hi;
-            if (kind <= kDash) mark_hi_[static_cast<std::size_t>(speed)] = std::max(mark_hi_[static_cast<std::size_t>(speed)], hi);
+            if (kind <= kDash) mark_hi_[static_cast<std::size_t>(group)] = std::max(mark_hi_[static_cast<std::size_t>(group)], hi);
             else gap_hi_[static_cast<std::size_t>(f)] = std::max(gap_hi_[static_cast<std::size_t>(f)], hi);
             longest_ = std::max(longest_, hi);
         }
     }
 
-    mark_survival_offset_.resize(static_cast<std::size_t>(speeds_));
-    mark_survival_length_.resize(static_cast<std::size_t>(speeds_));
-    for (int speed = 0; speed < speeds_; ++speed) {
+    mark_survival_offset_.resize(static_cast<std::size_t>(group_count));
+    mark_survival_length_.resize(static_cast<std::size_t>(group_count));
+    for (int group = 0; group < group_count; ++group) {
+        const int speed = group_speed_[static_cast<std::size_t>(group)];
+        const viterbi::Fist& fist = fist_of[static_cast<std::size_t>(group_weight_index[static_cast<std::size_t>(group)])];
         // As far as a mark can run; a birth's first mark, which may yet be a slower speed's, clips here.
-        const int length_count = mark_hi_[static_cast<std::size_t>(speed)] + 2;
-        mark_survival_offset_[static_cast<std::size_t>(speed)] = static_cast<int>(mark_survival_.size());
-        mark_survival_length_[static_cast<std::size_t>(speed)] = length_count;
+        const int length_count = mark_hi_[static_cast<std::size_t>(group)] + 2;
+        mark_survival_offset_[static_cast<std::size_t>(group)] = static_cast<int>(mark_survival_.size());
+        mark_survival_length_[static_cast<std::size_t>(group)] = length_count;
         for (int length = 0; length < length_count; ++length) {
             const int tau = std::max(length, 1);
             mark_survival_.push_back(std::max(fist.log_survival(viterbi::Kind::Dot, speed, tau),
@@ -139,15 +194,18 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     for (int f = 0; f < fists_; ++f) {
         const int speed = speed_of_[static_cast<std::size_t>(f)];
         const int stepped = gap_speed[static_cast<std::size_t>(f)];
+        const int k = weight_index[static_cast<std::size_t>(f)];
+        const viterbi::Fist& own = fist_of[static_cast<std::size_t>(k)];
+        const viterbi::Fist& gaps = fist_of[static_cast<std::size_t>(gap_weight(k))];
         const int longest_length = gap_hi_[static_cast<std::size_t>(f)] + 1;
         gap_survival_offset_[static_cast<std::size_t>(f)] = static_cast<int>(gap_survival_.size());
         gap_survival_length_[static_cast<std::size_t>(f)] = survival_index(longest_length) + 1;
         for (int length = 0; length <= longest_length; ++length) {
             if (length >= kSurvivalFineLengths && ((length - kSurvivalFineLengths) & 15) != 0) continue;
             const int tau = std::max(length, 1);
-            gap_survival_.push_back(std::max({fist.log_survival(viterbi::Kind::ElementGap, speed, tau),
-                                              fist.log_survival(viterbi::Kind::LetterGap, stepped, tau) - letter_gap_cost_,
-                                              fist.log_survival(viterbi::Kind::WordGap, stepped, tau) - word_gap_cost_}));
+            gap_survival_.push_back(std::max({own.log_survival(viterbi::Kind::ElementGap, speed, tau),
+                                              gaps.log_survival(viterbi::Kind::LetterGap, stepped, tau) - letter_gap_cost_,
+                                              gaps.log_survival(viterbi::Kind::WordGap, stepped, tau) - word_gap_cost_}));
         }
     }
 
@@ -178,30 +236,34 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     for (int f = 0; f < fists_; ++f) {
         FistRow& r = rows_[static_cast<std::size_t>(f)];
         for (int kind = 0; kind < 5; ++kind) r.ends[static_cast<std::size_t>(kind)] = range(kind, f);
-        const auto speed = static_cast<std::size_t>(speed_of(f));
-        r.mark_survival_first = mark_survival_offset_[speed];
-        r.mark_survival_last = mark_survival_length_[speed] - 1;
+        const auto group = static_cast<std::size_t>(group_of(f));
+        r.mark_survival_first = mark_survival_offset_[group];
+        r.mark_survival_last = mark_survival_length_[group] - 1;
         r.gap_survival_first = gap_survival_offset_[static_cast<std::size_t>(f)];
         r.gap_survival_last = gap_survival_length_[static_cast<std::size_t>(f)] - 1;
         r.mark_hi = mark_hi(f);
         r.gap_hi = gap_hi(f);
         r.stretched = stretch_of(f) > 1.0;
     }
-    const int longest_open = mark_hi(first_fist(speeds_ - 1));
-    open_end_first_.reserve(static_cast<std::size_t>(longest_open) + 2);
-    open_survival_.reserve(static_cast<std::size_t>(longest_open) + 1);
-    for (int length = 0; length <= longest_open; ++length) {
+    open_hi_ = 0;
+    for (int group = 0; group < group_count; ++group) open_hi_ = std::max(open_hi_, mark_hi_[static_cast<std::size_t>(group)]);
+    open_end_first_.reserve(static_cast<std::size_t>(open_hi_) + 2);
+    open_survival_.reserve(static_cast<std::size_t>(open_hi_) + 1);
+    for (int length = 0; length <= open_hi_; ++length) {
         open_end_first_.push_back(static_cast<int>(open_ends_.size()));
         double survive = -kInf;
-        for (int speed = 0; speed < speeds_; ++speed) {
-            const int plain = first_fist(speed);
+        for (int group = 0; group < group_count; ++group) {
+            const int plain = first_of_group(group);
+            const int k = group_weight_index[static_cast<std::size_t>(group)];
             survive = std::max(survive, mark_survival(plain, length));
             for (int label = 0; label < 2; ++label) {
                 const int next = child(0, label);
                 if (next < 0) continue;
                 const Range& r = range(label, plain);
                 if (length >= r.lo && length <= r.hi)
-                    open_ends_.push_back(OpenEnd{log_end(label, plain, length), plain, speed, next, first_fist(speed + 1) > plain + 1});
+                    open_ends_.push_back(OpenEnd{log_end(label, plain, length) + log_weight[static_cast<std::size_t>(k)], plain,
+                                                 group_speed_[static_cast<std::size_t>(group)], group, next,
+                                                 first_of_group(group + 1) > plain + 1, k != 0});
             }
         }
         open_survival_.push_back(survive);
@@ -220,11 +282,13 @@ struct Element {
     std::int64_t start;    // the sample of its claimed edge
     std::int64_t letter;   // the sample of its letter's first key-down; -1 for a mark at the root (it starts the letter)
     std::int32_t text;     // the shared text before the current letter; held
-    std::uint8_t speed;    // the fist, 0 ... fists - 1 (speed x gap stretch; search.hpp); 255 while open
+    std::uint16_t speed;   // the fist, 0 ... fists - 1 (speed x weight x gap stretch; search.hpp); kOpenFist while open
     std::uint8_t node;     // a mark: the node it starts from; a gap: the node of the mark before it
-    std::uint8_t kind;     // ElementKind
-    std::uint8_t space;    // a birth's: a word space goes before its letter once the text goes on
+    std::uint8_t kind : 4;   // ElementKind
+    std::uint8_t space : 4;  // a birth's: a word space goes before its letter once the text goes on
 };
+static_assert(sizeof(Element) == 32);
+constexpr std::uint16_t kOpenFist = 0xffff;
 
 // All zeros is a slot never offered at, so a table of them is lazily zeroed memory: a channel pays for the slots it touches, which for a long-lived track is nearly all of them.
 struct Slot {
@@ -295,12 +359,15 @@ struct Search::Impl {
     std::vector<double> mark_partial;
     std::vector<Element> opened_gaps;
     std::vector<Element> opened_marks;
-    // A birth's first mark's ends at a speed that has other stretches: what is offered at g > 1 (boundary).
+    // A birth's first mark's ends that wait for the best so far (boundary): at a group's g > 1 if it has other stretches, and at its
+    // g = 1 too for a weight other than 0.
     struct Stretched {
         double end;  // nats: the end's score at g = 1
         std::int32_t parent;
-        int speed;
+        int group;   // (speed, weight)
         int child;
+        bool plain;  // offer it at g = 1 too
+        bool stretched;
     };
     std::vector<Stretched> stretched;
 
@@ -629,8 +696,12 @@ void Search::Impl::boundary(std::int64_t j) {
                                      (length < kEdgeCount ? correction(false, length, j) : 0.0);
                 for (const ModelTables::OpenEnd& open : ends) {
                     const double end = ended + open.log_end;
+                    if (open.weighted) {
+                        stretched.push_back(Stretched{end, index, open.group, open.child, true, open.stretched});
+                        continue;
+                    }
                     offer(gap_table, gap_second, gap_touched, static_cast<std::size_t>(open.fist) * nodes + static_cast<std::size_t>(open.child), end, index, 0, stamp);
-                    if (open.stretched) stretched.push_back(Stretched{end, index, open.speed, open.child});
+                    if (open.stretched) stretched.push_back(Stretched{end, index, open.group, open.child, false, true});
                 }
             }
             score = e.base + mark_reach_from[first_d(length)] + model.open_survival(length) + model.log_first_speed();
@@ -644,15 +715,19 @@ void Search::Impl::boundary(std::int64_t j) {
     }
     stats.touches += gap_count + mark_count;
 
-    // The same ends at the other stretches. Only those inside the beam of the best so far, which the final best can only
-    // raise: this keeps the bookkeeping of a stretch nobody needs off every birth on noise, without changing what opens.
+    // The same ends at the other stretches, and at the other weights. Only those inside the beam of the best so far, which the final
+    // best can only raise: this keeps the bookkeeping of a stretch or weight nobody needs off every birth on noise, without changing
+    // what opens.
     {
         // As the opening test below: a gap opened here reaches gap_reach_new and its tail's (review of text-fast-1).
-        const double stretched_floor = best - config.beam_nats - gap_reach_new - tail_reach_new - (model.log_stretched() - model.log_plain());
+        const double plain_floor = best - config.beam_nats - gap_reach_new - tail_reach_new;
+        const double stretched_floor = plain_floor - (model.log_stretched() - model.log_plain());
         for (const Stretched& s : stretched) {
-            if (s.end < stretched_floor) continue;
+            const int first = model.first_of_group(s.group);
+            if (s.plain && s.end >= plain_floor) offer(gap_table, gap_second, gap_touched, slot_index(first, s.child), s.end, s.parent, 0, stamp);
+            if (!s.stretched || s.end < stretched_floor) continue;
             const double score = s.end - model.log_plain() + model.log_stretched();
-            for (int f = model.first_fist(s.speed) + 1; f < model.first_fist(s.speed + 1); ++f)
+            for (int f = first + 1; f < model.first_of_group(s.group + 1); ++f)
                 offer(gap_table, gap_second, gap_touched, slot_index(f, s.child), score, s.parent, 0, stamp);
         }
         stretched.clear();
@@ -731,7 +806,7 @@ void Search::Impl::boundary(std::int64_t j) {
         e.base = slot.score;
         e.start = j;
         e.kind = kGap;
-        e.speed = static_cast<std::uint8_t>(index / model.nodes());
+        e.speed = static_cast<std::uint16_t>(index / model.nodes());
         e.node = static_cast<std::uint8_t>(index % model.nodes());
         e.letter = parent.letter < 0 ? parent.start : parent.letter;
         e.space = 0;
@@ -798,7 +873,7 @@ void Search::Impl::boundary(std::int64_t j) {
                 e.base = score + rise - c11;
                 e.start = j;
                 e.kind = kOpenMark;
-                e.speed = 255;
+                e.speed = kOpenFist;
                 e.node = 0;
                 e.space = 0;
                 e.letter = -1;
@@ -823,7 +898,7 @@ void Search::Impl::boundary(std::int64_t j) {
             e.start = j;
             e.letter = -1;
             e.kind = kOpenMark;
-            e.speed = 255;
+            e.speed = kOpenFist;
             e.node = 0;
             e.space = silent_text != viterbi::SharedText::kEmpty ? 1 : 0;
             e.text = silent_text;
@@ -882,7 +957,7 @@ void Search::Impl::boundary(std::int64_t j) {
         }
     }
     std::size_t kept_marks = 0;
-    const int open_hi = model.mark_hi(model.first_fist(model.speeds() - 1));
+    const int open_hi = model.open_hi();
     for (std::int32_t index = 0; index < mark_count; ++index) {
         Element& e = marks[static_cast<std::size_t>(index)];
         const int length = static_cast<int>(j - e.start);

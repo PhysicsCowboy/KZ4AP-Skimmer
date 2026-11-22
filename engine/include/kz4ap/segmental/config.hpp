@@ -210,6 +210,20 @@ struct SegmentalConfig {
     // recording's near-threshold channels: 0.05 costs 14.0 ms per channel-second against 11.0 with no stretches, 0.01 costs 11.4.
     double gap_stretch_prior = 0.002;
 
+    // --- A story's fist: the weight (search.hpp; text-weight-1) ---
+
+    // dots: the weights w a story may take with its speed. A mark lasts w T_s more and every gap after a mark w T_s less (the
+    // model's shifts, added to fist_shifts_dots): a keyer's weighting and VE3NEA's imbalance. It must hold 0, the standard weight.
+    // {0} leaves weights out.
+    std::vector<double> fist_weights_dots = {0.0};
+    // probability: that a new story's weight is not 0, shared alike by the others. Paid once per over, as gap_stretch_prior.
+    double fist_weight_prior = 0.0;
+    // on or off: letter and word gaps shift by -w too (a keyer's and the generator's rule: the space after a mark is shortened,
+    // whatever space it is); off, only element gaps do.
+    bool fist_weight_letter_gaps = true;
+    // on or off: a weight at every gap stretch; off, weights other than 0 at g = 1 only.
+    bool fist_weight_stretched = true;
+
     // --- The front filter's widths (segmental_decoder.hpp) ---
 
     // 1: the filter scales, each a whole channel of evidence and search with its own front filter: scale m has a filter matched to
