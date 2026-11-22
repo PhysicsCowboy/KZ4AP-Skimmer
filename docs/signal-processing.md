@@ -5268,8 +5268,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   the interpolation's triangle narrows it further. By coherence time (the
   lag where |ρ| first falls to 0.5, against the same synthesis at
   10·f_D samples/s; 8 gains of 60 s; measured) the realized spread is the
-  request at 3 and 5 Hz and 0.97, 0.89, 0.80, 0.69 and 0.57 of it at 7, 14,
-  21, 30 and 42 Hz (Butterworth: 6.8, 12.4, 16.7, 20.8, 23.9 Hz; Gaussian
+  request at 3 and 5 Hz (and at 7 Hz within seed scatter, about ±0.2 Hz) and 0.89, 0.80, 0.69 and 0.57 of it at 14,
+  21, 30 and 42 Hz (Butterworth: 6.8 to 7.0, 12.4, 16.7, 20.8, 23.9 Hz; Gaussian
   within 0.02 of these); the review's yardstick, the second moment of the
   interpolated gain's spectrum, reads a Gaussian 20, 30, 42 Hz as 18.4,
   22.8, 25.2 Hz. `fading_full_rate` (off by default, so every set made
@@ -5305,8 +5305,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   edges, key-up + E/2 for "start" edges (whose fall ends E after key-up),
   key-up − E/2 for "inside" edges. Exactly, the profile is a staircase,
   P(t) = Σ_{d_k > t} w_k, which follows
-  10^(`tail_db`/10)·(e^(−t/τ) − e^(−5))/(1 − e^(−5)) within a relative
-  ±Δ/(2τ), Δ = 1 ms the tap spacing (derived; ±3.3% at τ = 15 ms). It is
+  10^(`tail_db`/10)·(e^(−t/τ) − e^(−5))/(1 − e^(−5)), differing from it by at
+  most ±Δ/(2τ) relative to 10^(`tail_db`/10)·e^(−t/τ)/(1 − e^(−5)) (so the relative
+  error grows only in the last millisecond before the 5τ cut, about −30 dB re the
+  tail's starting power), Δ = 1 ms the tap spacing (derived; ±3.3% at τ = 15 ms). It is
   valid for τ ≫ 1 ms: a τ under about 1 ms leaves one tap or a few
   (τ = 0.01 ms gives one tap, at 0.5 ms). A non-finite `tail_db` or
   `tail_decay_s`, a τ at or below 0 s and a negative `tail_fading_hz` are

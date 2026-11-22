@@ -34,8 +34,8 @@ TAIL_GAIN_RATE_PER_HZ = 10.0  # each tap's gain is synthesized at this many time
 
 def tap_weights(tail_db: float, decay_s: float) -> tuple[np.ndarray, np.ndarray]:
     """Delays d_k (s) and power weights w_k (linear, summing to 10^(tail_db / 10)) of the delay line. The staircase
-    P(t) = sum over d_k > t of w_k follows 10^(tail_db / 10) (e^(-t / tau) - e^(-5)) / (1 - e^(-5)) within a relative
-    +/- TAIL_TAP_S / (2 tau) (derived), for tau much longer than TAIL_TAP_S; a tau under it leaves one tap or a few."""
+    P(t) = sum over d_k > t of w_k follows 10^(tail_db / 10) (e^(-t / tau) - e^(-5)) / (1 - e^(-5)), differing from it by at most
+    +/- TAIL_TAP_S / (2 tau) relative to 10^(tail_db / 10) e^(-t / tau) / (1 - e^(-5)) (derived), for tau much longer than TAIL_TAP_S; a tau under it leaves one tap or a few."""
     if not math.isfinite(tail_db):
         raise ValueError(f"tail_db must be a finite number of dB, not {tail_db}")
     if not (math.isfinite(decay_s) and decay_s > 0):
