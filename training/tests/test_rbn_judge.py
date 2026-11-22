@@ -135,19 +135,20 @@ def test_us_licenses_two_sided_for_us_calls_only(tmp_path):
                   encoding="latin-1")
     us = rbn_judge.read_us_licenses(hd)
     assert us == {"K9BGL": "active", "W1AW": "expired", "N4AA": "active"}   # only HD records count
-    assert [rbn_judge.us_license(c, us) for c in ("K9BGL", "W1AW", "K1XYZ", "DL1ABC", "5NN5NN", "AM1ABC")] == \
-        ["active", "expired", "never", "", "", ""]                              # AM is Spain's, not the US form
+    assert [rbn_judge.us_license(c, us) for c in ("K9BGL", "W1AW", "K1XYZ", "DL1ABC", "5NN5NN", "AM1ABC", "N4A", "W1AA", "G2M")] == \
+        ["active", "expired", "never", "", "", "", "-", "never", ""]            # AM is Spain's, not the US form; a US 1x1 not judged
     spots = _day(tmp_path, [_spot("W2AXR", 7042.1, "K9BGL", "18:01:00")])
-    runs = {"ours": {"K9BGL", "K1XYZ", "DL1ABC", "N4AA"}}
+    runs = {"ours": {"K9BGL", "K1XYZ", "DL1ABC", "N4AA", "N4A"}}
     table = rbn_judge.rows("rec", "test", runs, spots, WINDOW, us=us)
     out = tmp_path / "calls.csv"
     rbn_judge.write_rows(out, list(runs), table, us=True)
     got = list(csv.DictReader(out.open(encoding="utf-8")))
     assert list(got[0])[-2:] == ["us_license", "ours"]
     assert {r["call"]: (r["class"], r["us_license"]) for r in got} == {
-        "DL1ABC": ("unknown", ""), "K1XYZ": ("unknown", "never"), "K9BGL": ("rbn_window", "active"), "N4AA": ("unknown", "active")}
+        "DL1ABC": ("unknown", ""), "K1XYZ": ("unknown", "never"), "K9BGL": ("rbn_window", "active"), "N4AA": ("unknown", "active"),
+        "N4A": ("unknown", "-")}
     c = rbn_judge.counts(got, "ours")
-    assert (c["us_never"], c["unknown_us_active"], c["unknown"]) == (1, 1, 3)
+    assert (c["us_never"], c["unknown_us_active"], c["unknown"]) == (1, 1, 4)   # the 1x1 counts in neither
 
 
 def test_main_with_both_lists(tmp_path, capsys):

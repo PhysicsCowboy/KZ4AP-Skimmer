@@ -33,8 +33,10 @@ it is undecided, never a misreading, since many hams never contest. Membership l
 With `--us-licenses HD.dat` (the license file of the FCC's complete amateur database, l_amat.zip: `|`-separated, the call in field 5
 and the license status in field 6, A for active) the table gains `us_license` after them: for a call of the US form
 (`US_FORM`: A[A-L], K, N or W, one letter more at most, a digit, one to three letters) `active`, `expired` (issued, no longer
-active) or `never` (never issued), and empty for any other form. The database holds every US license, so this check is two-sided
-for US calls, though unequally: `never` (not issued as of the file's date) is strong evidence that a call is false, though a license granted since or purged long ago reads so too, while `active` is weak alone, since a one-edit garble
+active) or `never` (never issued), `-` for a US 1x1 (`US_ONE_BY_ONE`: K, N or W, a digit, a letter), and empty for any other form.
+A 1x1 is a short-term special-event call the database does not hold (none of the 1 607 236 distinct US-form calls in HD.dat of
+2026-11-15 is a 1x1), so every US 1x1 would read `never`, real or not: it is not judged (review of call-short-1). The database
+holds every other US license, so this check is two-sided for US calls, though unequally: `never` (not issued as of the file's date) is strong evidence that a call is false, though a license granted since or purged long ago reads so too, while `active` is weak alone, since a one-edit garble
 of a confirmed US call is an active license 38.1% of the time (2026-11-17's window calls; decision log, 2026-11-19). The counts gain
 `us_never` (over every class) and `unknown_us_active`. Membership leaves every class as it was.
 
@@ -63,6 +65,7 @@ COLUMNS = ("recording", "role", "call", "class", "rbn_skimmers_in_window", "one_
 KNOWN_COLUMN = "in_known_list"
 US_COLUMN = "us_license"
 US_FORM = re.compile(r"^(A[A-L]|[KNW][A-Z]?)[0-9][A-Z]{1,3}$")
+US_ONE_BY_ONE = re.compile(r"^[KNW][0-9][A-Z]$")
 MISREADS = ("misread_window", "misread_day")
 _SPOT_LINE = re.compile(r"^\s*(?:\d\d:\d\d:\d\d(?:\.\d+)?\s+)?DX\s+de\s+\S*\s+(-?\d+(?:\.\d+)?)\s+(\S+)", re.IGNORECASE)
 
@@ -177,7 +180,10 @@ def read_us_licenses(path: str | Path) -> dict[str, str]:
 
 
 def us_license(call: str, licenses: dict[str, str]) -> str:
-    """`active`, `expired` or `never` for a call of the US form; empty for any other."""
+    """`active`, `expired` or `never` for a call of the US form, `-` for a US 1x1 (not in the database, so not judged); empty for any
+    other."""
+    if US_ONE_BY_ONE.match(call):
+        return "-"
     return licenses.get(call, "never") if US_FORM.match(call) else ""
 
 
