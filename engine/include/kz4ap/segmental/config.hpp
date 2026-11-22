@@ -161,9 +161,10 @@ struct SegmentalConfig {
     double echo_absolute = 1.0;
     // runs: the memory of M-bar, the mean of the median power (FS^2) of the runs at echo_level_min_db re the floor or more, exponential
     // in runs; dB re the level: how far above a level's own a^2 the tail's level may stand. Heuristics by measurement (review of
-    // text-tail-2): 10 dB re the floor (the run threshold) and 10 runs let M-bar follow a weaker station within a few runs; a margin
-    // of 6 dB reads the review's channels as the proportional form does, 8 dB does not (a weaker station's text read as E's).
-    double echo_level_runs = 10.0;
+    // text-tail-2): 10 dB re the floor (the run threshold) and 20 runs let M-bar follow a weaker station within some runs; a margin
+    // of 6 dB reads the review's channels as the proportional form does, 8 dB does not (a weaker station's text read as E's); 10 runs
+    // lost a window-confirmed call on a replay (WD2E), 30 runs at 6 dB read one of the review's channels as E's.
+    double echo_level_runs = 20.0;
     double echo_level_min_db = 10.0;
     double echo_level_margin_db = 6.0;
 
