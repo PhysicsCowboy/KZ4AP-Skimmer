@@ -1041,9 +1041,12 @@ S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2,
 - The pulse is taken as flat over the band: a crash stronger near the channel than across the band is under-read there (ear02's 48
   re σ² against 54 to 77 measured). The subbands at the receiver's band edges read lower (their noise 15 dB down on the 192 kHz
   recordings) but count as the others.
-- On a band of heavy atmospherics (80 m at night) it fires often: on the ear clips 0 to 1 845 firings a minute, reaching up to 8.6% of
-  a decoder's widest-filter samples (`docs/decision-log.md`, 2026-11-22). In mode 2 that is
-  noise taken as noise; in mode 1 it would be evidence lost.
+- On a band of heavy atmospherics it fires often: on the ten 2026-11 recordings from 1.7 firings a minute (15 m, 0.000% of the
+  decoders' widest-filter samples reached) to 1 858 (80 m, 7.7%), 40 m 200 to 1 080 (0.9 to 2.6%); on the 2017 recordings 3 to
+  25 a minute (under 0.1%); on the owner's clips 0 to 1 845 a minute, up to 8.6% (`docs/decision-log.md`, 2026-11-22). In mode 2
+  that is noise taken as noise; in mode 1 it would be evidence lost. On the generated sets (DEV2, VE3NEA's conditions), which hold
+  no crash, it fires on a single channel sample now and then (DEV2: 191 and 212 times in 708 recordings a seed) and reaches no
+  decoder sample: their texts are main's.
 - A pulse is read from a slice's 8 subband samples per subband; one shorter than a slice is read at its mean over the slice, and the
   median of 16 skewed values reads a 1 ms crash 0.6 to 0.9 of its power (test `FindsACrashWhereItIsAndAsStrongAsItIs`).
 - Receiver audio's 2.7 kHz passband holds no subband: no blanker there. At 48 kHz I/Q, 4 subbands: the quartiles are the 1st and 4th.
