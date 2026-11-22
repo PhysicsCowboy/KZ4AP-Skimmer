@@ -1,8 +1,11 @@
 #include "report.hpp"
 
+#include "decoded_file.hpp"
+
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 using namespace kz4ap::bench;
@@ -166,4 +169,37 @@ TEST(Report, ImmediateScoreIsAddedBesideTheFinalOne) {
     EXPECT_EQ(j.at("signals")[0].at("decoded_immediate"), "CQ K1ABD");
     EXPECT_EQ(j.at("signals")[0].at("edits_immediate"), 1);
     EXPECT_DOUBLE_EQ(j.at("signals")[0].at("cer_immediate").get<double>(), immediate.signals[0].cer);
+}
+
+TEST(Report, ReadsTheAppsDecodedFileWithItsTimes) {
+    // The app's --decoded file (format_version 2, app/core/decoded_file.hpp) as the app writes it: the bench reads its tracks as
+    // before and ignores the times.
+    kz4ap::app::TrackRow a, b;
+    a.id = 3;
+    a.track_ids = {3};
+    a.freq_hz = 1001.0;
+    a.start_s = 0.4;
+    a.ended_at_s = 3.0;
+    a.symbols = {"C", "Q", " ", "K", "1"};
+    a.starts = {0.5, 0.8, 1.1, 1.4, 1.7};
+    a.ends = {0.7, 1.0, 1.3, 1.6, 1.9};
+    b.id = 5;
+    b.track_ids = {5};
+    b.freq_hz = 2000.0;
+    b.symbols = {"T", "U"};
+    b.starts = {0.5, 0.8};
+    b.ends = {0.7, 1.0};
+    const std::string file =
+        kz4ap::app::decoded_json(kz4ap::app::DecodedFileInfo{"segmental", "x.wav", 1503338400093, 3.5}, {a}, {b});
+    const DecodedTexts d = parse_decoded_texts(file);
+    EXPECT_EQ(d.front_end, "segmental");
+    EXPECT_EQ(d.recording, "x.wav");
+    ASSERT_TRUE(d.detector);
+    ASSERT_EQ(d.tracks.size(), 2u);
+    EXPECT_EQ(d.tracks[0].id, 3u);
+    EXPECT_DOUBLE_EQ(d.tracks[0].freq_hz, 1001.0);
+    EXPECT_DOUBLE_EQ(d.tracks[0].last_freq_hz, 1001.0);
+    EXPECT_EQ(d.tracks[0].text, "CQ K1");
+    EXPECT_EQ(d.tracks[1].id, 5u);
+    EXPECT_EQ(d.tracks[1].text, "TU");
 }

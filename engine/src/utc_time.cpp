@@ -1,5 +1,7 @@
 #include "kz4ap/utc_time.hpp"
 
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 
 namespace kz4ap {
@@ -43,6 +45,16 @@ std::string utc_text(std::int64_t unix_ms) {
     std::snprintf(text, sizeof text, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", c.year, c.month, c.day, c.hour, c.minute, c.second,
                   c.millisecond);
     return text;
+}
+
+std::int64_t system_unix_ms() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+std::int64_t first_sample_unix_ms(std::int64_t block_arrival_unix_ms, std::uint64_t block_samples, int sample_rate) {
+    if (sample_rate <= 0) return block_arrival_unix_ms;
+    return block_arrival_unix_ms - std::llround(1000.0 * static_cast<double>(block_samples) / sample_rate);
 }
 
 }  // namespace kz4ap
