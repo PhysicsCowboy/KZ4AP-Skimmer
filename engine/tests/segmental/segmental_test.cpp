@@ -1477,7 +1477,7 @@ TEST(EchoEstimator, AnAbsoluteTailIsReadReTheMeanMarkAndFollowsTheRecentMarkPowe
     // A tail that does not follow the mark: re the mean mark, (1000 + 316) / 2 = 658, it is 31.6 / 658 = -13.2 dB; the mean of the
     // ratios (31.6 / 1000 and 31.6 / 316) is -11.8 dB re the mark (derived), so the absolute form's value is the lower by 1.4 dB,
     // both read low (A.8e: the last -6 dB sample moves into the tail, more so behind the weaker marks). Whether there is a tail, and
-    // how long, is the mean of the ratios' in both forms (measured: -14.7 and -14.0 dB re the mark, 0.73 dB apart, seed 31). M-bar,
+    // how long, is the mean of the ratios' in both forms (measured: -14.8 and -14.1 dB re the mark, 0.71 dB apart, seed 31). M-bar,
     // with a memory of 30 runs, ends between the levels: 548 FS^2 by the exponential memory
     // (derived), the last 20 runs having been at 316.
     const auto [absolute, level] = learn_alternating_tail(1.0);
@@ -1732,7 +1732,7 @@ TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
     EXPECT_FALSE(without.echo.on);
     const double cer_with = cer(with.text, with.read), cer_without = cer(without.text, without.read);
     std::cout << "tail: CER " << cer_with << " with the tail learned, " << cer_without << " without\n";
-    // Its first 15 strong runs, about 4 s, are read without it.
+    // Its first 21 strong runs, about 5 s, are read without it.
     EXPECT_LT(cer_with, 0.25);
     EXPECT_GT(cer_without, 0.5);
 }

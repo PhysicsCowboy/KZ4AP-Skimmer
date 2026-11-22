@@ -141,10 +141,11 @@ struct SegmentalConfig {
     double echo_min_db = 20.0;
     // s: the shortest run read. Heuristic: a dot at 37 WPM.
     double echo_min_run_s = 0.032;
-    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used (15: the 16th strong run,
-    // about 3 to 4 s at 35 WPM; text-fast-1 had 30). Heuristics, 15 by measurement on the owner's clips cut to 38 s (text-tail-2).
+    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used (20: the 22nd strong run,
+    // about 4 to 5 s at 35 WPM; text-fast-1 had 30). Heuristics, 20 by measurement (text-tail-2): the owner's clips cut to 38 s read
+    // better from 30 down to 15, and DEV2's E2 (seed 1) +0.0010 at 15 against +0.0003 at 20, re main.
     double echo_memory_runs = 200.0;
-    double echo_min_runs = 15.0;
+    double echo_min_runs = 20.0;
     // dB re the mark's key-down power: the tail is modeled when its first value stands at least this high, and it ends where it
     // falls under echo_end_db. Heuristics: a Rayleigh-faded mark that ends in a fade leaves about -17 dB re the mark behind
     // its last -6 dB sample at f_D 10 Hz (conjecture: 22% of marks, -10 dB for 10 to 20 ms), which must not read as a tail.
