@@ -4,6 +4,7 @@
 // and an orderly end, all with no radio attached and whatever the machine has installed.
 #include "kz4ap/sdrplay_source.hpp"
 #include "kz4ap/stream_runner.hpp"
+#include "kz4ap/utc_time.hpp"
 #include "kz4ap/wav_reader.hpp"
 
 #define WIN32_LEAN_AND_MEAN
@@ -243,6 +244,7 @@ TEST(SdrplaySourceFake, GivesTheApiTheSettingsAndReadsTheSamples) {
     settings.sample_rate = 384000;
     settings.if_gain_reduction_db = 33;
     settings.lna_state = 2;
+    const std::int64_t before_ms = system_unix_ms();
     SdrplaySource source(settings, kFake);
     EXPECT_EQ(fake.call<double>("fake_center_hz"), 14025000.0);
     EXPECT_EQ(fake.call<double>("fake_adc_hz"), 3072000.0);
@@ -267,6 +269,11 @@ TEST(SdrplaySourceFake, GivesTheApiTheSettingsAndReadsTheSamples) {
     }
     EXPECT_EQ(source.dropped_samples(), 0u);
     EXPECT_EQ(source.radio_status().resets, 0u) << "the API's first block's reset is not a restart";
+    // Dated from the system clock at the fake's first block (1000 samples, 2.6 ms at 384 kHz, before its arrival): between the
+    // source's making, less that block's length, and now.
+    ASSERT_TRUE(source.start_unix_ms());
+    EXPECT_GE(*source.start_unix_ms(), before_ms - 3);
+    EXPECT_LE(*source.start_unix_ms(), system_unix_ms());
 }
 
 TEST(SdrplaySourceFake, ChangesTheGainAsItRunsAndSaysWhenTheRadioRefuses) {

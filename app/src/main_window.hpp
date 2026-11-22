@@ -132,7 +132,9 @@ private:
     void update_position(const StreamStatus& status);
     void toggle_recording();
     void begin_recording(const QString& path);
-    void write_decoded();
+    // The stream's start, once its source knows it (a live radio: after its first block).
+    void take_stream_start();
+    void write_decoded(double stream_s);
     void write_calls();
     void on_tick();
     void update_markers();

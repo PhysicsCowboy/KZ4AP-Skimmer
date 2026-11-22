@@ -8,6 +8,7 @@
 #include "kz4ap/iq_recorder.hpp"
 #include "kz4ap/iq_ring.hpp"
 #include "kz4ap/iq_source.hpp"
+#include "kz4ap/live_start.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -75,13 +76,17 @@ public:
     explicit SdrplaySource(const SdrplaySettings& settings, const std::filesystem::path& library = {});
     ~SdrplaySource() override;
 
-    int sample_rate() const override { return settings_.sample_rate; }
+    int sample_rate() const override { return sample_rate_; }
     std::string description() const override { return description_; }
-    std::optional<double> center_frequency_hz() const override { return settings_.center_hz; }
+    std::optional<double> center_frequency_hz() const override { return center_hz_; }
+    // None until the first block with samples arrives; then the system clock's time of that block's first sample, stamped once
+    // (LiveStart, live_start.hpp): late by the radio's and its driver's buffering, a few ms to a few tens of ms (a heuristic
+    // estimate). After a gap (dropped_samples, a reset, a transfer lost uncounted) a character's UTC from it is early by the gap.
+    std::optional<std::int64_t> start_unix_ms() const override { return start_.unix_ms(); }
     IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override;
     void interrupt() override { interrupted_ = true; }
     std::uint64_t dropped_samples() const override { return dropped_.load(std::memory_order_relaxed); }
-    double backlog_s() const override { return static_cast<double>(ring_.size()) / settings_.sample_rate; }
+    double backlog_s() const override { return static_cast<double>(ring_.size()) / sample_rate_; }
     RecordControl* recorder() override { return this; }
     RadioControl* radio() override { return this; }
 
@@ -106,12 +111,16 @@ private:
     void on_lost(const std::string& message);
 
     friend struct SdrplayCallbacks;
-    SdrplaySettings settings_;
+    SdrplaySettings settings_;  // the gain's fields change (set_gain, under mutex_): read them only under it
+    // Fixed at construction, so any thread reads them without the lock (the API's callback, the pipeline).
+    const int sample_rate_;
+    const double center_hz_;
     std::string description_;
     SpscRing<Sample> ring_;
     IqRecorder recorder_;
     std::vector<Sample> convert_;  // the API thread's
     std::atomic<std::uint64_t> received_{0};
+    LiveStart start_;  // stamped by the API's thread
     std::atomic<std::uint64_t> dropped_{0};
     // The ring overflowed. Samples lost a few at a time, every block the pipeline reads, cut a strong station's carrier into
     // a splash of wide clicks that neighboring tracks read as E E E (docs/decision-log.md, 2026-10-31), and read the station itself

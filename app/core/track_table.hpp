@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace kz4ap::app {
@@ -44,6 +45,10 @@ struct TrackRow {
     std::string text() const { return text_tail(symbols.size()); }
     // The symbols it shows, as text_tail does.
     std::vector<std::string> shown_symbols() const;
+    // The same, each with its index in symbols (and so in starts and ends), or kAdded for the word space put in place of a
+    // left-out stretch, which has no index.
+    static constexpr std::size_t kAdded = static_cast<std::size_t>(-1);
+    std::vector<std::pair<std::string, std::size_t>> shown_indexed() const;
 };
 
 class TrackTable {
