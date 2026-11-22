@@ -487,7 +487,7 @@ for the new decoder only.
 
 **Status 2026-11-21 (`text-fast-1`), segmental decoder:** the walk and the frame now follow the Doppler spread the decoder measures
 (from 3 Hz, at +10 dB S500 or more): VE3NEA's conditions at f_D 3 Hz read 0.073, 0.033, 0.023, 0.025, 0.024 (hand) and 0.055, 0.028,
-0.020, 0.019, 0.021 (paddle) at +13.78, +17.78, +27.78, +37.78, +57.78 dB S500, against 0.103 to 0.083 and 0.072 to 0.052 before
+0.020, 0.019, 0.022 (paddle) at +13.78, +17.78, +27.78, +37.78, +57.78 dB S500, against 0.103 to 0.083 and 0.071 to 0.052 before
 (DeepCW 0.04 and 0.02 at the top); the matched fast-fading set's 7 to 14 Hz and 21 to 42 Hz cells 0.032 to 0.008 and 0.026 to 0.017
 from 0.17 and 0.31. Open: under +10 dB S500 the walk stays slow (the fast one cost B2 there); DEV2 has no fast-fading cell above
 +10 dB S500 (the item "Strong fading in the development set" below); the short-fade limit at strong levels is smaller, not gone.
@@ -765,6 +765,9 @@ against the owner's copy (`text-level-1` 0.443 and 0.766; DeepCW 0.398 and 0.338
 state was tried and cost the clips: 0.659 and 0.584), in the next rise's window, and a tail that changes within a track; the
 generator's two-path option, so that a matched set with a tail exists (the tests' channel is the only synthetic one); more clips of
 the owner's (aurora, long path) to see whether the shape holds; where the remaining errors on the clips are.
+Also open: three licensed, window-confirmed calls lost on the real recordings against `text-level-1` (WA2SCB 40 m 2026-11-17, KE3TW 20 m and
+WB4OSS 40 m 2026-11-18; one gained, WA5DSS), each read once to four times at 1 to 2.5 points; WA2SCB comes back with the Doppler walk
+off (decision log, 2026-11-21). Trace each: which track, whether the walk was fast or a tail on, and what the text read instead.
 
 Two clips of W1AW's 35 WPM practice text on 80 m (the 2026-11-19 recording, 3581.504 kHz, 1049 to 1080 s and 879 to 910 s, about 26
 to 28 dB re the noise key-down; the owner copied both nearly completely, and hears an auroral feel and fading) read at no-space CER

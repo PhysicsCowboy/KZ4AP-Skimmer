@@ -419,7 +419,8 @@ kept to −25 dB or 48 ms (heuristics).
   into t's end), key summed out of each: extrinsic of the frame's own 8 samples. Commit lag 170.7 to 338.7 ms.
 - *Walk set by the Doppler spread* (text-fast-1): on the widest stream's complex y, within each stretch of a run at or above −10 dB
   re its median, 8 ms inside its ends, |ρ| = |Σ y_(k+τ)y*_k| / √(Σ(|y_k|² − F) Σ(|y_(k+τ)|² − F)), τ = 21.33 ms, memory 100 runs;
-  f_D = 2σ_D from |ρ| = exp(−2π²σ_D²τ²) (Gaussian spectrum; derived). From 3 Hz (back under 2.5 Hz), runs at +10 dB S₅₀₀ or more,
+  f_D = 2σ_D from |ρ| = exp(−2π²σ_D²τ²) (Gaussian spectrum; derived). From 3 Hz (back under 2.5 Hz), runs at +10 dB S₅₀₀ or more and
+  ln |ρ(τ)| ≥ 2.5 ln |ρ(τ/2)| (a spread's 4; a beat's less),
   every stream walks 1.4 f_D nepers/√s (f_D in Hz; 4.8 to 20) by a Gaussian matrix over 10.67 ms frames (8 ms at m = 3; 21.33 ms
   where a tail is modeled). Heuristics by measurement.
 
@@ -454,12 +455,12 @@ exists. An open element holds a *base*:
   medians 3gT_s and 7gT_s; marks and element gaps stay at T_s (Farnsworth; ARRL's
   rule stretches both gaps alike). g = 1.61ⁿ, n = 0 … 6, to 17.4, while gT_s ≤
   0.7 s (step and limit heuristic; A.8e). A story takes it with its speed, to the over's end, at ln 0.998 for g = 1 or
-  ln(0.002/6) = −8.0 nats for another (chosen by measurement); a rescue chooses again.
+  ln(0.002/6) = −8.0 nats for another (chosen by measurement).
 
 *Short elements.* Below 6 samples two edges overlap. The whole element is then scored with its pair's template, s_m − s_(m−L)
 (a gap: 1 minus that), variance v_m + v_(m−L) − 2c[m][m−L] (derived), only when a story can end one.
 
-*Pruning.* Stories are compared on what each can reach through H = j + 16. To its base
+*Pruning.* Stories are compared on their reach through H = j + 16. To its base
 and its survival so far, a gap adds max(0, max_d [rise(j+d) + C[H+1] − C[j+d+11]])
 and a mark max(C[H+1], max_d [C[j+d+5] + fall(j+d)]), d from max(1, 6 − age) to 6:
 computed once per boundary. Beam 15 nats; ceiling 1 500 elements, a stretched fist's ranked +4 nats; no element opens in a state
@@ -475,7 +476,7 @@ kept. If nothing stands, the no-signal story restarts at the best score and text
 **Stage 7: text.** Every 0.25 s of stream the best story's last 64 symbols are
 compared with what has gone out (heuristics): new symbols, or a correction; a letter
 still open waits. At the channel's end the whole text is compared. Probability 1 per character (a
-placeholder), and corrections only where text changes. A variant, not the default,
+placeholder). A variant, not the default,
 keeps a margin per symbol from the merges' runners-up (A.8e, "Margins").
 
 *Speed* (the list's): the median character speed of the last 16 letters (A.9b).
@@ -4623,11 +4624,13 @@ tail(j, 18); two ends due at one boundary keep the better (both with their tails
 **Exact form: the walk** (`DopplerEstimator`, `SegmentalDecoder::update_walk`, `LevelEvidence::set_walk`). On the widest
 stream only, each envelope sample's complex y and F: a run is |y|² > 10 F (`echo_run_db`), kept to 4 096 samples. At its end, M its
 median |y|²; in each stretch of consecutive samples with |y|² ≥ M/10, from 3 samples inside each end (`doppler_end_guard_s` 8 ms),
-pairs (k, k + 8) (τ = 21.33 ms at m = 1) give C = Σ y_(k+8) y*_k, P₀ = Σ (|y_k|² − F), P₁ = Σ (|y_(k+8)|² − F). If any pair, the
+pairs (k, k + 8) (τ = 21.33 ms at m = 1) give C = Σ y_(k+8) y*_k, P₀ = Σ (|y_k|² − F), P₁ = Σ (|y_(k+8)|² − F), and the pairs (k, k + 4)
+from the same k the same sums at τ/2. If any pair, the
 estimator keeps C, P₀, P₁ and the runs' level 10 log₁₀(M / F at the run's middle) with memory e^(−1/100) per run
 (`doppler_memory_runs`); |ρ| = |C| / √(P₀P₁), f_D = 2√(−ln |ρ| / (2π²)) / τ (0 at |ρ| ≥ 1), level = the level sum over the runs'
 sum. From 20 runs (`doppler_min_runs`), at each run's end: fast if the level ≥ 18.3 dB re F (`doppler_min_db`) and f_D ≥ 3 Hz
-(`doppler_fast_hz`; 2.5 Hz, `doppler_slow_hz`, while fast); W = clamp(1.4 f_D, 4.8, 20) nepers/√s (`doppler_walk_per_hz`,
+(`doppler_fast_hz`; 2.5 Hz, `doppler_slow_hz`, while fast) and the shape ln |ρ(τ)| / ln |ρ(τ/2)| ≥ 2.5 (`doppler_min_shape`; 0 while either |ρ| reads 1);
+W = clamp(1.4 f_D, 4.8, 20) nepers/√s (`doppler_walk_per_hz`,
 `level_walk_nepers_per_sqrt_s`, `doppler_walk_max`). Every stream is told when the mode changes or W moves by 0.5 or more.
 
 **Exact form: frames and blocks** (`LevelEvidence`). A frame is the largest whole share of level_frame_s's samples within
@@ -4658,6 +4661,9 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   2σ_D is Watterson's and DeepCW's width (the generator's notes). The pairs stay inside a mark: across a fall into a tail, another
   path's sample follows the mark's and takes |ρ| down in proportion to τ (on the clips kz4ap-fading's ln |ρ| is a straight line in τ
   over every pair of a run, f_D 9.1 and 9.9 Hz by the Gaussian fit; inside the marks the estimator reads about 4.6 Hz).
+- *A spread or a beat.* For a smooth Doppler spectrum −ln |ρ(τ)| ≈ 2π²σ_D²τ² while |ρ| is near 1, exactly for a Gaussian one, so
+  ln |ρ(τ)| / ln |ρ(τ/2)| = 4. A neighbor of relative power r and offset Δf inside the filter makes |ρ(τ)| = |1 + r e^(j2πΔfτ)| / (1 + r),
+  ln |ρ| ≈ r (cos 2πΔfτ − 1) for small r: the ratio is 0.73 at 60 Hz, 0.015 at 45 Hz, 1.15 at 30 Hz, 2.45 at 20 Hz (derived).
 - *The fast walk as a matrix.* The three-tap passes needed for W = 20 over 10.67 ms are ⌈W²T/(2 step²)/0.33⌉ = 217 a frame against
   61 × 61 for the matrix (derived): a Gaussian of W √(T)/step steps (12 at W = 20) folded at the ends, where the passes approach the
   same Gaussian (binomial) one.
@@ -4670,6 +4676,9 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 - The tail's state in the level filter (a third key state between key-down and key-up, the tail's power at the level, geometric length):
   tried and taken out. With it the clips read 0.659 and 0.584, against 0.352 and 0.247 without; conjecture: under fast fading the tail
   state, tolerant of amplitude, explains a mark's samples at levels 14 dB above the mark, and the belief splits.
+- The shape's 2.5: heuristic by measurement, between a beat's under 1.2 (30 to 60 Hz) and a spread's 4: on the 40 m recording of
+  2026-11-17 without it the fast walk lost WA2SCB and KE2BVB, confirmed calls, which came back with the walk off; the matched set and
+  VE3NEA's conditions read the same with it (every cell to 0.001).
 - 3 Hz, 2.5 Hz, 18.3 dB re F, 1.4 per Hz, 4.8 to 20 nepers/√s, 8 ms, 21.33 ms, 100 and 20 runs, −10 dB re the median: heuristics by
   measurement on the matched set, VE3NEA's conditions and DEV2 seed 1's slice (the log). The estimator reads the matched set's true f_D
   0.7 to 1.2, 2.2 to 2.9, 7.2 to 10.1 and 21 to 31 Hz at 0.6 to 1.6, 2.4 to 4.0, 6.6 to 11.0 and 14.2 to 19.9 Hz; a steady or 0.1 Hz
@@ -4691,10 +4700,10 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   walk, its frame long).
 - The fast walk's matrix in the backward message is the current W's, though a boundary's step was taken at an earlier W (W moves by
   0.5 at most at a time).
-- The estimator reads a neighbor's beat inside the filter as spread: E2's unfaded stations read 5 to 27 Hz and take the fast walk,
-  which reads E2 better (measured, not designed); on the 2026-11-18 CWT recordings 16% (40 m) and 18% (20 m) of the tracks end in the
-  fast walk, 1% to 7% on the 2026-11-17 recordings, where the tail is on at 0% to 0.8% (traced). Untried: telling a beat by the two
-  lags' disagreement (a Gaussian spectrum's −ln |ρ| goes as τ², a beat's does not).
+- A neighbor's beat inside the filter reads as spread (E2's unfaded stations 5 to 27 Hz); before the shape test it took the fast walk on
+  16% (40 m) and 18% (20 m) of the 2026-11-18 CWT recordings' tracks and 1% to 7% of the 2026-11-17 ones' (traced), reading E2 better
+  and losing confirmed calls (decision log). A beat within about 15 Hz, whose ratio nears 4, and a spread whose spectrum is far from
+  smooth still pass or fail the test wrongly. The tail is on for 0% to 0.8% of those tracks (traced).
 - The fast walk leaves DEV2's other groups alone: DEV2 holds no fast-fading station above +10 dB S₅₀₀; cells of strong fast fading are in
   the backlog.
 
@@ -5043,7 +5052,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: level's jump | 0.05 s⁻¹, 1.07 × 10⁻³ per frame, to flat | `level_jump_per_s` | heuristic |
 | Segmental: frame | 8 samples, 21.33 ms | `level_frame_s` | heuristic |
 | Segmental: the fast frame (text-fast-1) | 10.67 ms, 4 samples at m = 1; 8 ms, 1 sample at m = 3; joined into level_frame_s while the walk is slow or where a tail is modeled | `level_fast_frame_s` | heuristic by measurement |
-| Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more; W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
+| Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more and ln \|ρ(21.33 ms)\| / ln \|ρ(10.67 ms)\| ≥ 2.5 (`doppler_min_shape`); W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
 | Segmental: the Doppler estimator (text-fast-1) | the widest stream's runs above +10 dB re F; pairs 21.33 ms apart within each stretch at or above −10 dB re the run's median, 8 ms inside its ends; memory 100 runs, used from 20; f_D = 2σ_D, Gaussian spectrum | `doppler_end_guard_s`, `doppler_memory_runs`, `doppler_min_runs` | form derived; values heuristic |
 | Segmental: the channel's tail (text-fast-1) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, used from 30, remade every 10; on at g₁₁ ≥ −15 dB re the mark, kept to −25 dB re the mark or 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` by measurement |
 | Segmental: look-ahead, commit | 8 frames each, 170.7 ms; a sample committed 64 to 127 samples after it arrives | `level_lookahead_s`, `level_commit_s` | heuristic; no measured effect from 0.085 to 1.5 s |
