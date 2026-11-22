@@ -5137,6 +5137,56 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
   0.06 dB, Butterworth, of power lost relative to the mean between points
   at f_D = 3 Hz, derived).
+- **Diffuse tail** (synthetic recordings, `tail_db`, `tail_decay_s`,
+  `tail_fading_hz`; `training/kz4ap_synth/tail.py`): off unless `tail_db`
+  is set, and only then written to the labels, so every existing set is
+  unchanged (its recordings regenerate byte for byte). Scattered, delayed
+  copies of a station's keyed carrier, added to its direct path; the
+  standard diffuse-scatter channel, a tapped delay line of independent
+  Rayleigh taps:
+  s_tail(t) = A e^(j(2πft + φ)) Σ_k √w_k g_k(t) env(t − d_k), with A, f, φ
+  and env (edges included) the direct path's, taps at d_k = (k + ½)·1 ms
+  for k < ⌈5τ / 1 ms⌉, τ = `tail_decay_s` (s), weights w_k ∝ e^(−d_k/τ)
+  summing to 10^(`tail_db`/10), `tail_db` in dB re the direct path's mean
+  key-down power. Each g_k is a complex Gaussian gain, E|g_k|² = 1, with a
+  Gaussian Doppler spectrum of spread f_D = 2σ = `tail_fading_hz` (Hz),
+  independent of the other taps and of the direct path's fading. The phase
+  e^(−j2πf d_k) a delay adds is a constant phase of a circular Gaussian
+  gain and is absorbed into g_k (derived). After a mark longer than the
+  delays, the tail's mean power t after key-up is
+  10^(`tail_db`/10)·e^(−t/τ) re the direct path (derived; a shorter mark
+  leaves less; `test_tail.py` checks it within 1 dB from 5 to 80 ms). The
+  tail is built at 4 kHz as a complex baseband, each tap's gain synthesized
+  at max(50, 10·f_D) samples/s and linearly interpolated, then linearly
+  interpolated to the recording's rate (heuristic rates). The cut at 5τ
+  leaves e^(−5) = 0.67% of the profile's power out (derived); the 1 ms tap
+  spacing is a heuristic (a quarter of a dit at 60 WPM). The direct path's
+  samples are the same with the tail on or off: the tail draws from its own
+  random stream ([seed, index, 4]) and the signal's span is extended by the
+  tail's reach only for the tail. A QSO's overs take no tail (refused). The
+  defaults when `tail_db` is set, τ = 15 ms and f_D = 8 Hz, with `tail_db`
+  −7 dB re the direct path, are **measured**: fitted to the owner's two W1AW
+  clips (80 m, 2026-11-19, 35 WPM machine keying) by applying the same
+  measurements to synthetic recordings of the clips' text (one station,
+  120 s, 35 WPM machine keying, 2 ms centered edges, direct path Butterworth
+  f_D 4 Hz, S₅₀₀ +26.5 dB) over a grid of `tail_db` −12 to −6 dB, τ 10 to
+  60 ms, f_D 3 to 40 Hz: `kz4ap-fading --fall`'s power after a mark's fall,
+  dB re the mark, at 4 to 40 ms (0.52 dB rms from the clips' mean; the two
+  clips differ from their mean by 0.63 dB rms), its coherence with the mark
+  over the same times (0.044 rms; the clips 0.029), and the share of dits
+  whose next 4 to 34 ms hold a mean power at or above −10 dB re the dit
+  (0.39; the clips 0.47 and 0.34). Choosing among the grid's near ties by
+  these three together is a heuristic. The model reproduces the clips' one
+  other signature: a gap's power does not follow the mark before it (a
+  slope of gap power, dB re the median mark, on that mark's level of
+  0.06 and 0.10 dB per dB on the clips, about 0 on the model).
+  **Limitations.** The exponential profile is a standard choice, not the
+  clips' shape: the clips' fall is flatter from 4 to 10 ms (−10.2 to
+  −10.8 dB re the mark against the model's −9.7 to −11.1). The fit assumed
+  the direct path's fading (Butterworth, f_D 4 Hz); the clips' slow fading
+  per second (3.6 and 3.9 dB rms) is about twice that path's (1.9 dB rms),
+  a property of the direct path, not of the tail. The tail adds its power
+  to the marks (+0.8 dB at −7 dB), and S₅₀₀ stays the direct path's.
 - **Interferers and tags:** a labeled signal with `score: false` is an
   interferer. The benchmark matches it to its track (so that track is not
   counted as a false track) but leaves it out of every error rate and of
