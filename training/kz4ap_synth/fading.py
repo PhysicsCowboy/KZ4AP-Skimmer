@@ -27,14 +27,14 @@ SHAPES = ("gaussian", "butterworth")
 
 
 def slow_gain(duration_s: float, spread_hz: float, rng: np.random.Generator,
-              shape: str = "gaussian") -> np.ndarray:
-    """The fading gain at FADING_RATE_HZ, covering duration_s (plus two samples)."""
+              shape: str = "gaussian", rate_hz: float = FADING_RATE_HZ) -> np.ndarray:
+    """The fading gain at rate_hz (default FADING_RATE_HZ), covering duration_s (plus two samples)."""
     if spread_hz <= 0:
         raise ValueError("spread_hz must be positive")
     if shape not in SHAPES:
         raise ValueError(f"unknown fading shape {shape!r}")
-    m = int(np.ceil(duration_s * FADING_RATE_HZ)) + 2
-    freqs = np.fft.fftfreq(m, 1.0 / FADING_RATE_HZ)
+    m = int(np.ceil(duration_s * rate_hz)) + 2
+    freqs = np.fft.fftfreq(m, 1.0 / rate_hz)
     if shape == "gaussian":
         sigma = spread_hz / 2.0
         response = np.exp(-freqs**2 / (4.0 * sigma**2))  # amplitude response: sqrt of the power spectrum
@@ -46,9 +46,9 @@ def slow_gain(duration_s: float, spread_hz: float, rng: np.random.Generator,
     return np.fft.ifft(white * response, norm="ortho")
 
 
-def gain_at(slow: np.ndarray, t_s: np.ndarray) -> np.ndarray:
-    """The gain at times t_s (s from the start of slow), linearly interpolated."""
-    t_slow = np.arange(len(slow)) / FADING_RATE_HZ
+def gain_at(slow: np.ndarray, t_s: np.ndarray, rate_hz: float = FADING_RATE_HZ) -> np.ndarray:
+    """The gain at times t_s (s from the start of slow, synthesized at rate_hz), linearly interpolated."""
+    t_slow = np.arange(len(slow)) / rate_hz
     return np.interp(t_s, t_slow, slow.real) + 1j * np.interp(t_s, t_slow, slow.imag)
 
 
