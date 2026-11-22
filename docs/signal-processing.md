@@ -4754,7 +4754,9 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   follow the mark's fades (one delayed path fading with the direct one) is read up to 6 dB too strong in a fade. M̄ is the runs' median
   e², noise included. The residual of the review's case: a weaker station's first runs after a strong one take a tail up to 6 dB
   above their own level until M̄ follows them (about 20 runs), and one within 6 dB of the strong station takes up to the strong one's
-  tail (the review's channels, 10 to 24 dB below, read as the proportional form).
+    tail (the review's channels, 10 to 24 dB below, read as the proportional form). The evidence for the absolute form is one evening's
+  recording; the re-review's channel, a tail at −5 dB re the mark behind a Rayleigh-faded direct path, reads 0.13 to 0.16 CER worse with
+  it than with the proportional form, and the owner's ear clips from other days learn no tail at all.
 - An absolute tail's power in the fall's window is taken in whole 1.5 dB steps (±0.75 dB). A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
 - The tail's mean is read low by about 2 dB re the true tail's power: a Rayleigh tail's samples above −6 dB re the mark move the last −6 dB sample into it
   (test `EchoEstimator.LearnsATailAfterTheFallAndNoneWhereThereIsNone`: 0.06 for 0.1).

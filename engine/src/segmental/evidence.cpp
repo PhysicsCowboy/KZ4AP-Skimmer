@@ -913,9 +913,10 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
 
         std::array<double, kEdgeCount> rise{};
         std::array<double, kEdgeCount> fall{};
-        // An absolute tail (text-tail-2): rho = A M-bar / sigma^2 the same at every level. In the fall's window its power is noise:
-        // sigma^2 (1 + rho) taken in whole grid steps d (nearest), as a sigma^2 above the floor is, so the fall reads the plain
-        // table at level - shift - d with z' = z / sqrt(1 + rho'), rho' = 10^(d step / 10) - 1, less w ln(1 + rho') (derived).
+        // An absolute tail (text-tail-2): per group i of the belief's levels, rho_i = A min(M-bar, margin a_i^2) / sigma^2 (below). In
+        // the fall's window its power is noise, sigma^2 (1 + rho_i): taken in whole grid steps d_i (nearest; an approximation, none for
+        // rho_i < 0.1885), as a sigma^2 above the floor is, the fall reads the plain table at level - shift - d_i with
+        // z' = z / sqrt(1 + rho'), rho' = 10^(d_i step / 10) - 1, less w ln(1 + rho') (derived for that rho').
         const double scale = echo_absolute_ ? static_cast<double>(echo_scale_[slot]) : 0.0;
         // The tail's level by group of the belief's levels, re sigma^2: M-bar / sigma^2, at most echo_level_margin_db above the
         // group's own a^2 / sigma^2 (the tail is its station's; review of text-tail-2).
@@ -973,8 +974,8 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
         }
         int tail_count = 0;
         if (echo_absolute_ && edge_count > 0) {
-            // The tail's positions, absolute: noise plus a zero-mean Gaussian of power A_q M-bar, against key-up, one value whatever
-            // the level (text-tail-2).
+            // The tail's positions, absolute: noise plus a zero-mean Gaussian of power A_q min(M-bar, margin a_i^2), against key-up, per
+            // group i and mixed over the groups as the edges are; without the bound one value whatever the level (text-tail-2).
             const bool bounded = echo_margin_ < 1e300;
             for (int q = 0; q < echo_positions_ && !bounded; ++q) {
                 const double rho = echo_tail_[static_cast<std::size_t>(q)] * scale;
