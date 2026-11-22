@@ -14,13 +14,14 @@
 //
 // 2. The shared level (LevelEvidence). The per-story Kalman amplitude is replaced by one belief per channel over
 //    (key state x level): a two-state key with a switch probability tau per sample (no timing: the key's timing is left
-//    to the search), a grid of levels every 1.5 dB relative to the noise with ln a held constant over frames of 8 samples, a
-//    random walk of ln a from frame to frame and a small jump to anywhere. Key-up scores 1 and key-down exp(x_k(l)),
+//    to the search), a grid of levels every 1.5 dB relative to the noise with ln a held constant over blocks of 8 samples (two
+//    frames of 4 joined; one frame each while the walk is fast, text-fast-1), a random walk of ln a from block to block and a
+//    small jump to anywhere. Key-up scores 1 and key-down exp(x_k(l)),
 //    x_k(l) = w Lambda(a_l; e_k). The key's memory matters: with a key independent from sample to sample, a low level
 //    gains ln(1 / (1 - pi)) nats per sample of a gap over the true level, and the belief leaves the true level in every long
 //    gap (measured in stage 1: CER above 1 at +20 dB S500). The forward message runs on every sample; the backward
 //    message runs every commit block over the look-ahead. The belief a sample's evidence uses is extrinsic: the forward
-//    message into its frame times the backward message into its frame, key summed out on each side, so that the frame's
+//    message into its block times the backward message into its block's end, key summed out on each side, so that the block's
 //    own samples are not counted twice. Then
 //        L1_k = ln sum over l of P_t(l) exp(x_k(l)),
 //    and R and F likewise with V = sigma^2 + a^2 (f^2 s^2 + v_m). Lambda is the Rician log-likelihood ratio against noise
@@ -40,6 +41,7 @@
 #include "kz4ap/viterbi/mark_template.hpp"
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -63,13 +65,31 @@ struct SampleContext {
     std::array<float, kEdgeLevels> probability{};
 };
 
+// samples: the most tail positions after a fall's window (SegmentalConfig::echo_max_s at the widest filter, 48 ms).
+inline constexpr int kTailMax = 18;
+
 // What the search reads, sample by sample, as a running sum (1 above). Samples are numbered from 0 as they are pushed.
 class RunningSums {
 public:
     // Appends sample k = committed(): its key-down score l1 (nats) and its scores under each position of the rise's and
     // the fall's window (nats; index m - 5). The context, for elements shorter than 6 samples, is empty if not given.
+    // tail[q], q < tail_count: its score under the channel's tail at position m = 11 + q after a fall claimed at k - 11 - q,
+    // against key-up (nats; EchoEstimator).
     void push(double l1, const std::array<double, kEdgeCount>& rise, const std::array<double, kEdgeCount>& fall,
-              const SampleContext& context = {});
+              const SampleContext& context = {}, const double* tail = nullptr, int tail_count = 0);
+    // nats: the tail's score over the first n samples after the window of a fall claimed at sample i (i + 11 ... i + 10 + n),
+    // as far as they have been pushed and the tail reaches; 0 with no tail. i within the last kRing samples.
+    double tail(std::int64_t i, int n) const {
+        if (n <= 0) return 0.0;
+        const std::size_t c = static_cast<std::size_t>(i);
+        const int filled = tail_filled_[c & kMask];
+        if (n >= filled) return tail_whole_[c & kMask];
+        return tail_prefix_[(c & kTailMask) * (kTailMax + 1) + static_cast<std::size_t>(n)];
+    }
+    // The tail positions of the claim at i pushed so far.
+    int tail_filled(std::int64_t i) const { return tail_filled_[static_cast<std::size_t>(i) & kMask]; }
+    // samples: the tail positions of the last sample pushed (0 with no tail).
+    int tail_positions() const { return tail_positions_; }
     // The context of a sample within the last 1 024.
     const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
 
@@ -94,6 +114,72 @@ private:
     static constexpr std::size_t kContextMask = 1023;
     std::vector<SampleContext> context_ = std::vector<SampleContext>(kContextMask + 1);
     std::int64_t count_ = 0;
+    // The tail's prefix sums by claim (the last 1 024), its positions filled and its whole (the last kRing); left empty while no
+    // tail is pushed.
+    static constexpr std::size_t kTailMask = 1023;
+    std::vector<double> tail_prefix_;
+    std::vector<std::uint8_t> tail_filled_ = std::vector<std::uint8_t>(kRing, 0);
+    std::vector<double> tail_whole_ = std::vector<double>(kRing, 0.0);
+    int tail_positions_ = 0;
+};
+
+// The channel's tail after a fall, as power re the mark's key-down power at the filter's output (text-fast-1; config.hpp,
+// echo_max_s). Empty (on false) for a clean channel.
+struct EchoShape {
+    bool on = false;
+    // at the fall window's positions m = 5 ... 10: added to the template's variance v_m
+    std::array<double, kEdgeCount> in_fall{};
+    // at the positions m = 11 ... 10 + tail.size() after the claimed fall
+    std::vector<double> tail;
+};
+
+// Learns a stream's tail from its envelope (text-fast-1), as kz4ap-fading measures it: a run is the samples above
+// echo_run_db re the floor; for a run of at least echo_min_run_s, its median power M and its last sample at or above M / 4
+// (-6 dB re the mark), and from there the mean of (e^2 - floor) / M at each later sample until the next run begins, kept with
+// an exponential memory in runs. The last -6 dB sample stands at the fall template's half point, sample h after the claimed fall
+// (h the last m with 1 - s_m >= 0.5), so position m after the claim reads the mean at m - h. The tail is on once its value at
+// m = 11 (the first sample past the fall's window) is at least echo_on_db; it is kept where at least echo_end_db; the fall's
+// window takes that first value at every position, the tail's start being flat (the clips: -10 dB re the mark from 4 to 12 ms).
+class EchoEstimator {
+public:
+    EchoEstimator(const SegmentalConfig& config, const viterbi::TemplateTables& tables);
+    // One sample: e^2 and the floor, FS^2. True when the shape has changed (every echo_min_runs / 3 runs at most once it is in).
+    bool push(double e2_fs2, double floor_fs2);
+    const EchoShape& shape() const { return shape_; }
+    double runs() const { return runs_; }
+    // Whether a shape has been made yet (on or off): from echo_min_runs strong runs.
+    bool decided() const { return decided_; }
+
+private:
+    void end_run(std::int64_t end);
+    void close_profile();
+    void update_shape();
+
+    bool on_ = false;
+    double run_ratio_ = 10.0;
+    double min_level_ = 100.0;  // re the floor
+    std::size_t min_run_ = 12;
+    double forget_ = 1.0;
+    double min_runs_ = 30.0;
+    double on_ratio_ = 0.0, end_ratio_ = 0.0;
+    int half_ = 7;
+    int positions_ = 0;  // tail positions at most
+    int span_ = 0;       // profile samples read after the last -6 dB sample
+    std::int64_t k_ = 0;
+    bool in_run_ = false;
+    std::vector<double> run_;  // the run's e^2 - floor ... and e^2, FS^2
+    std::vector<double> run_floor_;
+    // the profile being read: from sample `profile_from_`, its level M
+    bool profiling_ = false;
+    std::int64_t profile_from_ = 0;
+    double profile_level_ = 0.0;
+    std::vector<double> profile_;
+    std::vector<double> sum_, count_;
+    double runs_ = 0.0;
+    int since_update_ = 0;
+    bool fresh_ = false;
+    bool decided_ = false;
+    EchoShape shape_;
 };
 
 // The constants of the level's grid, shared by every channel of a configuration.
@@ -146,8 +232,19 @@ public:
     // matrix, row-major, K[to][from], each column a reflecting Gaussian of its level's variance; empty when the walk is the same
     // from every level (the three-tap passes).
     const std::vector<double>& walk_kernel() const { return walk_kernel_; }
+    // a^2 / sigma_y^2 at table index i (level i - below() re sigma^2, the bottom clamp applied), the terms' f'^2, and the
+    // template's s_m and v_m at m = 5 ... 10, for terms a stream builds itself (LevelEvidence::set_echo).
+    int table_levels() const { return table_levels_; }
+    double r2(int table_index) const { return r2_[static_cast<std::size_t>(table_index)]; }
+    double f2() const { return f2_; }
+    double edge_s(int position) const { return edge_s_[static_cast<std::size_t>(position)]; }
+    double edge_v(int position) const { return edge_v_[static_cast<std::size_t>(position)]; }
+    static Term make_term(double r2, double s, double f2, double v_m);
 
 private:
+    std::vector<double> r2_;
+    double f2_ = 0.0;
+    std::array<double, kEdgeCount> edge_s_{}, edge_v_{};
     int levels_ = 0;
     int below_ = 0;
     int table_levels_ = 0;  // levels_ + below_
@@ -199,6 +296,60 @@ private:
     double floor_ = 0.0;      // FS^2; 0 until it is used
 };
 
+// The channel's Doppler spread from the widest filter's complex output (text-fast-1). A run is the samples above echo_run_db re
+// the floor; within a run, in each stretch of samples at or above -10 dB re its median power, from doppler_end_guard_s inside its
+// ends (past the front filter's edges; a gap a tail fills splits the run), the pairs k, k + tau for tau = 3 ... 8 samples (8 to
+// 21.33 ms at the widest filter) give, per lag,
+//     C(tau) = sum (y[k + tau] y*[k] - F rho_n(tau)),  |rho(tau)| = |C(tau)| / sqrt(sum (|y[k]|^2 - F) sum (|y[k + tau]|^2 - F)),
+// rho_n the front filter's noise correlation (OutputNoise::rho; derived), kept with an exponential memory in runs; and the Gaussian
+// spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives f_D = 2 sigma_D (Watterson's and DeepCW's width) at tau = 8.
+// Two checks tell a spread from what reads as one:
+// - the shape: for a spread ln |rho(8)| / ln |rho(tau)| = (8 / tau)^2 at every lag; a neighbor's beat inside the filter, ln |rho| ~
+//   r (cos 2 pi df tau - 1), cannot follow that at all five lags 3 ... 7 at once beyond about 28 Hz (derived; shape_ok());
+// - each run's own: a constant frequency offset turns every product of a run alike and leaves its |C|, but offsets that differ
+//   between the stations a channel holds in turn (a run station and his callers) turn the runs' C apart and read as a spread when
+//   the runs are summed as vectors; summed as each run's |C| they do not (runs_hz).
+// The level is the runs' median power re the floor, dB, averaged with the same memory.
+class DopplerEstimator {
+public:
+    // noise_rho: the front filter's noise correlation at lags 0 ... 6 samples (OutputNoise::rho).
+    DopplerEstimator(const SegmentalConfig& config, const std::array<double, 7>& noise_rho);
+    // One sample: y, FS, and the floor, FS^2. True at the end of every run the estimate takes, once it holds doppler_min_runs.
+    bool push(std::complex<double> y_fs, double floor_fs2);
+    // Hz: f_D = 2 sigma_D at the longest lag, from the runs summed as vectors; and from each run's |C| summed: 0.62 to 0.79 of it for
+    // a Gaussian spread of 3 to 30 Hz (measured, runs of 100 ms), about 0 where stations a few Hz apart take turns in the channel.
+    double spread_hz() const { return spread_hz_; }
+    double runs_hz() const { return runs_hz_; }
+    // Whether ln |rho(8)| / ln |rho(tau)| lies within [lo, hi] times (8 / tau)^2 at every lag tau = 3 ... 7.
+    bool shape_ok(double lo, double hi) const;
+    // The ratio at a lag over its Gaussian value, 1 for a Gaussian spread; 0 where it cannot be read.
+    double shape(int tau) const;
+    double level_db() const { return level_db_; }
+    // runs: the estimator's memory's weight, at most 1 / (1 - forget).
+    double runs() const { return runs_; }
+    std::int64_t taken() const { return taken_; }
+
+private:
+    static constexpr int kFirstLag = 3, kLags = 6;  // tau = 3 ... 8 samples at the widest filter
+    // True if the run entered the estimate.
+    bool end_run();
+    bool on_ = false;
+    double run_ratio_ = 10.0;
+    int guard_ = 3;
+    double interval_s_ = 0.0;
+    double forget_ = 1.0, min_runs_ = 20.0;
+    std::array<double, kLags> noise_rho_{};
+    bool in_run_ = false;
+    std::vector<std::complex<double>> run_;
+    std::vector<double> run_floor_;
+    std::array<std::complex<double>, kLags> cross_{};
+    std::array<double, kLags> power0_{}, power1_{}, rho_{};
+    double cross_runs_ = 0.0;  // the runs' |C(8)|, each run's own, summed
+    double level_sum_ = 0.0, runs_ = 0.0;
+    std::int64_t taken_ = 0;
+    double spread_hz_ = 0.0, runs_hz_ = 0.0, level_db_ = -1e9;
+};
+
 class LevelEvidence {
 public:
     LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums);
@@ -214,22 +365,34 @@ public:
     // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
     // so that the search can reach the last sample.
     void finish();
+    // The channel's tail from here on (EchoEstimator): the fall's terms with its variance and the tail's terms after the fall.
+    // An empty shape takes it out.
+    void set_echo(const EchoShape& shape);
+    // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
+    // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
+    // short_frames false keeps the frame at level_frame_s for now (the variant doppler_hold_frames: the tail not yet decided).
+    void set_walk(bool fast, double walk_nepers_per_sqrt_s, bool short_frames = true);
+    bool fast() const { return fast_; }
 
     // The level's step between frames, on a vector over the grid's levels: forward x' = J K x, backward its transpose
     // x' = K^T J x, K the walk (the three-tap passes, or LevelTables::walk_kernel when the walk depends on the level) and J the
     // jump, (1 - jump) I + jump / levels, which is symmetric. With the three-tap passes K is symmetric and its rows sum to 1, so
     // J and K commute and the step is the same both ways. Public for the tests.
-    void step_level(double* x, bool backward = false) const;
+    void step_level(double* x, bool backward = false) const { step_kind(x, 1, backward); }
 
 private:
     void end_frame();
     void commit(bool all);
+    // The step at a block's end, kind 1 (the configured walk over level_frame_s, step_level's), 2 (the fast walk over one frame) or 3
+    // (the fast walk over level_frame_s): forward x' = J K x, backward x' = K^T J x, K the walk (the passes or a matrix) and J the jump.
+    void step_kind(double* x, int kind, bool backward = false) const;
     void commit_frame(std::int64_t frame, const double* belief);
 
     const LevelTables& tables_;
     RunningSums& sums_;
     int levels_;
-    int frame_samples_;
+    int frame_samples_;  // a frame's samples: level_fast_frame_s's, a whole share of level_frame_s's
+    int slow_block_;     // frames to a block when not fast: level_frame_s / the frame
     int lookahead_frames_;
     int commit_frames_;
     int ring_frames_;
@@ -247,6 +410,30 @@ private:
     std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
+    // Blocks of frames over which the level is held (text-fast-1): by frame in the ring, the block's first frame and the step at
+    // the frame's end (0 none, 1 slow, 2 fast); the block being filled; the mode and the fast walk's three-tap passes.
+    std::vector<std::int64_t> block_start_;
+    std::vector<std::uint8_t> step_after_;
+    std::int64_t block_first_ = 0;
+    int block_fill_ = 0;
+    int block_frames_ = 1;
+    bool fast_ = false, fast_next_ = false;
+    bool short_ = true, short_next_ = true;
+    double fast_walk_ = 0.0, fast_walk_next_ = 0.0;
+    double fast_jump_ = 0.0;
+    double fast_block_jump_ = 0.0;
+    // the fast walk over a frame and over level_frame_s (where a tail keeps the frame long), as K[to][from]
+    std::vector<double> fast_kernel_, fast_block_kernel_;
+    double frame_s_ = 0.0;  // s
+    std::vector<double> beta_block_;  // the backward message at the end of the block being read back, key summed out
+
+    // The tail (set_echo): on, its fall terms by position and table level, and its tail terms (rho / (1 + rho), ln(1 + rho)) by
+    // position and table level.
+    bool echo_on_ = false;
+    int echo_positions_ = 0;
+    std::vector<LevelTables::Term> echo_fall_;
+    std::vector<float> echo_gain_, echo_cost_;
+    double tail_scratch_[kTailMax]{};
 };
 
 }  // namespace kz4ap::segmental

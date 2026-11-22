@@ -90,6 +90,10 @@ public:
     std::size_t streams_running() const;
     // FS^2: the noise the leak asks of the stream at this filter scale, 0 if it has none (or no such stream runs).
     double leak_floor_fs2(int scale) const;
+    // Whether the walk is the fast one (the Doppler estimator's), and the tail the stream at this filter scale has learned (empty if none
+    // or no such stream runs); text-fast-1.
+    bool walk_fast() const { return walk_fast_; }
+    segmental::EchoShape echo_shape(int scale) const;
 
 private:
     void start();
@@ -138,6 +142,7 @@ private:
         const SegmentalParts* parts;
         int scale;
         std::unique_ptr<segmental::ChannelFloor> floor;
+        std::unique_ptr<segmental::EchoEstimator> echo;  // the channel's tail (text-fast-1)
         std::unique_ptr<segmental::RunningSums> sums;
         std::unique_ptr<segmental::LevelEvidence> evidence;
         std::unique_ptr<segmental::Search> search;
@@ -160,6 +165,12 @@ private:
     bool choose_leader(double stream_now_s, bool may_drop);
 
     std::vector<Stream> streams_;  // the widest first; never empty
+    // The channel's Doppler spread, read on the widest stream, and the walk it sets on every stream (text-fast-1).
+    std::unique_ptr<segmental::DopplerEstimator> doppler_;
+    bool walk_fast_ = false;
+    bool walk_short_ = true;  // the fast walk's frames short: the tail decided
+    double walk_now_ = 0.0;  // nepers per square root of a second
+    void update_walk();
     std::size_t leader_ = 0;
     bool choice_started_ = false;
 
