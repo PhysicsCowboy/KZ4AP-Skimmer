@@ -27,15 +27,19 @@ import numpy as np
 from .fading import gain_at, slow_gain
 
 TAIL_RATE_HZ = 4000.0      # the baseband tail is built at this rate, samples/s, then linearly interpolated
-TAIL_TAP_S = 0.001         # tap spacing of the delay line, s (heuristic: a quarter of a dit at 60 WPM)
+TAIL_TAP_S = 0.001         # tap spacing of the delay line, s (heuristic: 1/20 of a dit at 60 WPM, tau/15 at the default tau of 15 ms)
 TAIL_PROFILE_SPAN = 5.0    # the profile is cut at this many decay times tau: exp(-5) = 0.67% of its power lies beyond (derived)
 TAIL_GAIN_RATE_PER_HZ = 10.0  # each tap's gain is synthesized at this many times its Doppler spread, samples/s per Hz
 
 
 def tap_weights(tail_db: float, decay_s: float) -> tuple[np.ndarray, np.ndarray]:
-    """Delays d_k (s) and power weights w_k (linear, summing to 10^(tail_db / 10)) of the delay line."""
-    if decay_s <= 0:
-        raise ValueError("tail_decay_s must be positive")
+    """Delays d_k (s) and power weights w_k (linear, summing to 10^(tail_db / 10)) of the delay line. The staircase
+    P(t) = sum over d_k > t of w_k follows 10^(tail_db / 10) (e^(-t / tau) - e^(-5)) / (1 - e^(-5)) within a relative
+    +/- TAIL_TAP_S / (2 tau) (derived), for tau much longer than TAIL_TAP_S; a tau under it leaves one tap or a few."""
+    if not math.isfinite(tail_db):
+        raise ValueError(f"tail_db must be a finite number of dB, not {tail_db}")
+    if not (math.isfinite(decay_s) and decay_s > 0):
+        raise ValueError("tail_decay_s must be positive and finite")
     k = max(1, int(math.ceil(TAIL_PROFILE_SPAN * decay_s / TAIL_TAP_S)))
     delays = (np.arange(k) + 0.5) * TAIL_TAP_S
     w = np.exp(-delays / decay_s)
@@ -51,8 +55,8 @@ def tail_baseband(envelope, n: int, sample_rate: int, tail_db: float, decay_s: f
                   rng: np.random.Generator) -> np.ndarray:
     """The tail's complex baseband u(t) at n samples of sample_rate, the sum in the module's docstring without A and
     the carrier. envelope(m, rate) returns the keying envelope at m samples of rate, on the same time origin."""
-    if fading_hz <= 0:
-        raise ValueError("tail_fading_hz must be positive")
+    if not (math.isfinite(fading_hz) and fading_hz >= 0):
+        raise ValueError("tail_fading_hz must be 0 (a static tail) or positive and finite")
     delays, w = tap_weights(tail_db, decay_s)
     m = int(math.ceil(n / sample_rate * TAIL_RATE_HZ)) + 2
     env = envelope(m, TAIL_RATE_HZ)
@@ -63,7 +67,10 @@ def tail_baseband(envelope, n: int, sample_rate: int, tail_db: float, decay_s: f
         shift = int(round(d * TAIL_RATE_HZ))
         if shift >= m:
             break
-        g = gain_at(slow_gain(m / TAIL_RATE_HZ, fading_hz, rng, "gaussian", gain_rate), t[shift:], gain_rate)
+        if fading_hz == 0:  # a static tail: each tap one complex Gaussian draw, E|g|^2 = 1 (as fading_hz 0 means no fading)
+            g = (rng.standard_normal() + 1j * rng.standard_normal()) / math.sqrt(2.0)
+        else:
+            g = gain_at(slow_gain(m / TAIL_RATE_HZ, fading_hz, rng, "gaussian", gain_rate), t[shift:], gain_rate)
         u[shift:] += math.sqrt(wk) * g * env[:m - shift]
     ts = np.arange(n) / sample_rate
     return np.interp(ts, t, u.real) + 1j * np.interp(ts, t, u.imag)

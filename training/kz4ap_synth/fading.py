@@ -52,7 +52,14 @@ def gain_at(slow: np.ndarray, t_s: np.ndarray, rate_hz: float = FADING_RATE_HZ) 
     return np.interp(t_s, t_slow, slow.real) + 1j * np.interp(t_s, t_slow, slow.imag)
 
 
+def full_rate_hz(spread_hz: float) -> float:
+    """A synthesis rate that realizes spread_hz: max(FADING_RATE_HZ, 10 spread_hz), samples/s (heuristic: 10 samples per Hz of spread
+    keeps the spectrum's shape; FADING_RATE_HZ, 50 samples/s, cuts it at 25 Hz and realizes a Butterworth f_D of 21, 30, 42 Hz as
+    about 16.7, 20.8, 23.9 Hz by coherence time, measured)."""
+    return max(FADING_RATE_HZ, 10.0 * spread_hz)
+
+
 def rayleigh_gain(n: int, sample_rate: int, spread_hz: float, rng: np.random.Generator,
-                  shape: str = "gaussian") -> np.ndarray:
-    """n samples of complex fading gain at sample_rate, frequency spread spread_hz (Hz)."""
-    return gain_at(slow_gain(n / sample_rate, spread_hz, rng, shape), np.arange(n) / sample_rate)
+                  shape: str = "gaussian", rate_hz: float = FADING_RATE_HZ) -> np.ndarray:
+    """n samples of complex fading gain at sample_rate, frequency spread spread_hz (Hz), synthesized at rate_hz."""
+    return gain_at(slow_gain(n / sample_rate, spread_hz, rng, shape, rate_hz), np.arange(n) / sample_rate, rate_hz)
