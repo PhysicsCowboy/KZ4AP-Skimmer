@@ -5581,7 +5581,8 @@ known-call list holds, when it holds exactly one (`ParsedCall::other_base` carri
 series: VP2V, VP2E, VK9X, 3D2R, CE0Y, PJ2T), when exactly one is; (c) the left. So VP2V/K1ABC and K1ABC/VP2V give K1ABC (one side only
 can be the base), W1AW/VP2V, VP2V/W1AW and VK9X/W1AW W1AW, K1A/W1AW K1A and N4A/K4SV N4A (a 1x1 or a US call of four characters, KH6A,
 is no location), and with K4SV alone listed, K4SV. Before `call-form-2` the left side was the base whenever it parsed, and VP2V/K1ABC
-was refused. `training/kz4ap_proto/calls_score.py`'s `base_call` takes rules (b) and (c), with no list.
+was refused. `training/kz4ap_proto/calls_score.py`'s `base_call` takes rules (b) and (c), with no list, and since the review of
+`calls-list-1` the prefix-digit form (C6AGU, L3I) too; a call in a CSV it still does not take is scored as it stands and counted.
 
 **Words of CW.** `is_cw_word`: exact, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX, TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V,
 FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ; and any base of one or two letters before 5NN (R5NN, TU5NN, FN5NN, DJ5NN, W5NN), which
@@ -6181,7 +6182,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   0: 578 / 180 / 248 / 183, the one difference W8K, below); and on the generated contest of a fresh seed L3I, DL3I read without its
   D, signed once and read twice, became a false call at every bare bar 4 to 8, with or without MASTER.SCP. The generated sets'
   scorer (`calls_score`) refuses the prefix-digit form by its own call pattern and skipped the row, so its score lines showed no
-  change; counted by hand (`build/cl-1/scratch/genskip.py`), it is one false call. The signed bar 3 removes it, and no generated
+  change; counted by hand (`build/cl-1/scratch/genskip.py`), it is one false call (the scorer is fixed since: limitations below). The signed bar 3 removes it, and no generated
   list then changes a call at any bare bar (one list changes a row's report time). (iv) Taken: `form_rival_reported` 1,
   `cq_event_signed` 1, signed bar 3, bare bars 4, 5, 6, 7, 8, no list: 2026-11-17 172 / 66 / 79 / 91, 172 / 66 / 78 / 90, 172 / 65
   / 77 / 90, 172 / 65 / 76 / 90, 172 / 65 / 75 / 90; 2017 200 / 105 / 53 / 57, 200 / 105 / 53 / 53, then 200 / 105 / 53 / 52 at 6, 7
@@ -6283,8 +6284,12 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   as the cut-shaped numbers do, and so does a word of CW read four times in 30 min in a QSO about rigs or software (G5RV, K3S, N1MM; a test). A call of these forms that reaches its bar holds its near variants as any call does, so a commoner
   misreading of a real call can take the call's row (E7R, read 13 times whole, holds EE7R on the 2026-11-18 CWT). A pattern table per
   series, as CW Skimmer's, would separate C6@ from E5@ (backlog). `<BK>` is read as BK, but BK has no role, so "call BK" reads bare.
-  The generated sets' scorer (`calls_score`) refuses a prefix-digit call by its own pattern and skips its row, so a false call of that
-  form is not counted in its score lines (L3I on the fresh-seed contest, found by hand; backlog).
+  The generated sets' scorer (`calls_score`) refused a prefix-digit call by its own pattern and skipped its row, so a false call of
+  that form went uncounted (L3I on the fresh-seed contest, found by hand). Fixed in the review: its `base_call` takes the prefix-digit
+  form, and a CSV row whose call its grammar does not take is scored as it stands and counted and printed (`CallFile.unparsed`),
+  never dropped; a test scores an L3I-like false call and a C6AGU-like true one. Rescored with it, `main`'s and the final build's
+  generated lists give the same numbers as before, without and with MASTER.SCP, no row outside the grammar; the signed-bar-2 runs
+  now show L3I (the fresh-seed contest's false calls 0 to 1).
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.
