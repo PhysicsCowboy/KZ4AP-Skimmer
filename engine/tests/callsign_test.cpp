@@ -889,10 +889,13 @@ TEST(CallSearch, ATrackThatEndsIsReadAtOnceAndFinishReadsTheRest) {
 }
 
 TEST(CallSearch, AKnownCallNeedsOneFramedReadingOrTwoBareAndSpecialFormsNeedTheList) {
+    // With special_form 1, the rule before calls-list-1: a special form from a list only.
     auto known = std::make_shared<KnownCalls>();
     known->add("K1ABC");
     known->add("TM100TF");
-    Stage s(CallSearchConfig{}, known);
+    CallSearchConfig config;
+    config.special_form = 1.0;
+    Stage s(config, known);
     s.born(1, 1000.0);
     s.text(1, 1000.0, "E K1ABC T ", 0.0);
     s.search.advance(15.0);
@@ -1030,8 +1033,9 @@ TEST(CallSearch, ACallOfTinyPiecesNeedsTwoWholeWordsListedOrNot) {
     EXPECT_EQ(s.row("N5AU"), nullptr);
 }
 
-TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnly) {
-    // D4C, E7DX, C6AGU (call-form-2): read, and by default reported only when listed; with prefix_digit_listed_only 0, as any call.
+TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnlyAtOne) {
+    // D4C, E7DX, C6AGU (call-form-2), each signed and sent twice: with prefix_digit_form 1 reported only when listed; 0 as any call;
+    // 2, the default, on its bar (signed: prefix_digit_points_signed, 2).
     const auto run = [](CallSearchConfig config, std::shared_ptr<const KnownCalls> known) {
         Stage s(config, std::move(known));
         s.born(1, 1000.0);
@@ -1042,14 +1046,17 @@ TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnly) {
         std::sort(out.begin(), out.end());
         return out;
     };
-    EXPECT_EQ(CallSearchConfig{}.prefix_digit_listed_only, 1.0);
-    EXPECT_TRUE(run(CallSearchConfig{}, nullptr).empty());
+    EXPECT_EQ(CallSearchConfig{}.prefix_digit_form, 2.0);
+    CallSearchConfig listed_only;
+    listed_only.prefix_digit_form = 1.0;
+    EXPECT_TRUE(run(listed_only, nullptr).empty());
     auto known = std::make_shared<KnownCalls>();
     for (const char* call : {"D4C", "E7DX"}) known->add(call);
-    EXPECT_EQ(run(CallSearchConfig{}, known), (std::vector<std::string>{"D4C", "E7DX"}));
+    EXPECT_EQ(run(listed_only, known), (std::vector<std::string>{"D4C", "E7DX"}));
     CallSearchConfig any;
-    any.prefix_digit_listed_only = 0.0;
+    any.prefix_digit_form = 0.0;
     EXPECT_EQ(run(any, nullptr), (std::vector<std::string>{"C6AGU", "D4C", "E7DX"}));
+    EXPECT_EQ(run(CallSearchConfig{}, nullptr), (std::vector<std::string>{"C6AGU", "D4C", "E7DX"}));
     // The readings carry the mark.
     const auto r = readings("DE C6AGU K");
     const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "C6AGU"; });
@@ -1057,11 +1064,14 @@ TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnly) {
     EXPECT_TRUE(it->prefix_digit);
 }
 
-TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnly) {
-    // K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), DJ5NN (listed): from a list only, always. FN5NN, a
-    // prefix glued to 5NN that no list holds, is never reported, and with no list neither is any of them.
-    const auto run = [](std::shared_ptr<const KnownCalls> known) {
-        Stage s(CallSearchConfig{}, std::move(known));
+TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnlyAtOne) {
+    // K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), DJ5NN (listed): with cw_word_form 1 (always, before
+    // calls-list-1) from a list only. FN5NN, a prefix glued to 5NN that no list holds, is never reported, and with no list neither
+    // is any of them. On the bar, the default, each sent twice and signed is reported, FN5NN too (TU FN5NN K signs it).
+    const auto run = [](std::shared_ptr<const KnownCalls> known, double form = 1.0) {
+        CallSearchConfig config;
+        config.cw_word_form = form;
+        Stage s(config, std::move(known));
         s.born(1, 1000.0);
         s.text(1, 1000.0, "DE K9AY K9AY K DE N1MM N1MM K DE DJ5NN DJ5NN K TU FN5NN FN5NN K ", 0.0);
         s.search.advance(30.0);
@@ -1074,6 +1084,7 @@ TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnly) {
     auto known = std::make_shared<KnownCalls>();
     for (const char* call : {"K9AY", "N1MM", "DJ5NN"}) known->add(call);
     EXPECT_EQ(run(known), (std::vector<std::string>{"DJ5NN", "K9AY", "N1MM"}));
+    EXPECT_EQ(run(nullptr, 2.0), (std::vector<std::string>{"DJ5NN", "FN5NN", "K9AY", "N1MM"}));
     const auto r = readings("DE K9AY K");
     const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "K9AY"; });
     ASSERT_NE(it, r.end());
@@ -1215,11 +1226,16 @@ TEST(CallSearch, TracksAreReadInTheOrderOfTheirIds) {
 }
 
 TEST(CallSearch, ItWorksWithoutAList) {
-    Stage s;
-    s.born(1, 1000.0);
-    s.text(1, 1000.0, "DE TM100TF DE TM100TF ", 0.0);
-    s.search.advance(30.0);
-    EXPECT_TRUE(s.search.calls().empty());
+    // A special form signed and read twice: from a list only (special_form 1) nothing; on its bar (the default) it is reported.
+    CallSearchConfig listed_only;
+    listed_only.special_form = 1.0;
+    for (const bool bar : {false, true}) {
+        Stage s(bar ? CallSearchConfig{} : listed_only);
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE TM100TF DE TM100TF ", 0.0);
+        s.search.advance(30.0);
+        EXPECT_EQ(s.search.calls().empty(), !bar);
+    }
 }
 
 TEST(CallSearch, ABetterRivalOutweighsAKnownCallOnlyByFar) {
@@ -1760,9 +1776,9 @@ TEST(JoinedWords, AGarbledMiddleCopyIsReadAsTheShorterCallRepeated) {
 
 // ---- Call forms (branch call-form-1)
 
-TEST(CallForms, AnUnusualFormIsReportedFromAListOnly) {
-    // Four letters after the digit (EE4EEEE, TE7TTTD, VK3FABC): CW Skimmer's unusual pattern, from a list only by default, as a
-    // special form is; with unusual_listed_only 0 it is any call.
+TEST(CallForms, AnUnusualFormIsReportedFromAListOnlyAtOne) {
+    // Four letters after the digit (EE4EEEE, TE7TTTD, VK3FABC): CW Skimmer's unusual pattern, with unusual_form 1 (the default
+    // before calls-list-1) from a list only; with 0 it is any call; on its bar (2, the default), signed, as any call too.
     const auto run = [](CallSearchConfig config, std::shared_ptr<const KnownCalls> known, const std::string& call) {
         Stage s(config, std::move(known));
         s.born(1, 1000.0);
@@ -1771,16 +1787,19 @@ TEST(CallForms, AnUnusualFormIsReportedFromAListOnly) {
         s.search.advance(60.0);
         return s.row(call) != nullptr;
     };
-    EXPECT_EQ(CallSearchConfig{}.unusual_listed_only, 1.0);
-    EXPECT_FALSE(run(CallSearchConfig{}, nullptr, "VK3FABC"));
-    EXPECT_FALSE(run(CallSearchConfig{}, nullptr, "TE7TTTD"));
-    EXPECT_TRUE(run(CallSearchConfig{}, nullptr, "VK3FAB"));
+    EXPECT_EQ(CallSearchConfig{}.unusual_form, 2.0);
+    CallSearchConfig listed_only;
+    listed_only.unusual_form = 1.0;
+    EXPECT_FALSE(run(listed_only, nullptr, "VK3FABC"));
+    EXPECT_FALSE(run(listed_only, nullptr, "TE7TTTD"));
+    EXPECT_TRUE(run(listed_only, nullptr, "VK3FAB"));
     auto known = std::make_shared<KnownCalls>();
     known->add("VK3FABC");
-    EXPECT_TRUE(run(CallSearchConfig{}, known, "VK3FABC"));
+    EXPECT_TRUE(run(listed_only, known, "VK3FABC"));
     CallSearchConfig off;
-    off.unusual_listed_only = 0.0;
+    off.unusual_form = 0.0;
     EXPECT_TRUE(run(off, nullptr, "VK3FABC"));
+    EXPECT_TRUE(run(CallSearchConfig{}, nullptr, "VK3FABC"));
     // The readings carry the mark.
     const auto r = readings("DE VK3FABC K");
     const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "VK3FABC"; });
@@ -2196,6 +2215,227 @@ TEST(CallSearch, TheOneByOnesBarAppliesOnWithdrawal) {
             EXPECT_EQ(s.search.withdrawn(), 0u);
         }
     }
+}
+
+// ---- The bars of the forms once from a list only (branch calls-list-1)
+
+namespace {
+
+// One form's bar: the call read bare `bare` times (20 s apart, one place), after a CQ that signs it when `signed_first`.
+bool form_reported(const CallSearchConfig& config, std::shared_ptr<const KnownCalls> known, const std::string& call, int bare,
+                   bool signed_first) {
+    Stage s(config, std::move(known));
+    s.born(1, 1000.0);
+    double t = 0.0;
+    if (signed_first) {
+        s.text(1, 1000.0, "CQ " + call + " ", t);
+        t += 20.0;
+    }
+    for (int i = 0; i < bare; ++i, t += 20.0) s.text(1, 1000.0, call + " ", t);
+    s.search.advance(t + 30.0);
+    return s.row(call) != nullptr;
+}
+
+struct FormCase {
+    const char* call;
+    double CallSearchConfig::*form;
+    double CallSearchConfig::*points;
+    double CallSearchConfig::*points_signed;
+};
+
+const FormCase kFormCases[] = {
+    {"VK3FABC", &CallSearchConfig::unusual_form, &CallSearchConfig::unusual_points, &CallSearchConfig::unusual_points_signed},
+    {"C6AGU", &CallSearchConfig::prefix_digit_form, &CallSearchConfig::prefix_digit_points, &CallSearchConfig::prefix_digit_points_signed},
+    {"N1MM", &CallSearchConfig::cw_word_form, &CallSearchConfig::cw_word_points, &CallSearchConfig::cw_word_points_signed},
+    {"TM100TF", &CallSearchConfig::special_form, &CallSearchConfig::special_points, &CallSearchConfig::special_points_signed},
+};
+
+}  // namespace
+
+// Unlisted and bare, each form needs its *_points: one reading fewer is not enough, that many are (the owner's ruling, 2026-11-21:
+// several repeats, no signature required).
+TEST(FormBars, UnsignedBelowTheBarIsNotReportedAtTheBarItIs) {
+    for (const FormCase& f : kFormCases) {
+        const CallSearchConfig defaults;
+        ASSERT_EQ(defaults.*f.form, 2.0) << f.call;
+        const int bar = static_cast<int>(defaults.*f.points);
+        ASSERT_GT(bar, 2) << f.call;
+        EXPECT_FALSE(form_reported(defaults, nullptr, f.call, bar - 1, false)) << f.call;
+        EXPECT_TRUE(form_reported(defaults, nullptr, f.call, bar, false)) << f.call;
+    }
+}
+
+// One counted signed reading lowers the bar to *_points_signed: a CQ and one bare repeat (2 points) are enough; the CQ alone is not.
+TEST(FormBars, ASignedReadingLowersTheBar) {
+    for (const FormCase& f : kFormCases) {
+        const CallSearchConfig defaults;
+        ASSERT_EQ(defaults.*f.points_signed, 2.0) << f.call;
+        EXPECT_FALSE(form_reported(defaults, nullptr, f.call, 0, true)) << f.call;
+        EXPECT_TRUE(form_reported(defaults, nullptr, f.call, 1, true)) << f.call;
+        // And the bar is the setting: at 3, a CQ and one repeat are not enough.
+        CallSearchConfig higher;
+        higher.*f.points_signed = 3.0;
+        EXPECT_FALSE(form_reported(higher, nullptr, f.call, 1, true)) << f.call;
+        EXPECT_TRUE(form_reported(higher, nullptr, f.call, 2, true)) << f.call;
+    }
+}
+
+// Listed, a form needs only what any listed call needs (points_known_bare, 2, bare); from a list only (1) it is never reported
+// unlisted however often it is read; as any call (0), two bare readings are enough.
+TEST(FormBars, TheListsLowerBarListOnlyAndAnyCall) {
+    for (const FormCase& f : kFormCases) {
+        const CallSearchConfig defaults;
+        const int bar = static_cast<int>(defaults.*f.points);
+        auto known = std::make_shared<KnownCalls>();
+        known->add(f.call);
+        EXPECT_TRUE(form_reported(defaults, known, f.call, 2, false)) << f.call;
+        CallSearchConfig listed_only;
+        listed_only.*f.form = 1.0;
+        EXPECT_FALSE(form_reported(listed_only, nullptr, f.call, bar + 2, true)) << f.call;
+        EXPECT_TRUE(form_reported(listed_only, known, f.call, 2, false)) << f.call;
+        CallSearchConfig any;
+        any.*f.form = 0.0;
+        EXPECT_TRUE(form_reported(any, nullptr, f.call, 2, false)) << f.call;
+    }
+}
+
+// A form set to a list only and held from before the list was taken away is not reported unlisted.
+TEST(FormBars, AListOnlyFormHeldWhenTheListGoesIsNotReported) {
+    auto known = std::make_shared<KnownCalls>();
+    known->add("C6AGU");
+    CallSearchConfig config;
+    config.prefix_digit_form = 1.0;
+    Stage s(config, known);
+    s.born(1, 1000.0);
+    s.text(1, 1000.0, "C6AGU ", 0.0);
+    s.search.advance(30.0);
+    s.search.set_known(nullptr);
+    s.text(1, 1000.0, "C6AGU ", 40.0);
+    s.search.advance(80.0);
+    EXPECT_EQ(s.row("C6AGU"), nullptr);
+}
+
+// Unlisted, such a form counts only whole and glued words (form_whole_words 1): a special form read joined (TM1 00TF, as the joined
+// pieces of grid squares and serial numbers make them) is never a candidate however often; whole, the same call passes its bar.
+// Listed, or with form_whole_words 0, joined readings count.
+TEST(FormBars, JoinedReadingsOfAFormWithItsOwnBarDoNotCountUnlisted) {
+    const auto reported = [](CallSearchConfig config, std::shared_ptr<const KnownCalls> known, const std::string& text, int times) {
+        Stage s(config, std::move(known));
+        s.born(1, 1000.0);
+        for (int i = 0; i < times; ++i) s.text(1, 1000.0, text + " ", 20.0 * i);
+        s.search.advance(20.0 * times + 30.0);
+        return s.row("TM100TF") != nullptr;
+    };
+    const CallSearchConfig defaults;
+    ASSERT_EQ(defaults.form_whole_words, 1.0);
+    const int many = static_cast<int>(defaults.special_points) + 3;
+    EXPECT_FALSE(reported(defaults, nullptr, "TM1 00TF", many));
+    EXPECT_TRUE(reported(defaults, nullptr, "TM100TF", static_cast<int>(defaults.special_points)));
+    CallSearchConfig every;
+    every.form_whole_words = 0.0;
+    EXPECT_TRUE(reported(every, nullptr, "TM1 00TF", many));
+    auto known = std::make_shared<KnownCalls>();
+    known->add("TM100TF");
+    EXPECT_TRUE(reported(defaults, known, "TM1 00TF", 3));
+}
+
+// A keyword run onto 5NN (UR5NN, TU5NN), unlisted, needs a counted signed reading (keyword_report_signed): a runner's UR 5NN read
+// as one word in every exchange is not reported however often; signed (DE UR5NN K) it passes the CW word's signed bar. Another word
+// of CW (DJ5NN) is not affected, and with the setting at 0 the bar alone decides.
+TEST(FormBars, AKeywordRunOntoTheReportNeedsASignedReading) {
+    const auto reported = [](CallSearchConfig config, const std::string& call, int bare, bool signed_first) {
+        return form_reported(config, nullptr, call, bare, signed_first);
+    };
+    const CallSearchConfig defaults;
+    ASSERT_EQ(defaults.keyword_report_signed, 1.0);
+    const int bar = static_cast<int>(defaults.cw_word_points);
+    for (const char* call : {"UR5NN", "TU5NN"}) {
+        EXPECT_FALSE(reported(defaults, call, bar + 5, false)) << call;
+        EXPECT_TRUE(reported(defaults, call, 1, true)) << call;
+    }
+    EXPECT_TRUE(reported(defaults, "DJ5NN", bar, false));
+    CallSearchConfig off;
+    off.keyword_report_signed = 0.0;
+    EXPECT_TRUE(reported(off, "UR5NN", bar, false));
+}
+
+// Against a variant an unlisted call of such a form weighs points_bare / its bar (2 / 8; form_rival_weight 1): E7R (a prefix-digit
+// form) read six times bare does not hold EE7R, read three times at the same place, and EE7R is reported; at 0 E7R holds it and,
+// short of its own bar, is not reported either: the 2026-11-18 CWT's case, where E7R took EE7R's row.
+TEST(FormBars, AFormWithItsOwnBarWeighsLessAgainstAVariant) {
+    const auto run = [](double weight) {
+        CallSearchConfig config;
+        config.form_rival_weight = weight;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        for (int i = 0; i < 6; ++i) s->text(1, 1000.0, "E7R ", 20.0 * i);
+        for (int i = 0; i < 3; ++i) s->text(1, 1000.0, "EE7R ", 130.0 + 20.0 * i);
+        s->search.advance(250.0);
+        return s;
+    };
+    ASSERT_EQ(CallSearchConfig{}.form_rival_weight, 1.0);
+    const auto weighted = run(1.0);
+    EXPECT_NE(weighted->row("EE7R"), nullptr);
+    EXPECT_EQ(weighted->row("E7R"), nullptr);
+    const auto flat = run(0.0);
+    EXPECT_EQ(flat->row("EE7R"), nullptr);
+    EXPECT_EQ(flat->row("E7R"), nullptr);
+}
+
+TEST(FormBars, TheDefaults) {
+    const CallSearchConfig d;
+    for (const FormCase& f : kFormCases) {
+        EXPECT_EQ(d.*f.form, 2.0) << f.call;
+        EXPECT_EQ(d.*f.points_signed, 2.0) << f.call;
+    }
+    EXPECT_EQ(d.unusual_points, 8.0);
+    EXPECT_EQ(d.prefix_digit_points, 8.0);
+    EXPECT_EQ(d.cw_word_points, 8.0);
+    EXPECT_EQ(d.special_points, 8.0);
+    EXPECT_EQ(d.form_whole_words, 1.0);
+    EXPECT_EQ(d.keyword_report_signed, 1.0);
+    EXPECT_EQ(d.form_rival_weight, 1.0);
+}
+
+// ---- <BK>, the abbreviation BK run together (branch calls-list-1)
+
+// The decoder's <BK> is the word BK: words_of gives BK, and a call beside it reads as beside BK, with the same role.
+TEST(BkAsAKeyword, TheProsignBkIsTheWordBk) {
+    const std::vector<DecodedSymbol> s = symbols("DE N1MM <BK> <AR>");
+    const std::vector<Word> w = words_of(s);
+    ASSERT_EQ(w.size(), 4u);
+    EXPECT_EQ(w[2].text, "BK");
+    EXPECT_EQ(w[3].text, "<AR>");  // the other prosigns stay prosigns
+    const auto same = [](const std::string& a, const std::string& b) {
+        const auto x = readings(a), y = readings(b);
+        if (x.size() != y.size()) return false;
+        for (std::size_t i = 0; i < x.size(); ++i)
+            if (x[i].base != y[i].base || x[i].role != y[i].role || x[i].reading != y[i].reading) return false;
+        return true;
+    };
+    EXPECT_TRUE(same("DE N1MM <BK>", "DE N1MM BK"));
+    EXPECT_TRUE(same("N1MM <BK>", "N1MM BK"));
+    EXPECT_TRUE(same("K1ABC DE W1AW <BK>", "K1ABC DE W1AW BK"));
+    EXPECT_TRUE(has(readings("DE N1MM <BK>"), "N1MM", Role::Sender));
+    EXPECT_TRUE(has(readings("N1MM <BK>"), "N1MM", Role::Unknown));
+}
+
+// The stage: N1MM signed and sent with <BK> twice is reported exactly as with BK (the cw_word bar, signed: 2 points).
+TEST(BkAsAKeyword, TheStageReadsBkAndItsProsignAlike) {
+    const auto rows = [](const std::string& bk) {
+        Stage s;
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, "DE N1MM " + bk + " ", 0.0);
+        s.text(1, 1000.0, "N1MM " + bk + " ", 20.0);
+        s.search.advance(60.0);
+        std::vector<std::tuple<std::string, std::uint32_t, double, bool>> out;
+        for (const CallRow& r : s.search.calls()) out.emplace_back(r.base, r.count, r.points, r.framed);
+        return out;
+    };
+    const auto with_prosign = rows("<BK>");
+    ASSERT_EQ(with_prosign.size(), 1u);
+    EXPECT_EQ(std::get<0>(with_prosign[0]), "N1MM");
+    EXPECT_EQ(with_prosign, rows("BK"));
 }
 
 TEST(CallSearch, TheShortCallDefaults) {

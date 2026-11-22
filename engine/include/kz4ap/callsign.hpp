@@ -36,14 +36,17 @@ bool allocated_pair(char first, char second);
 struct ParsedCall {
     std::string base;     // the station's own call: K1ABC for K1ABC/P, DL/K1ABC and K1ABC/DL
     std::string full;     // as read, with what is around the slash
-    bool special = false;  // two or more digits after the prefix (W100AW, TM100TF): a special-event form, spotted from a list only
+    // Two or more digits after the prefix (W100AW, TM100TF): a special-event form; unlisted, it needs its own bar
+    // (CallSearchConfig::special_form).
+    bool special = false;
     // Four letters after its one digit (VK3FABC, 8N3ACAF): a form RR 19.68 allows but few administrations issue, CW Skimmer's
-    // "unusual pattern"; by default spotted from a list only (CallSearchConfig::unusual_listed_only).
+    // "unusual pattern"; unlisted, it needs its own bar (CallSearchConfig::unusual_form).
     bool unusual = false;
     // No digit but the prefix's (C6AGU, E7DX, J6M, P3X): a letter-digit prefix whose digit is the call's, as administrations issue
-    // outside the letter of RR 19.68; by default spotted from a list only (CallSearchConfig::prefix_digit_listed_only).
+    // outside the letter of RR 19.68; unlisted, it needs its own bar (CallSearchConfig::prefix_digit_form).
     bool prefix_digit = false;
-    // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN): spotted from a list only, always.
+    // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN); unlisted, it needs its own bar
+    // (CallSearchConfig::cw_word_form).
     bool cw_word = false;
     // Around a slash, the other side when it too could be the base (K1A/W1AW: W1AW): the stage takes it when it alone is listed.
     std::string other_base;
@@ -62,7 +65,8 @@ std::optional<ParsedCall> parse_call(std::string_view word);
 std::optional<ParsedCall> parse_form(std::string_view word);
 // A word with a call's form that in CW text is mostly something else: rigs, antennas, software (N1MM, K9AY, G5RV), exact; and any
 // one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN, W5NN), the contest report run onto a word. Real calls among them (K9AY,
-// N1MM, K5NN, DJ5NN, W5NN are issued) are spotted from a known-call list only. A heuristic (manta's practice of exact matches).
+// N1MM, K5NN, DJ5NN, W5NN are issued) need more readings when unlisted (CallSearchConfig::cw_word_form). A heuristic (manta's
+// practice of exact matches).
 bool is_cw_word(std::string_view base);
 // A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
 // such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
@@ -86,14 +90,16 @@ int edit_distance(std::string_view a, std::string_view b, int limit);
 // ---- Reading a text
 
 struct Word {
-    std::string text;      // upper case, no spaces; a prosign is its own word, "<BT>"
+    std::string text;      // upper case, no spaces; a prosign is its own word, "<BT>"; <BK> is the word BK (words_of)
     double start_s = 0;    // s, stream time
     double end_s = 0;      // s, stream time
     std::size_t first = 0;  // the index of its first symbol among those given to words_of
     std::size_t last = 0;   // and of the one after its last; a word's characters are these symbols, one each, in order
 };
 
-// The words of a list of symbols. A word space, a prosign and any punctuation but the slash end a word.
+// The words of a list of symbols. A word space, a prosign and any punctuation but the slash end a word. A prosign is its own word,
+// but <BK> (-...-.-, B and K run together) is the word BK, the abbreviation, as if its letters had been sent apart: the owner's
+// reading (2026-11-21, "I don't really consider bk a prosign, it is an abbreviation").
 std::vector<Word> words_of(std::span<const DecodedSymbol> symbols);
 // As words_of; with skip_heard, a symbol heard from a neighbor (DecodedSymbol::heard_from) ends a word and belongs to none.
 std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, bool skip_heard);
@@ -350,17 +356,50 @@ struct CallSearchConfig {
     // 1, the default.
     double segment_alternatives = 1.0;
     SegmentationCosts segmentation;
-    // A call of four letters after its digit (ParsedCall::unusual) is reported only from a list, as a special form is, when not 0.
-    // CW Skimmer's practice in kind (an unusual pattern needs more: 5 repeats at its Normal level, against 2 or 3; RBN 2021); list
-    // only is a choice. Heuristic, chosen by measurement (call-form-1; appendix A.12): of the base calls three or more RBN
-    // skimmers spotted on 2026-11-17, 11 of 4 366 (0.25%) have this form, most of them busts (SD6MCWT, IK4EATX, W0RAUW), while on
-    // the seven 2026-11-17 recordings all 8 such calls the stage reported were false (EE4EEEE, TE7TTTD, GA5NNON).
-    double unusual_listed_only = 1.0;
-    // A call whose only digit is its prefix's (ParsedCall::prefix_digit: C6AGU, E7DX) is reported only from a list, when not 0.
-    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, DJ5NN) is always, and a special form too. Heuristic, chosen
-    // by measurement (call-form-2; appendix A.12): as any call, the form added only junk on the three replay sets (E5E, T5E, A9E;
-    // 2026-11-17 misread 85 to 115, no confirmed call gained), though the RBN spots real ones (C8K, E6DX, T2DE).
-    double prefix_digit_listed_only = 1.0;
+    // The call forms that need more than any call when unlisted, each by its setting: 2, the default, it needs *_points_signed when
+    // some occurrence counted had the role Sender, else *_points, as the 1x1's bar works (short_points); 1, it is reported from a
+    // known-call list only (the rule before calls-list-1); 0, as any call. A listed call needs only what any listed call needs. The
+    // owner's ruling (2026-11-21): without the list no real form may be excluded outright ("poor N1MM would never be spotted when he
+    // chooses to operate"), several repeats should be enough, a signature not required, fewer repeats if signed. The bars are
+    // heuristics, chosen by measurement (calls-list-1; appendix A.12); a call of two such forms needs the higher bar. The bare bar,
+    // 8 for each form: with form_whole_words and form_rival_weight, the lowest of 3, 5, 6 and 8 that on the three replay sets lost no
+    // window-confirmed call and no other call to a variant (at 5 and 6 E7R, read 13 times whole, took EE7R's row on the 2026-11-18
+    // CWT) and added the fewest misread or unknown calls (2026-11-17 misread 73 to 77, 2017 52 to 53, 2026-11-18 239 to 241).
+    //
+    // Four letters after the digit (ParsedCall::unusual: VK3FABC, EE4EEEE). CW Skimmer's practice in kind (an unusual pattern needs
+    // 5 repeats at its Normal level, against 2 or 3; RBN 2021). Measured (call-form-1): of the base calls three or more RBN skimmers
+    // spotted on 2026-11-17, 11 of 4 366 (0.25%) have this form, most of them busts (SD6MCWT, IK4EATX, W0RAUW), while on the seven
+    // 2026-11-17 recordings all 8 such calls the stage reported as any call were false (EE4EEEE, TE7TTTD, GA5NNON).
+    double unusual_form = 2.0;
+    double unusual_points = 8.0;
+    double unusual_points_signed = 2.0;
+    // Its only digit its prefix's (ParsedCall::prefix_digit: C6AGU, E7DX, D4C). Measured (call-form-2): as any call, the form added
+    // only junk on the three replay sets (E5E, T5E, A9E; 2026-11-17 misread 85 to 115, no confirmed call gained), though the RBN
+    // spots real ones (C8K, E6DX, T2DE).
+    double prefix_digit_form = 2.0;
+    double prefix_digit_points = 8.0;
+    double prefix_digit_points_signed = 2.0;
+    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, G5RV, R5NN, DJ5NN): read in text about rigs, antennas and
+    // software, or a report glued to a word, far more often than sent as a call.
+    double cw_word_form = 2.0;
+    double cw_word_points = 8.0;
+    double cw_word_points_signed = 2.0;
+    // Two or more digits after the prefix (ParsedCall::special: W100AW, TM100TF, II0IARU), a special-event form.
+    double special_form = 2.0;
+    double special_points = 8.0;
+    double special_points_signed = 2.0;
+    // Which readings of those four forms reach a candidate, unlisted: 1, the default, whole words and glued ones only (a joined or
+    // stripped reading is dropped, as a tiny call's is); 0, every reading. Joined pieces of grid squares (CM 96AX), of serial numbers
+    // and of fragments (A 9E, E 7L) make these forms far more often than a station does.
+    double form_whole_words = 1.0;
+    // A word of CW that is a keyword run onto 5NN (R5NN, TU5NN, UR5NN, K5NN: is_keyword_report), unlisted, needs a counted signed
+    // reading, when not 0: a runner's UR 5NN or TU 5NN read as one word in every exchange passes any bar of repeats.
+    double keyword_report_signed = 1.0;
+    // In the arbitration between near variants, an unlisted call of those four forms counts its points times points_bare over its
+    // form's bare bar (2 / 8 = 0.25 at the defaults), when not 0: a form that needs k times the evidence to be reported needs k times
+    // it to hold a rival back, as a listed call weighs known_rival_factor times. Without it, E7R (read 8 times or more) took EE7R's
+    // row and E5EB, never reported, held G5EB on the 2026-11-18 CWT. Heuristic (calls-list-1; appendix A.12).
+    double form_rival_weight = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
     // ReadOptions::x_as_tu; on since call-arb-1: on the 2026-11-18 CWT W3RJ (116 RBN skimmers) was withdrawn for XW3RJ (2), its
@@ -437,7 +476,8 @@ public:
     explicit CallSearch(CallSearchConfig config = {}, std::shared_ptr<const KnownCalls> known = nullptr);
 
     // A new known-call list, or none, from now on: every call held is marked listed or not by it (its rows too), and is judged so at its
-    // next reading. What has been reported stays until a reading takes it back; a special form refused before is not read again.
+    // next reading. What has been reported stays until a reading takes it back; a reading of a form from a list only (a
+    // form's setting at 1, CallSearchConfig::unusual_form and the like) refused before is not read again.
     void set_known(std::shared_ptr<const KnownCalls> known);
     const std::shared_ptr<const KnownCalls>& known() const { return known_; }
 
@@ -491,6 +531,11 @@ private:
         bool heard = false;
         bool framed = false;
         bool covers = false;  // some occurrence covers a fragment (Occurrence::covers)
+        // Its form's marks (ParsedCall): the forms with their own bar when unlisted (CallSearchConfig::unusual_form and the like).
+        bool special = false;
+        bool unusual = false;
+        bool prefix_digit = false;
+        bool cw_word = false;
     };
     struct TrackText {
         std::vector<DecodedSymbol> symbols;  // kept: from the context before what has been read
@@ -517,6 +562,11 @@ private:
     // CallRow::heard_s for this candidate.
     double heard_at_place_s(const Candidate& candidate) const;
     bool passes(const Candidate& candidate, const Support& s) const;
+    // Whether a call of these marks is reported from a known-call list only (a form's setting at 1, CallSearchConfig::unusual_form
+    // and the like).
+    bool listed_only(std::string_view base, bool special, bool unusual, bool prefix_digit, bool cw_word) const;
+    // The factor on an unlisted call's points in the arbitration for the form's bar (CallSearchConfig::form_rival_weight); 1 else.
+    double rival_weight(const Candidate& candidate) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);

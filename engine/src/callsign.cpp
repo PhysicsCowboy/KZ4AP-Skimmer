@@ -130,6 +130,11 @@ bool is_keyword(std::string_view w) {
 
 bool is_prosign(std::string_view w) { return !w.empty() && w[0] == '<'; }
 
+// A keyword run onto the contest report: R5NN, TU5NN, UR5NN, K5NN (CallSearchConfig::keyword_report_signed).
+bool is_keyword_report(std::string_view base) {
+    return base.size() > 3 && base.ends_with("5NN") && is_keyword(base.substr(0, base.size() - 3));
+}
+
 // A base call up to and with its last digit: K1 of K1ABC, VE3 of VE3XYZ, 3DA0 of 3DA0RU.
 std::string_view call_area(std::string_view base) {
     std::size_t d = base.size();
@@ -630,7 +635,7 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, std::span<con
         if (t.size() > 1 && t[0] == '<') {
             flush();
             Word w;
-            w.text = t;
+            w.text = t == "<BK>" ? std::string("BK") : t;  // the abbreviation BK run together: the word BK (Word::text)
             w.start_s = s.start_s;
             w.end_s = s.end_s;
             w.first = i;
@@ -1074,12 +1079,13 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
         }
     }
     if (reading_log_) reading_log_(r, freq_hz);
-    // A special form and a word of CW, and by default an unusual one (four letters after the digit) and one whose only digit is its
-    // prefix's, from a list only.
-    const bool listed_only = r.special || r.cw_word || (r.unusual && config_.unusual_listed_only != 0.0) ||
-                             (r.prefix_digit && config_.prefix_digit_listed_only != 0.0) ||
-                             (config_.cut_number_form == 1.0 && is_cut_number_form(r.base));
-    if (listed_only && !(known_ && known_->contains(r.base))) return;
+    // A form set to be reported from a list only (CallSearchConfig::unusual_form and the like at 1) is not held unlisted.
+    const bool listed = known_ && known_->contains(r.base);
+    if (listed_only(r.base, r.special, r.unusual, r.prefix_digit, r.cw_word) && !listed) return;
+    // A form with its own bar, unlisted, from whole and glued words only (CallSearchConfig::form_whole_words).
+    const bool own_bar = (r.special && config_.special_form == 2.0) || (r.unusual && config_.unusual_form == 2.0) ||
+                         (r.prefix_digit && config_.prefix_digit_form == 2.0) || (r.cw_word && config_.cw_word_form == 2.0);
+    if (own_bar && !listed && config_.form_whole_words != 0.0 && r.reading != Reading::Whole && r.reading != Reading::Glued) return;
     if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;
@@ -1089,6 +1095,10 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
         c.known = known_ && known_->contains(r.base);
         c.first_s = r.start_s;
     }
+    c.special = c.special || r.special;
+    c.unusual = c.unusual || r.unusual;
+    c.prefix_digit = c.prefix_digit || r.prefix_digit;
+    c.cw_word = c.cw_word || r.cw_word;
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
     const bool word = r.reading == Reading::Whole || r.reading == Reading::Glued;
     const double points = word ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
@@ -1162,14 +1172,43 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
     return s;
 }
 
+bool CallSearch::listed_only(std::string_view base, bool special, bool unusual, bool prefix_digit, bool cw_word) const {
+    return (special && config_.special_form == 1.0) || (unusual && config_.unusual_form == 1.0) ||
+           (prefix_digit && config_.prefix_digit_form == 1.0) || (cw_word && config_.cw_word_form == 1.0) ||
+           (config_.cut_number_form == 1.0 && is_cut_number_form(base));
+}
+
+double CallSearch::rival_weight(const Candidate& c) const {
+    if (c.known || config_.form_rival_weight == 0.0) return 1.0;
+    double bar = 0.0;
+    if (c.unusual && config_.unusual_form == 2.0) bar = std::max(bar, config_.unusual_points);
+    if (c.prefix_digit && config_.prefix_digit_form == 2.0) bar = std::max(bar, config_.prefix_digit_points);
+    if (c.cw_word && config_.cw_word_form == 2.0) bar = std::max(bar, config_.cw_word_points);
+    if (c.special && config_.special_form == 2.0) bar = std::max(bar, config_.special_points);
+    return bar > config_.points_bare && config_.points_bare > 0.0 ? config_.points_bare / bar : 1.0;
+}
+
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
-    // An unlisted call of three characters, or of a number's shape in cut digits, needs at least this, fewer points when an occurrence
-    // counted signed, whatever else it passes on (CallSearchConfig::short_points, cut_number_points).
+    // An unlisted call of three characters, of a number's shape in cut digits, or of a form with its own bar (four letters after the
+    // digit, its only digit the prefix's, a word of CW, a special form) needs at least this, fewer points when an occurrence counted
+    // signed, whatever else it passes on; of two such forms, the higher bar (CallSearchConfig::short_points, unusual_form and the
+    // like). A form set to a list only is never reported unlisted (held from before a list was taken away, set_known).
     double need = 0.0;
-    if (!c.known && is_short_call(c.base)) need = s.sender ? config_.short_points_signed : config_.short_points;
-    else if (!c.known && config_.cut_number_form == 2.0 && is_cut_number_form(c.base))
-        need = s.sender ? config_.cut_number_points_signed : config_.cut_number_points;
+    if (!c.known) {
+        if (listed_only(c.base, c.special, c.unusual, c.prefix_digit, c.cw_word)) return false;
+        const auto bar = [&](bool applies, double form, double bare, double signed_points) {
+            if (applies && form == 2.0) need = std::max(need, s.sender ? signed_points : bare);
+        };
+        bar(is_short_call(c.base), 2.0, config_.short_points, config_.short_points_signed);
+        bar(is_cut_number_form(c.base), config_.cut_number_form, config_.cut_number_points, config_.cut_number_points_signed);
+        bar(c.unusual, config_.unusual_form, config_.unusual_points, config_.unusual_points_signed);
+        bar(c.prefix_digit, config_.prefix_digit_form, config_.prefix_digit_points, config_.prefix_digit_points_signed);
+        bar(c.cw_word, config_.cw_word_form, config_.cw_word_points, config_.cw_word_points_signed);
+        bar(c.special, config_.special_form, config_.special_points, config_.special_points_signed);
+        if (c.cw_word && config_.cw_word_form == 2.0 && config_.keyword_report_signed != 0.0 && !s.sender && is_keyword_report(c.base))
+            return false;
+    }
     if (points < need) return false;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
     if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
@@ -1266,6 +1305,9 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
                 }
             }
         }
+        // An unlisted call of a form with its own bar weighs less (CallSearchConfig::form_rival_weight).
+        mine_vs *= rival_weight(c);
+        theirs_vs *= rival_weight(other);
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
         // A listed call's points count known_rival_factor times against an unlisted call's, but for its flat ones (flat_stripped).
