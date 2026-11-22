@@ -755,6 +755,24 @@ section 4.3.1.
 
 ### Fast fading with an echo: the owner's "auroral" clips (found 2026-11-21, `text-level-1`; the owner's top plain-text priority)
 
+**Status 2026-11-22 (`text-tail-2`):** the clips are now scored on the clip's span (a decoded character counts if the midpoint of
+its start and end lies within the owner's clip, 1049 to 1080 s and 879 to 910 s of the recording; the copy aligned globally), since
+the 38 s cut runs 1 s past the clip and the whole track 0.5 s past. An error breakdown found 37 of 107 edits past the copy's end, 31
+of them a defect (the over's end at the stream's end read the tail of a flush sample, none: a row of one-sample E's), now fixed. The
+tail's power is now absolute, as the clips show it (0.06 to 0.24 dB per dB of the mark's power), but its station's: g M̄, M̄ the
+recent runs' power over 20 runs, at most 6 dB above each level of the belief, since with the stream's M̄ alone a weaker station after
+a strong one, or callers between a run station's turns, read as rows of E's (the review's channels, now tests). On the span,
+no-space CER: cut to 38 s 0.284 and 0.156 (main) to 0.159 and 0.104; whole tracks 0.239 and 0.156 to 0.148 and 0.078; DeepCW 0.398
+and 0.338; the same recording's held-out 35 WPM passage (833 to 873 s, 911 to 1 043 s) 0.199 to 0.108, its 12 WPM preamble 0.050 to
+0.050. Without the bound the clips read 0.102, 0.078, 0.080, 0.026 and the held-out passage 0.079: the 6 dB bound costs the deep
+fades (gaps at −5 dB re the mark before or more joined 21 of 80 on main, 14 now, 5 unbounded; dits read as dahs behind a tail at −10
+dB re the dit or more 26 of 203, 10, 0). Open: a bound that tells a fade from another station (by time: a fade lasts under about
+0.2 s at f_D 3 Hz or more, a station's turn seconds), so the deep fades keep the tail; a first shape from fewer runs (20 or 15 read
+the cuts' first seconds better but lost a window-confirmed call, WD2E, at 20); the tail in the level filter and in the next rise's
+window; a tail that changes within a track; more of the owner's clips; W1AW's published texts as a cleaner held-out set. The
+synthetic tail set (synth-tail-1's generator, a stress set) reads 0.30, 0.27, 0.35, 0.41 by f_D cell (main 0.39, 0.37, 0.68, 1.47;
+the top cell asked 21 to 42 Hz, the generator realizing about 18 to 25 Hz).
+
 **Status 2026-11-21 (`text-fast-1`):** both causes modeled, by default. The clips' decorrelation is mostly the tail: kz4ap-fading's
 ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mark's end into another path's tail give, and the decoder's
 estimator, inside the marks only, reads f_D about 4.6 Hz, not 9 to 10 Hz; the tail itself is incoherent with the mark (coherence 0.94

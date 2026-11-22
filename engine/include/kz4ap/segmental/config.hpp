@@ -141,7 +141,10 @@ struct SegmentalConfig {
     double echo_min_db = 20.0;
     // s: the shortest run read. Heuristic: a dot at 37 WPM.
     double echo_min_run_s = 0.032;
-    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used. Heuristics.
+    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used (30: the 33rd strong run,
+    // about 6 to 8 s at 35 WPM). Heuristics. Fewer were tried (text-tail-2): 20 and 15 read the owner's clips cut to 38 s better
+    // (0.080 and 0.065, 0.068 and 0.065, against 0.102 and 0.078) but lost a window-confirmed call (WD2E, 20 m 2026-11-17) at 20 and
+    // read DEV2's E2 +0.0010 at 15, re main.
     double echo_memory_runs = 200.0;
     double echo_min_runs = 30.0;
     // dB re the mark's key-down power: the tail is modeled when its first value stands at least this high, and it ends where it
@@ -149,6 +152,21 @@ struct SegmentalConfig {
     // its last -6 dB sample at f_D 10 Hz (conjecture: 22% of marks, -10 dB for 10 to 20 ms), which must not read as a tail.
     double echo_on_db = -15.0;
     double echo_end_db = -25.0;
+    // 1: the tail's power is absolute, A_q M-bar, A_q the mean tail power after a fall re the mean mark power over the estimator's
+    // memory and M-bar the station's recent mark power, at most echo_level_margin_db above each level the belief holds (text-tail-2);
+    // 0: g_q a^2, re the level the belief holds at the sample (text-fast-1's form). Why: on the owner's clips the tail's power hardly
+    // follows the mark before it (0.06 to 0.24 dB per dB, measured), so a fade of the direct path raises the gap re the mark; but the
+    // tail is its station's, scaling with its transmitter and path, so it must not outlive the station (the review's two channels:
+    // a weaker station after a strong one, callers between a run station's turns). 1 by measurement (text-tail-2).
+    double echo_absolute = 1.0;
+    // runs: the memory of M-bar, the mean of the median power (FS^2) of the runs at echo_level_min_db re the floor or more, exponential
+    // in runs; dB re the level: how far above a level's own a^2 the tail's level may stand. Heuristics by measurement (review of
+    // text-tail-2): 10 dB re the floor (the run threshold) and 20 runs let M-bar follow a weaker station within some runs; a margin
+    // of 6 dB reads the review's channels as the proportional form does, 8 dB does not (a weaker station's text read as E's); 10 runs
+    // lost a window-confirmed call on a replay (WD2E), 30 runs at 6 dB read one of the review's channels as E's.
+    double echo_level_runs = 20.0;
+    double echo_level_min_db = 10.0;
+    double echo_level_margin_db = 6.0;
 
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 
