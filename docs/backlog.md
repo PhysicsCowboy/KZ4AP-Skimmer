@@ -488,7 +488,7 @@ for the new decoder only.
 **Status 2026-11-21 (`text-fast-1`), segmental decoder:** the walk and the frame now follow the Doppler spread the decoder measures
 (from 3 Hz, at +10 dB S500 or more): VE3NEA's conditions at f_D 3 Hz read 0.073, 0.033, 0.023, 0.025, 0.024 (hand) and 0.055, 0.028,
 0.020, 0.019, 0.022 (paddle) at +13.78, +17.78, +27.78, +37.78, +57.78 dB S500, against 0.103 to 0.083 and 0.071 to 0.052 before
-(DeepCW 0.04 and 0.02 at the top); the matched fast-fading set's 7 to 14 Hz and 21 to 42 Hz cells 0.032 to 0.008 and 0.026 to 0.017
+(DeepCW 0.04 and 0.02 at the top); the matched fast-fading set's 7 to 14 Hz and 21 to 42 Hz cells (requested; about 6.8 to 12.4 and 16.7 to 23.9 Hz realized, signal-processing.md A.11, "Fading") 0.032 to 0.008 and 0.026 to 0.017
 from 0.17 and 0.31. Open: under +10 dB S500 the walk stays slow (the fast one cost B2 there); DEV2 has no fast-fading cell above
 +10 dB S500 (the item "Strong fading in the development set" below); the short-fade limit at strong levels is smaller, not gone.
 
@@ -777,10 +777,10 @@ to 28 dB re the noise key-down; the owner copied both nearly completely, and hea
 Measured with `kz4ap-fading` (bench/src/fading_main.cpp; `build/tl-1/clips/`, git-ignored):
 - **Doppler spread.** The complex gain's correlation inside marks, |ρ| at 2.67, 6.67, 13.3, 26.7 ms: 0.983, 0.944, 0.882, 0.785
   (clip03) and 0.985, 0.944, 0.875, 0.749 (clip11); a Gaussian fit gives f_D = 2σ_D = 9.3 and 10.0 Hz. The same tool on our port of
-  VE3NEA's generator reads f_D 3, 10, 30 Hz as 3.6, 9.6, 20.4 Hz (|ρ| at 26.7 ms 0.956, 0.730, 0.237), so the clips' core is about
+  VE3NEA's generator reads f_D 3, 10, 30 Hz requested (3.0, 9.6, about 20.8 Hz realized; A.11, "Fading") as 3.6, 9.6, 20.4 Hz (|ρ| at 26.7 ms 0.956, 0.730, 0.237), so the clips' core is about
   f_D 10 Hz; their faster drop at the shortest lag (0.983 against 0.996) says a few % of the power is spread wider.
 - **Slow fading.** The median key-down level per second, dB re the noise: a spread of 3.4 and 3.6 dB rms and ranges (largest less
-  smallest) of 13.4 and 14.8 dB over 30 s.
+  smallest) of 13.4 and 14.8 dB over 30 s (the 31 s spans the owner copied; over the 38 s cuts 3.9 and 3.6 dB rms).
 - **An echo.** After a mark falls 6 dB, the power stays at −9 to −13 dB re the mark for 20 to 30 ms before reaching the noise
   (−26 to −28 dB re the mark): a delayed copy or a scattered tail, about 10 dB below the mark. A clean synthetic carrier falls to
   the noise within 2.7 ms; at f_D 10 Hz it falls to −16 to −25 dB re the mark. That is what stretches the marks (median 58 to 62 ms against 40.7 ms for a 32 WPM
@@ -808,9 +808,14 @@ speed (120 a seed), and an edge cell for half of them, hard edges (0.8 ms 10-90%
 station's own keying splatter is in the set. Its own signal-seed code (not B2's 2), so that its noise is independent, and its
 own builder entry in `DEV2_BUILDERS` as B3, scored with B2's rules; about a tenth more time per seed. What it would have caught:
 the level grid's defect (a strong station's own keying read as a leak floor moved its level inside marks; hand, f_D 0.1 Hz, +57.78 dB S500), and it holds the fast-fading cases of the item above.
-`text-fast-1` adds a need: f_D cells above 5 Hz (to 40 Hz, as the matched set's) at +10 dB S500 and up, where the Doppler walk acts, and
+`text-fast-1` adds a need: f_D cells above 5 Hz (to 40 Hz, as the matched set's request, which realized only about 24 Hz: such a cell needs `fading_full_rate`, A.11) at +10 dB S500 and up, where the Doppler walk acts, and
 a two-path cell with a diffuse tail 10 to 15 dB under the mark for 20 to 50 ms, where the tail model acts; neither is in DEV2, so its
 whole-set runs show only that both leave the other groups alone.
+The generator's fading rate (review of `synth-tail-1`, 2026-11-22): at its default 50 samples/s a requested f_D above about 5 Hz is
+realized lower (21, 30, 42 Hz as about 16.7, 20.8, 23.9 Hz by coherence time; signal-processing.md A.11, "Fading"), and
+`fading_full_rate` realizes it. No committed set requests more than 5 Hz (DEV2's B2 at most 5 Hz, B and VE3NEA's grid at most 3 Hz),
+so none needs regenerating; a fast-fading cell made for this item, and the scratch matched set (`build/tl-1/fast/`) if it is used
+again for its 7 to 14 Hz and 21 to 42 Hz cells, should be made with `fading_full_rate` on.
 
 ### σ² in steps finer than the level grid's (found 2026-11-21, review of `text-level-1`)
 
