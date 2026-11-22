@@ -542,36 +542,37 @@ with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 `CallSearch` reads any decoder's text; values heuristic unless marked (A.12).
 
-**Words.** Each stream-second it reads text 10 s old and rereads changes up to 200 s back, keeping old
-readings. Words end at a word space, prosign (<BK> reads BK) or punctuation; neighbors' symbols count.
+**Words.** Each second it reads text 10 s old (changes: 200 s back). Words end at a space, prosign
+(<BK> reads BK) or punctuation.
 
-**Readings.** A call's form (RR 19.68; sourced): an allocated prefix of one or two
-characters (three: 3DA0), one digit, one to four letters (US: one to three), or a letter-digit prefix
-and letters (C6AGU). 1 point: a whole word, or glued to a keyword or
-itself. 0.75: short words joined (N 5 JJ), unless periodic. 0.5: a stray E, T, I
+**Readings.** Form (RR 19.68; sourced): an allocated prefix of 1–2 characters (3DA0: 3), a
+digit, 1–4 letters (US: 1–3), or a letter-digit prefix and letters (C6AGU). 1 point: a word alone or glued to a
+keyword or itself. 0.75: short words joined (N 5 JJ), unless periodic. 0.5: a stray E, T, I
 before or E, T, K after, or an X before (TU run on: XW3RJ). A Viterbi cuts unsplit words
-(DEK8DXK8DXK8DXK): a call there (1 point) needs a repeat, DE before, or DE after and K; an
-unplaceable last E, I or K gives both, 0.5 each.
+(DEK8DXK8DXK8DXK); a call there (1 point) needs a repeat, DE before, or DE after and K; an
+unplaceable last E, I, K: both (0.5).
 
-**Role.** Before DE or 5NN: *named*. After DE, CQ, CQ and an event word (A.12) or TEST, or before K: *signed*. Else *bare*.
+**Role.** Before DE or 5NN: *named*. After DE, CQ, CQ and an event word (A.12), TEST, or before K: *signed*. Else *bare*.
 
-**Evidence.** A reading overlapping another within 300 Hz only betters it. *Counted* points add
-over the band within 30 min, a transmission once, none where a variant holds it. Reported at 2 points, named
-too; listed, 1 if framed (signed, named or sent twice), else 2
-(variant: 1, a high-margin word). ETISHANMU5 alone: 2 whole words, listed or not.
-Unlisted, bare (signed): a 1x1 (N4A) 3 (2); a cut number (2T7A) 5 (2); four letters after the
-digit, a lone prefix digit, two digits (W100AW), a CW word (N1MM) 4 (3; variant: list only), whole or glued only;
-a keyword+5NN (UR5NN) signed. Listed calls skip these bars.
+**Evidence.** Readings overlapping within 300 Hz are one. *Counted* points add
+band-wide over 30 min, a transmission once, none where a variant holds it. Reported at 2 points, named
+too; listed, 1 framed (signed, named, doubled), else 2
+(variant: 1, a high-margin word). ETISHANMU5 alone: 2 words.
+Unlisted, bare (signed): 1x1 (N4A) 3 (2); cut number (2T7A) 5 (2); four letters after the
+digit, lone prefix digit, two digits (W100AW), CW word (N1MM) 4 (3; variant: list only), whole or glued only;
+keyword+5NN (UR5NN) signed. Half toward these bars: 1x1s and lone prefix digits within 150 Hz, 120 s of a
+reported call containing them (DL3I; unsigned); four letters ending K, R, E, I, T, last gap over 1.6× others' (measured). A CW word also passes on
+2 points QSO-framed (DE, K, KN, BK, AR, SK beside; doubled). Listed calls skip bars.
 
-**Variants.** A call within edit distance 1 of, or a prefix or extension of, a better-supported
-call within 150 Hz is held there; distance 2 (4 characters or more; K1T and K1BX) needs over twice the points. Ties at
-distance 1: the earlier, or within 1 s the later. Listed calls weigh triple
-(not an X stripped); those four forms, unlisted, hold nothing unreported. A whole word joined to letters after it (K4VR T) counts
-for the longer if that has 1.5 points besides (variants: always, neither). A row
-leaves when its points fail.
+**Variants.** A call one edit from, prefix of or extension of a better-supported
+call within 150 Hz is held there; two edits (4+ characters, or K1T and K1BX) need over twice the points. One-edit
+ties: the earlier, or within 1 s the later. Listed calls weigh triple
+(not X-stripped); unlisted, the four forms hold nothing unreported. A word joined to letters after it (K4VR T) counts
+for the longer given 1.5 points besides (variants: always, neither). Rows
+leave when points fail.
 
-**List.** One row per base call, placed where last signed, else bare, else named.
-*Signed*: any reading signed; listable alone.
+**List.** A row per base call, placed where last signed, else bare, else named;
+*signed* if any reading was (listable alone).
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -5154,6 +5155,9 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: prefix-digit forms | no digit but the prefix's (C6AGU): as unusual forms | `prefix_digit_form` 2, `prefix_digit_points` 4, `prefix_digit_points_signed` 3 (`prefix_digit_listed_only`, the old name) | heuristic, as unusual forms (A.12) |
 | Callsign stage: words of CW | rigs, antennas, software (21, exact) and one or two letters before 5NN: as unusual forms (from a list only, always, before `calls-list-1`) | `is_cw_word`, `ParsedCall::cw_word`; `cw_word_form` 2, `cw_word_points` 4, `cw_word_points_signed` 3 | heuristic (manta's exact matches); as unusual forms (A.12) |
 | Callsign stage: special forms | two or more digits after the prefix (W100AW, TM100TF): as unusual forms (from a list only, always, before `calls-list-1`) | `special_form` 2, `special_points` 4, `special_points_signed` 3 | heuristic, as unusual forms (A.12) |
+| Callsign stage: truncation evidence | a 1x1's or prefix-digit call's occurrence within `variant_hz` and this of an occurrence of a reported longer call containing it (L3I in DL3I) counts toward its bar at `contained_weight` times its points and does not sign it; a reported fragment is retested when its longer call is reported or read (0: every occurrence in full) | `truncation_evidence` 1, `truncation_s` 120 s, `contained_weight` 0.5 | heuristic, the owner's ruling (evidence adjusts a bar, never excludes); both chosen by measurement on 2026-11-17 and 2017: 30 s and a weight of 0.75 lost the one window-confirmed gain (K1LGQ), 600 s changed nothing, 0.25 lost N4N, spotted by the RBN that day (A.12) |
+| Callsign stage: join evidence | four letters after the digit ending K, R, E, I or T, every reading with the gap before that letter over `join_gap_ratio` times the median of its other letter gaps: counts at `join_weight`; occurrences with that gap measured within the ratio may pass a lower bar (0: every occurrence in full) | `unusual_evidence` 1, `join_gap_ratio` 1.6, `join_weight` 0.5, `unusual_gap_points` 4, `unusual_gap_points_signed` 3 | the ratio measured (99.5% of 2 412 whole readings of reported calls of 5 to 7 characters lie within it); the weight heuristic; the lower bar off (3 and 2 changed no call; A.12) |
+| Callsign stage: a QSO's frame | a word of CW passes its bar also on this many points of occurrences in a QSO's frame: DE before or after it, K, KN, BK, AR, SK after it, or sent twice (0: the bar alone) | `cw_word_evidence` 1, `cw_word_frame_points` 2; `CallReading::qso_frame` | heuristic, the owner's ruling (frames of ordinary QSOs; evidence only lowers a bar); 2 as any framed call (`points_framed`; A.12) |
 | Callsign stage: those four forms' readings | unlisted, only whole and glued readings reach a candidate (0: every reading) | `form_whole_words` 1 | heuristic, as a tiny call's rule; chosen by measurement (A.12) |
 | Callsign stage: a keyword run onto 5NN | a word of CW whose letters before 5NN are a keyword (UR5NN, TU5NN, R5NN): unlisted, not reported without a counted signed occurrence (0: the bar alone) | `keyword_report_signed` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: those four forms against variants | unlisted and not reported, such a call holds no rival back; reported, it holds and defends at its full points (0: as any call) | `form_rival_reported` 1 | heuristic, the review's ruling (the weight must give way to evidence); measured (A.12) |
@@ -5922,6 +5926,8 @@ any counted o. A candidate's first time is its earliest reading, which a correct
 
 **Report test** (a named word no exception: CW Skimmer's practice, provenance below), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. First, since `call-short-1`, an unlisted call of three characters (`is_short_call`: a letter, a digit, a letter, the 1x1 form of any series: N4A, W6S, G2M) needs at least `short_points` (3) on the points tested, or `short_points_signed` (2) when an occurrence counted holds a reading with the role *signed* (`Occurrence::sender`; `Support::sender`), whatever it would pass on below (a tiny call, a named word); 0 leaves the bar to the rules below. And with `cut_number_form` 2 (the default) an unlisted call of a cut number's shape (`is_cut_number_form`: a digit 2 to 9, then A, N or T, then the call's digit, the pair not 9A, 7N or 8N: 2T7A, 3N4D, 5A3BOB, 4A7A) needs in the same way at least `cut_number_points` (5), or `cut_number_points_signed` (2) with such a signed occurrence; with 1 its readings off the list are dropped before they reach a candidate; with 0 it is any call. And since `calls-list-1`, four forms each with its own setting, the owner's ruling (2026-11-21) that without the list no real form is excluded outright: a special form, two or more digits after the prefix (`ParsedCall::special`: W100AW, TM100TF; `special_form`), an unusual one, four letters after one digit (`unusual`: VK3FABC; `unusual_form`), a prefix-digit one, a letter-digit prefix whose digit is the call's (`prefix_digit`: C6AGU, E7DX, D4C; `prefix_digit_form`), and a word of CW (`cw_word`, `is_cw_word`: N1MM, K9AY, G5RV, DJ5NN; `cw_word_form`). With the setting at 2 (the default) an unlisted call of the form needs at least its `*_points` (4 each: `special_points`, `unusual_points`, `prefix_digit_points`, `cw_word_points`), or its `*_points_signed` (3 each) with a signed occurrence counted, as the 1x1's bar works; with 1, the rule before `calls-list-1`, its readings off the list are dropped before they reach a candidate; with 0 it is any call. Three rules go with the bar, all for these four forms unlisted at 2 only. (a) `form_whole_words` 1: only whole and glued readings reach a candidate; a joined or stripped one is dropped in `add`, as a tiny call's are (0: every reading). (b) `keyword_report_signed` 1: a word of CW that is a keyword run onto 5NN (`is_keyword_report`: the one or two letters before 5NN one of `is_keyword`'s words) is not reported without a counted signed occurrence, however many points it has (0: the bar alone). Its exact reach, 24 strings: K5NN, R5NN, CQ5NN, DE5NN, TU5NN, KN5NN, BK5NN, SK5NN, AR5NN, NR5NN, UR5NN, UP5NN, DX5NN, GM5NN, GA5NN, GE5NN, GN5NN, OM5NN, ES5NN, FB5NN, HW5NN, NA5NN, SS5NN, FD5NN. Nearly all are calls' forms of allocated series, and some are issued: K5NN (active in the FCC's file), NA5NN and NR5NN (in MASTER.SCP); KN5NN has a US form too; and the forms of Scotland (GM5NN), Slovakia (OM5NN), Estonia (ES5NN), Ukraine (UR5NN), Sweden (SK5NN), Germany (DE5NN), Pakistan (AR5NN), Kazakhstan (UP5NN), the Philippines (DX5NN), France (FB5NN, FD5NN, HW5NN), China (BK5NN), Portugal (CQ5NN) and Russia (R5NN). Unlisted, each needs a signed reading; one running a contest signs by CQ and the event word (`cq_event_signed`, Role above). (c) `form_rival_reported` 1, in the arbitration below. A call of two such forms needs the highest of its bars (`max`), the 1x1's and the cut number's among them. A listed call of any of these forms needs only what any listed call needs; with a list loaded, a call it does not hold still needs its bar (the review's ruling: MASTER.SCP is one-sided evidence, and CW Skimmer does the same). The first digit is 2 to 9 by derivation: a member's number sent in cut digits has its 1 and 0 sent as A and T too, so it never starts with either digit. *Counted*: the pooled test counts an occurrence, and its role, only inside the window (`window_s`) and where no variant holds the call (`held_at`), so a signed reading at a place where a variant holds the call does not lower the bar; the List's *Signed* (`CallRow::framed`) counts every reading, held or not, and is another thing. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
 
+**The forms' evidence** (`calls-form-3`; the owner, 2026-11-22: "I don't see why unusual calls such as N1MM should necessarily need to have the same evidence as very short calls such as N4K, they are special in different ways", and his ruling on it: evidence adjusts a form's bar, and no reading of a real call's shape is excluded outright). Each rule is for an unlisted call of its form at the form's setting 2, and each has its own setting, at 0 the rule before (every occurrence at its points, against the bars above; all three at 0 give `main`'s lists byte for byte on the 2026-11-17 and 2017 replays, without and with MASTER.SCP, and on the 46 generated logs without it). (a) *Truncation* (`truncation_evidence` 1), for a 1x1 and a prefix-digit call, whose typical false reading is a fragment of a longer call (DL3I read L3I, N3QE read N3Q): an occurrence o is *contained* when some reported call whose base holds the call's base as a substring (L3I in DL3I, N4K in KN4KX), and is longer, has an occurrence x with |f_x − f_o| ≤ `variant_hz` (150 Hz) and start_x − `truncation_s` < end_o, start_o < end_x + `truncation_s` (120 s). The bars of the two forms (`short_points`, `prefix_digit_points` and their signed values) are then tested on Σ w_o p_o over the counted occurrences, transmissions grouped as for the pooled points, with w_o = `contained_weight` (0.5) for a contained occurrence and 1 for any other; and a contained occurrence's signed reading does not lower the bar (`Support::clean_sender`). So a fragment read often enough on its longer call's carrier is still reported, and a real call of the form elsewhere in the band counts in full. When a call is reported, or a reported call gets a reading, each reported call of these forms whose base is a substring of its base is tested again on its pooled points, and withdrawn if it no longer passes (`withdraw_fragments`), so the same test reports and withdraws. Only a reported call contains: on the replays a real 1x1 (W7E, W6S, N7S on the 2017 recordings) is read beside dozens of junk extensions of itself (W7EE, EW7E, W7EA), so containment by any reading would weigh down every real 1x1. (b) *Join* (`unusual_evidence` 1), for four letters after the digit, whose typical false reading is a call glued to a letter after it (DL1ABC K read DL1ABCK): each whole or glued reading whose characters have their own times carries `letter_gap_s`, the median of the gaps (s) between its characters but the last, `last_gap_s`, the gap before its last character, and the spaces to the nearest characters outside it (`space_before_s`, `space_after_s`, word spaces skipped), each −1 where there is none; a gap is the next character's start less the last one's end. An occurrence all of whose readings measured `last_gap_s` > `join_gap_ratio` (1.6) × `letter_gap_s`, of a call whose last letter is K, R, E, I or T (letters that end an over or are strays), counts toward the form's bar at `join_weight` (0.5) times its points; one with no measurement counts in full. And the bar is also passed on the points of occurrences that measured `last_gap_s` ≤ 1.6 × `letter_gap_s` (any last letter), against `unusual_gap_points` and `unusual_gap_points_signed`, 4 and 3, the bar itself (the lower bar a variant, off). (c) *QSO frame* (`cw_word_evidence` 1), for a word of CW, whose typical false reading is the word itself in conversation (USING N1MM LOGGER, K9AY LOOP): every occurrence counts, against `cw_word_points` and `cw_word_points_signed` as before, and the bar is also passed when the points of occurrences in a QSO's frame reach `cw_word_frame_points` (2). A reading is in a QSO's frame (`CallReading::qso_frame`) when, past its repeats and stray E, T, I, the word before it is DE, or the word after it is DE, K, KN, BK, AR, SK, <KN>, <AR> or <SK>, or the same word is right before or after it (sent twice): the frames of a casual QSO (K1ABC DE N1MM K, N1MM DE K1ABC, CQ CQ DE N1MM N1MM K), which hold in contests too; 5NN, UR, TU and the event words are no frame here (CQ and the event words already sign, Role). (d) The special form is unchanged: repeats remain its evidence. The reading log (`kz4ap-calls --readings`) prints the gaps (s) and the frame.
+
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and whose occurrences span to within `variant_s` of the judgment time on either side (now, or a loser's last reading, below), by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1, and 2 also for a *short pair* (`short_variant_ratio` not 0): one of the two has one letter after its last digit and both have the same characters up to their last digit (K1T and K1BX); a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
 exceed its need (1 at d = 1; at d = 2 `short_variant_ratio` for a short pair, else `far_variant_ratio`) times the call's, or at d = 1 tie: with an earlier first reading, unless the two first readings are within 1 s (one word, heuristic), when the one seen later wins, being what a correction made of the word; a listed rival beats
@@ -6434,6 +6440,55 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   MASTER.SCP, one edit from three calls spotted that day) too; T5T (80 m and 40 m) and H8M (40 m) the RBN spotted elsewhere that
   day, unverified (T5T is gained on four recordings of two days, 20 m to 80 m, more like a fragment than a Somali station). None lost. A heuristic,
   the bars the test set's choice.
+- The forms' evidence (`calls-form-3`, 2026-11-22; the owner: "I don't see why unusual calls such as N1MM should necessarily need
+  to have the same evidence as very short calls such as N4K, they are special in different ways"; and, on the first form of the
+  rule, which counted only uncontained, gap-measured or framed occurrences: "I don't like 'only copies in call position count',
+  that seems too restrictive. How you identify 'call position' is very specific to contests, for example", ruled so that evidence
+  adjusts a bar and never excludes a reading). *Measured* first, each form's typical false reading (`build/cf-3/scratch/trunc.py`,
+  `gaps.py`, `cwframe.py` over the replays' reading logs; git-ignored). (i) Truncation: of the 1x1 and prefix-digit calls `main`
+  reported, the misreadings read most often lie beside a reported call that contains them on the same carrier (N3J beside N3JT,
+  W1Q beside W1QK, K0H beside K0HT on the 2026-11-18 CWT, read 32 to 56 times), while the real 1x1 calls of the 2017 recordings (W7E, W6S, N7S, W0E, W0D)
+  have no reported container though dozens of their junk extensions are read (W7EE, EW7E, W7EA): so containment is by a reported
+  call only. The prefix-digit junk is mostly not a fragment (E5E, T5T, A2EW, D4Y: no container). (ii) Join: the gap before the
+  last letter over the median of the other letter gaps, on 2 412 whole readings of reported calls of 5 to 7 characters on the
+  2026-11-17 and 2017 replays: median 1.00, 95% 1.20, 99% 1.44, 99.5% 1.6 (0.5% above 1.6, 0.2% above 2.0); the join form's 131
+  whole readings there are mostly noise text with ordinary gaps (G5ETEE 0.69 to 0.78, T34BIEI 0.92 to 1.09), few above 1.6
+  (E5DEEE 1.95, EH5ITSI 2.21, F55LSSE, C55LSSE, UL4JDLE about 1.7): the glue error is rare here, so the weight rarely applies.
+  (iii) Words of CW: of the rigs', antennas' and loggers' words (N1MM, K9AY, G5RV and the rest) none is read more than twice in a
+  recording on any replay set (K3S, K4D twice, none in a QSO's frame); the 5NN forms are read more (UR5NN 14 times on 2026-11-17
+  40 m, 3 of 9 in a frame on 2026-11-18 20 m), kept off by the keyword rule; so the data cannot test the frame rule against junk; the
+  rule is the owner's (frames of ordinary QSOs, lowering the bar only) and its value of 2 that of any framed call (`points_framed`),
+  a heuristic. *Tried* (exact replays; RBN judge with MASTER.SCP and HD.dat; window-confirmed / spotted that day / misread /
+  unknown; tables in `build/cf-3/judge/`, git-ignored). The first form (an occurrence counted only uncontained, a join form's only
+  with its letter gap, a word of CW's only framed) is withdrawn by the ruling; its one result kept here: the truncation part gained
+  K1LGQ (window-confirmed by 31 skimmers) on 2026-11-17, as the weighted rule does: `main` reported K1L, read whole and joined, in
+  its place. Lower bars, measured with that first form (a
+  contained occurrence counting nothing, so the weighted rule could only add more of it), none gaining a window-confirmed call: a 1x1 bar of 2 on uncontained readings gained 7 generated 1x1 callers (G6I, I1J, I8Z on the contest, F8L, I0M, K2Z, W4T on
+  its fresh seed) but added 7 misreadings on 2026-11-17 (B4V, N4A, I5E, K1I, K2H, N3V, R5I) and K2T, K3Z and W0M (spotted that day)
+  on 2017; a prefix-digit bar of 3, 2 signed, brought back L3I on the fresh-seed contest and added P2P, T5E, E4E, E5S, E5E, T3E on
+  the replays; so the bars stay `main`'s. The weighted rule's settings: `truncation_s` 30 s and `contained_weight` 0.75 lost the
+  one window-confirmed gain (K1LGQ), 600 s changed nothing, 0.25 lost N4N (2017, N2GZ; spotted that day); `unusual_gap_points` 3
+  and 2 signed changed no call on 2026-11-17, 2017 or the generated sets, so it stays off.
+  *Taken* (the defaults: `truncation_evidence` 1 at 120 s and 0.5, `unusual_evidence` 1 at 1.6 and 0.5 with the lower bar off,
+  `cw_word_evidence` 1 at 2), `main` to the branch, calls / window-confirmed / spotted that day / misread / unknown. No list:
+  2026-11-17 408 / 172 / 66 / 79 / 91 to 409 / 173 / 66 / 79 / 91; 2017 415 / 200 / 105 / 53 / 57 to 412 / 200 / 105 / 50 / 57;
+  2026-11-18 1 187 / 580 / 182 / 244 / 181 to 1 180 / 580 / 180 / 238 / 182, of which its CWT recordings (20 m and 40 m) 1 120 / 564
+  / 169 / 226 / 161 to 1 113 / 564 / 167 / 220 / 162 and its 80 m (non-CWT) 67 / 16 / 13 / 18 / 20 unchanged. With MASTER.SCP:
+  2026-11-17 420 / 172 / 72 / 81 / 95 to 420 / 173 / 72 / 80 / 95; 2017 457 / 219 / 120 / 58 / 60 to 456 / 219 / 120 / 57 / 60;
+  2026-11-18 1 133 / 572 / 178 / 209 / 174 to 1 133 / 572 / 177 / 209 / 175 (CWT 1 059 / 555 / 163 / 187 / 154 to 1 059 / 555 / 162 / 187 / 155, 80 m 74 / 17 / 15 / 22 / 20 unchanged). Every set together, no list: non-CWT 890 / 388 / 184 / 150 / 168 to 888 / 389 / 184 / 147 / 168, CWT 1 120 / 564 / 169 / 226 / 161 to 1 113 / 564 / 167 / 220 / 162; with MASTER.SCP non-CWT 951 / 408 / 207 / 161 / 175 to 950 / 409 / 207 / 159 / 175, CWT 1 059 / 555 / 163 / 187 / 154 to 1 059 / 555 / 162 / 187 / 155. No window-confirmed call lost on any set, with or without the list. Calls changed, no list: 2026-11-17 (40 m
+  12:30Z) K1L lost (misread), K1LGQ gained (window-confirmed by 31 skimmers, an active license; `main` reported K1L, its fragment
+  read joined and whole, in its place), K1M gained (misread; 4 points, signed, not on `main`'s
+  final list); 2017 N4I (W3OA), K7D (KC2LRC-1), K2M (N2GZ) lost, all misread; 2026-11-18 20 m E5EB, N7W, W3P, W9G lost (misread), T2T
+  lost (spotted elsewhere that day, not in the window), EE5EB (misread)
+  and G5EB (unknown; E5EB held it on `main`) gained; 40 m I7Y, K7S, W1Q lost (misread), K4N lost (spotted that day); 80 m
+  none. With MASTER.SCP: 2026-11-17 K1L to K1LGQ; 2017 K7D lost; 2026-11-18 E5EB and T2T lost, EE5EB and G5EB gained, as without it; report times with it: 2 004 of 2 006 unchanged, W3QT −156.9 s, K0HT −8.6 s. Report times (`reported_s`) of the calls both
+  lists hold, no list: 1 987 of 1 997 unchanged; earlier W3QT (−156.9 s), N4QS (−107.3 s), EE4E (−626.8 s), N3MK (−4.4 s); later
+  N4N (+853.2 s; 2017, spotted that day), and the 1x1 fragments now weighed down N4E (+944.4 s), W6K (+710.5 s), F5P (+248.3 s),
+  K0H (+203.6 s), N4F (+56.2 s), all misread. The generated sets (46 logs), no list and with MASTER.SCP: every list's calls
+  `main`'s (no list: the contest 1 false, fresh seed 0, strong pairs 1 and 0, crowded 1, 100 stations 0, G2 0 and 2, H2 2 and 0).
+  The stage's CPU (`kz4ap-calls`, wall time over channel-seconds, up to five replays side by side): 2026-11-18 20 m 2.91 to 2.88 ms
+  per channel-second, 40 m 4.21 to 3.81 ms, 80 m 0.007 to 0.006 ms (the wall times move by 10% with the machine's load), against
+  the bar's 40 ms and the goal's 8 ms. *Held out, once* (the two 2026-11-19 recordings, both in CWT hours, run after the choice, to report only; `build/cf-3/heldout/`, git-ignored), calls / window-confirmed / spotted that day / misread / unknown, `main` to the branch: no list 509 / 261 / 68 / 105 / 75 to 508 / 261 / 68 / 104 / 75, the one change N5O lost (80 m, misread: one edit from N5OT, spotted that day), with MASTER.SCP 501 / 260 / 69 / 95 / 77 unchanged. No non-CWT recording made since was finished when the choice was made (one 40 m recording of 2026-11-22 was still being written), so none was run.
 - `cq_event_signed` (the review of `calls-list-1`): the CQ and an event word sign the call after them (Role, above). *Measured* at
   bar 8 and signed bar 2, on and off: on the 2026-11-17 and 2017 replays and the generated sets the same calls (4 rows signed now,
   N5ZC, W0ECC, WA3AER on KC2LRC-2 and AB9CA on W3OA, and some rows placed at their signed reading); on the 2026-11-18 CWT W8K
@@ -6505,6 +6560,18 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   never dropped; a test scores an L3I-like false call and a C6AGU-like true one. Rescored with it, `main`'s and the final build's
   generated lists give the same numbers as before, without and with MASTER.SCP, no row outside the grammar; the signed-bar-2 runs
   now show L3I (the fresh-seed contest's false calls 0 to 1).
+- The forms' evidence (`calls-form-3`): no reading of a real call's shape is excluded, so every rule only moves a bar. A fragment
+  weighs half only beside a *reported* call containing it: one whose call is never reported (the generated contest's DL3I, read
+  only as P L3I and L3I C) counts in full, and a fragment read often on its call's carrier (twice the bar) is still reported; so is
+  a fragment held as a near variant, as before. A containing reading that is not reported weighs nothing, since a real 1x1's own
+  junk extensions are read beside it (W7EE beside W7E). Containment is a substring, so a real 1x1 inside a longer call on the
+  same carrier within 120 s (a 1x1 working KN4KX on N4K's frequency) is weighed down too. The join form's gap test needs the
+  characters' own times (a decoder's symbols; none when `glued_pieces_timed` is 0), and only a last letter of K, R, E, I or T is
+  weighed: VE3NA TU read VE3NATU, a call glued to TU, has a U last and is not. Words of CW in running text are reported on their
+  bar of 4 bare readings, as before (the owner's ruling: a measurement, not excluded; a test); the QSO frames are DE before or
+  after, K, KN, BK, AR, SK after, or sent twice, which hold in casual QSOs and contests alike, so a word of CW sent twice in
+  conversation ("N1MM N1MM") or before a K passes on 2 points. The QSO frame lowers a word of CW's bar to 2 framed points; the
+  other two rules lower no bar by default, since no lower bar was measured safe (provenance).
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.

@@ -478,7 +478,8 @@ struct CallSearchConfig {
     // read L3I, N3QE read N3Q). At 1 an occurrence that a reported call containing the call (a substring: L3I of DL3I, N4K of
     // KN4KX) has an occurrence within variant_hz and truncation_s of counts toward the form's bar (short_points, prefix_digit_points)
     // at contained_weight times its points, and lowers the bar as signed only when no such call contains it; an occurrence
-    // elsewhere counts in full. A fragment read often enough is still reported.
+    // elsewhere counts in full. A fragment read often enough is still reported. Heuristics, chosen by measurement (A.12): 30 s and
+    // a weight of 0.75 lost K1LGQ (window-confirmed) to its fragment K1L, 0.25 lost N4N (spotted that day); 600 s changed nothing.
     double truncation_evidence = 1.0;
     double truncation_s = 120.0;
     double contained_weight = 0.5;
@@ -488,7 +489,8 @@ struct CallSearchConfig {
     // join_gap_ratio times the call's other letter gaps' median (letter_gap_s), a word space read as a letter gap, counts toward the
     // bar at join_weight times its points; an occurrence with no such measurement counts in full. And the bar is at most
     // unusual_gap_points (unusual_gap_points_signed) on the points of occurrences with a measured letter gap before their last
-    // letter (within join_gap_ratio), the evidence a join is not there.
+    // letter (within join_gap_ratio), the evidence a join is not there. The ratio measured: 99.5% of 2 412 whole readings of reported
+    // calls of 5 to 7 characters lie within 1.6; the weight a heuristic; the lower bar off (3 and 2 signed changed no call, A.12).
     double unusual_evidence = 1.0;
     double join_gap_ratio = 1.6;
     double join_weight = 0.5;
@@ -497,7 +499,8 @@ struct CallSearchConfig {
     // Words of CW (ParsedCall::cw_word: N1MM, K9AY): what goes wrong is the word itself in conversation (USING N1MM LOGGER, K9AY
     // LOOP). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is at most
     // cw_word_frame_points on the points of occurrences in a call's place in an ordinary QSO (CallReading::qso_frame: DE before it,
-    // DE after it, K, KN, BK, AR or SK after it, or the call sent twice in a row), frames of casual QSOs and contests alike.
+    // DE after it, K, KN, BK, AR or SK after it, or the call sent twice in a row), frames of casual QSOs and contests alike. The
+    // owner's ruling (frames of ordinary QSO practice, adding evidence only); 2 a heuristic, any framed call's bar (points_framed).
     double cw_word_evidence = 1.0;
     double cw_word_frame_points = 2.0;
 };
