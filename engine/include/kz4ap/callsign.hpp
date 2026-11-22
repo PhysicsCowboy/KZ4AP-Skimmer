@@ -45,7 +45,7 @@ struct ParsedCall {
     // No digit but the prefix's (C6AGU, E7DX, J6M, P3X): a letter-digit prefix whose digit is the call's, as administrations issue
     // outside the letter of RR 19.68; unlisted, it needs its own bar (CallSearchConfig::prefix_digit_form).
     bool prefix_digit = false;
-    // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN); unlisted, it needs its own bar
+    // A word of CW that has a call's form (is_cw_word: R5NN, TU5NN, DJ5NN); unlisted, it needs its own bar
     // (CallSearchConfig::cw_word_form).
     bool cw_word = false;
     // Around a slash, the other side when it too could be the base (K1A/W1AW: W1AW): the stage takes it when it alone is listed.
@@ -63,10 +63,11 @@ struct ParsedCall {
 std::optional<ParsedCall> parse_call(std::string_view word);
 // The form alone, without the mark of words of CW.
 std::optional<ParsedCall> parse_form(std::string_view word);
-// A word with a call's form that in CW text is mostly something else: rigs, antennas, software (N1MM, K9AY, G5RV), exact; and any
-// one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN, W5NN), the contest report run onto a word. Real calls among them (K9AY,
-// N1MM, K5NN, DJ5NN, W5NN are issued) need more readings when unlisted (CallSearchConfig::cw_word_form). A heuristic (manta's
-// practice of exact matches).
+// A word with a call's form that in CW text is mostly something else: any one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN,
+// W5NN), the contest report run onto a word (measured: UR5NN read 14 times on one recording). Real calls among them (K5NN, DJ5NN,
+// W5NN are issued) need more readings when unlisted (CallSearchConfig::cw_word_form). No fixed names of rigs, antennas or software
+// (G5RV, N1MM, K9AY were, until calls-form-3's review): the owner's ruling, 2026-11-22, "No on keeping the list of calls for now";
+// they are calls of their own shapes.
 bool is_cw_word(std::string_view base);
 // A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
 // such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
@@ -147,6 +148,9 @@ struct CallReading {
     std::string covers;
     // A stripped reading's characters taken off the front (EIK0HBN: EI; XW3RJ: X); empty for any other reading.
     std::string stripped_front;
+    // In a call's place in an ordinary QSO: DE right before it or right after it, or the same word right before or after it (sent
+    // twice); a sign-off after it alone is none (CallSearchConfig::cw_word_evidence). Past its repeats and stray E, T, I.
+    bool qso_frame = false;
 };
 
 // nats: a symbol's margin from its probability, ln(p / (1 - p)), at least 0; CallReading::kUnknownMargin for p = 1.
@@ -391,8 +395,7 @@ struct CallSearchConfig {
     double prefix_digit_form = 2.0;
     double prefix_digit_points = 4.0;
     double prefix_digit_points_signed = 3.0;
-    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, G5RV, R5NN, DJ5NN): read in text about rigs, antennas and
-    // software, or a report glued to a word, far more often than sent as a call.
+    // A word of CW with a call's form (ParsedCall::cw_word: R5NN, TU5NN, DJ5NN): a report glued to a word far more often than a call.
     double cw_word_form = 2.0;
     double cw_word_points = 4.0;
     double cw_word_points_signed = 3.0;
@@ -458,6 +461,37 @@ struct CallSearchConfig {
     double cut_number_form = 2.0;
     double cut_number_points = 5.0;
     double cut_number_points_signed = 2.0;
+    // ---- The evidence each form's bar weighs (calls-form-3). The owner (2026-11-22): "I don't see why unusual calls such as N1MM
+    // should necessarily need to have the same evidence as very short calls such as N4K, they are special in different ways." And
+    // his ruling on it: evidence adjusts a form's bar, and no reading of a real call's shape is excluded outright. Each rule is for an
+    // unlisted call of its form, at the form's setting 2; at 0 each bar counts every occurrence at its points, the rule before.
+    //
+    // Truncation forms, the 1x1 (is_short_call) and the prefix-digit form: what goes wrong is a fragment of a longer call (DL3I
+    // read L3I, N3QE read N3Q). At 1 an occurrence that a reported call containing the call (a substring: L3I of DL3I, N4K of
+    // KN4KX) has an occurrence of its own (not only named by another: Occurrence::own) within truncation_hz and truncation_s of
+    // counts toward the form's bar (short_points,
+    // prefix_digit_points) at contained_weight times its points, and lowers the bar as signed only when no such call contains it;
+    // an occurrence elsewhere counts in full. A fragment read often enough is still reported. When a call is reported, a reported
+    // fragment it now contains is withdrawn if the containment alone makes it fail, and when a call is withdrawn, the fragments it
+    // contained are judged again. truncation_hz measured: of the 399 readings of the 1x1 and prefix-digit calls `main` reported that
+    // the RBN judge calls misread or unknown and that lie within 150 Hz and 120 s of a reported call containing them, 376 lie within
+    // 1 Hz of it and 382 within 10 Hz (the rest spread to 130 Hz, where a pileup's callers lie too), on the replays of 2026-11-17,
+    // 2017 and 2026-11-18. truncation_s and contained_weight heuristics, chosen by measurement (A.12): 30 s and a weight of 0.75
+    // lost K1LGQ (window-confirmed) to its fragment K1L, 0.25 lost N4N (spotted that day); 600 s changed nothing.
+    double truncation_evidence = 1.0;
+    double truncation_hz = 10.0;
+    double truncation_s = 120.0;
+    double contained_weight = 0.5;
+    // Words of CW (ParsedCall::cw_word, the 5NN words: R5NN, DJ5NN): what goes wrong is the report run onto a word (UR 5NN read
+    // UR5NN). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is also passed when
+    // occurrences in a call's place in an ordinary QSO (CallReading::qso_frame: DE before or after it, or sent twice) come from at
+    // least cw_word_frame_overs overs: occurrences in a frame that start within over_gap_s of the end of the one before are one
+    // over, so a call sent twice in one over counts once. Frames of casual QSOs and contests alike. The owner's ruling (frames of
+    // ordinary QSO practice, adding evidence only); the review's (an over counts once, two overs needed, a sign-off alone no
+    // frame). Heuristics: 2 overs, any framed call's two points; 10 s, a pause no shorter than a turn's (the other station's over).
+    double cw_word_evidence = 1.0;
+    double cw_word_frame_overs = 2.0;
+    double over_gap_s = 10.0;
 };
 
 // One line of the list.
@@ -528,12 +562,17 @@ private:
         bool flat = false;  // its points are a flat stripped reading's (CallSearchConfig::flat_stripped)
         std::string covers;  // CallReading::covers of a joined reading it holds, the first one
         bool sender = false;  // some reading of it had the role Sender (CallSearchConfig::short_points_signed, cut_number_points_signed)
+        bool qso = false;  // some reading of it was in a QSO's frame (CallReading::qso_frame)
     };
     struct Candidate {
         std::string base;
         std::uint64_t made = 0;  // the order of its first reading
         bool known = false;
         bool reported = false;
+        // Reported on a counted signed occurrence that no reported longer call contained (Support::clean_sender): while it stays
+        // reported, containment no longer weighs it (CallSearchConfig::truncation_evidence), so containment alone never withdraws
+        // it; a rival at its place still can (the re-review of calls-form-3: a 1x1 running a pileup of callers containing it).
+        bool reported_signed = false;
         std::deque<Occurrence> recent;       // within window_s of the latest
         std::map<std::string, std::uint32_t> forms;  // base, or with a slash: how often
         std::uint32_t count = 0;
@@ -566,6 +605,12 @@ private:
         bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
         double flat = 0;     // of points, those of flat occurrences (Occurrence::flat)
         bool sender = false;  // some occurrence counted is Occurrence::sender
+        // What each form's bar weighs (CallSearchConfig::truncation_evidence, cw_word_evidence): every occurrence, a contained one
+        // at contained_weight (truncation_points; clean_sender, a signed one not contained); the overs of occurrences in a QSO's
+        // frame (frame_overs).
+        double truncation_points = 0;
+        bool clean_sender = false;
+        double frame_overs = 0;
     };
 
     void read_track(TrackText& track, bool all);
@@ -573,7 +618,8 @@ private:
     void evaluate(Candidate& candidate, double freq_hz, double now_s);
     // Its occurrences within within_hz of this place and window_s of now_s, on either side: now_s is the stream's present, except when
     // a withdrawal is judged at the loser's own last reading (evaluate), where a rival's later readings count up to window_s after it.
-    Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz) const;
+    // With forms, an occurrence a reported longer call contains is weighed down in Support::truncation_points; without, none is (cheaper).
+    Support support(const Candidate& candidate, double freq_hz, double now_s, double within_hz, bool forms = false) const;
     // CallRow::heard_s for this candidate.
     double heard_at_place_s(const Candidate& candidate) const;
     bool passes(const Candidate& candidate, const Support& s) const;
@@ -582,6 +628,23 @@ private:
     bool listed_only(std::string_view base, bool special, bool unusual, bool prefix_digit, bool cw_word) const;
     // Whether an unlisted call of a form with its own bar holds no rival back yet (CallSearchConfig::form_rival_reported).
     bool holds_nothing(const Candidate& candidate) const;
+    // The reported calls that contain this unlisted 1x1 or prefix-digit call, when its bar counts only occurrences they do not
+    // contain (CallSearchConfig::truncation_evidence); else none.
+    std::vector<const Candidate*> containers(const Candidate& candidate) const;
+    // Whether one of those calls has an occurrence within variant_hz and truncation_s of this one.
+    bool contained(const Occurrence& occurrence, const std::vector<const Candidate*>& by) const;
+    // An occurrence's points and marks added to a support (the forms' counted points among them).
+    void count(Support& s, const Occurrence& o, const std::vector<const Candidate*>& by) const;
+    // The reported 1x1 and prefix-digit calls inside this reported call that have an occurrence within truncation_hz and
+    // truncation_s of `touched` (or of any of its occurrences, when null) and that fail only because it contains them, withdrawn
+    // (truncation_evidence).
+    void withdraw_fragments(const Candidate& longer, const Occurrence* touched, double now_s);
+    // After a reading of this call (evaluate): withdraw_fragments, then recheck_fragments.
+    void after_reading(const Candidate& candidate, const Occurrence* touched, double now_s);
+    // After a withdrawal: the unreported 1x1 and prefix-digit calls inside the withdrawn call, judged again (truncation_evidence).
+    void recheck_fragments(double now_s);
+    // The overs of these occurrences in a QSO's frame (CallSearchConfig::over_gap_s).
+    double frame_overs(std::vector<const Occurrence*> occurrences) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
@@ -591,7 +654,8 @@ private:
     std::pair<double, double> covered_points(const Candidate& fragment, const Candidate& longer, double freq_hz, double now_s) const;
     // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s of now_s, one per
     // transmission, leaving out those at places where it is held.
-    Support pooled_support(const Candidate& candidate, double now_s);
+    // weigh: a contained occurrence weighed down (truncation_evidence); false, as if no call contained it.
+    Support pooled_support(const Candidate& candidate, double now_s, bool weigh = true);
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);
@@ -611,6 +675,7 @@ private:
     double now_s_ = 0;
     double last_read_s_ = 0;
     double last_prune_s_ = 0;
+    std::vector<std::string> recheck_;  // withdrawn calls whose fragments are to be judged again (recheck_fragments)
 };
 
 // The list as the scoring tool (training/kz4ap_proto/calls_score.py) reads it: CSV, a header line, one row per call. center_hz, when
