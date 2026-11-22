@@ -841,6 +841,8 @@ Open:
 - **The dash-to-dot ratio** as a fist parameter (a keyer's third setting; VE3NEA's hand style draws dashes of 4.48 dots).
 - **The best fixed weight per clip is not reached** on ear06 and ear09 (16 and 2 edits against 6 and 0 at a fixed +0.4): there
   the weightless reading scores higher under the model. A σ per kind fitted to real fists might move it.
+- **The scaled form** (`fist_weight_scaled`): the weight moves the medians, not the lengths. It read VE3NEA's conditions a little
+  better at high levels and everything else alike (A.8e's provenance); to take it, run it on the whole set and the replay sets.
 - **The weight within an over** changes only by a rescue.
 
 ### Benchmark scenarios to add first
