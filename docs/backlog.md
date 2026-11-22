@@ -759,15 +759,19 @@ section 4.3.1.
 its start and end lies within the owner's clip, 1049 to 1080 s and 879 to 910 s of the recording; the copy aligned globally), since
 the 38 s cut runs 1 s past the clip and the whole track 0.5 s past. An error breakdown found 37 of 107 edits past the copy's end, 31
 of them a defect (the over's end at the stream's end read the tail of a flush sample, none: a row of one-sample E's), now fixed. The
-tail's power is now absolute, g M̄, M̄ the stream's recent mark power, as the clips show it (0.06 to 0.24 dB per dB of the mark's
-power). On the span, no-space CER: cut to 38 s 0.284 and 0.156 (main) to 0.102 and 0.078; whole tracks 0.239 and 0.156 to 0.080
-and 0.026; DeepCW 0.398 and 0.338. A first shape from fewer strong runs (20 or 15, not 30) reads the cuts' first seconds better
-(0.080 and 0.065) but lost a window-confirmed call on a replay (WD2E): open. Dits read as dahs behind a tail at −10 dB re
-the dit or more: 26 of 203 to 0; gaps at −5 dB re the mark before or more joined: 21 of 80 to 5. What is left on the clips: marks
-lost in deep fades (−15 to −3 dB re the median mark), a few gaps filled, a character at each cut's start. The synthetic tail set
-(synth-tail-1's generator, a stress set) still reads 0.27 to 0.28 at f_D under 5 Hz and 0.49 to 0.64 above (main 0.39 and 0.37, 0.68 and 1.47; the top cell asked 21 to 42 Hz, the generator realizing about 18 to 25 Hz): some stations collapse to dahs,
-not traced. Open as before: the tail in the level filter and in the next rise's window, a tail that changes within a track, more
-of the owner's clips.
+tail's power is now absolute, as the clips show it (0.06 to 0.24 dB per dB of the mark's power), but its station's: g M̄, M̄ the
+recent runs' power over 10 runs, at most 6 dB above each level of the belief, since with the stream's M̄ alone a weaker station after
+a strong one, or callers between a run station's turns, read as rows of E's (the review's channels, now tests). On the span,
+no-space CER: cut to 38 s 0.284 and 0.156 (main) to 0.159 and 0.117; whole tracks 0.239 and 0.156 to 0.148 and 0.091; DeepCW 0.398
+and 0.338; the same recording's held-out 35 WPM passage (833 to 873 s, 911 to 1 043 s) 0.199 to 0.112, its 12 WPM preamble 0.050 to
+0.050. Without the bound the clips read 0.102, 0.078, 0.080, 0.026 and the held-out passage 0.079: the 6 dB bound costs the deep
+fades (gaps at −5 dB re the mark before or more joined 21 of 80 on main, 16 now, 5 unbounded; dits read as dahs behind a tail at −10
+dB re the dit or more 26 of 203, 10, 0). Open: a bound that tells a fade from another station (by time: a fade lasts under about
+0.2 s at f_D 3 Hz or more, a station's turn seconds), so the deep fades keep the tail; a first shape from fewer runs (20 or 15 read
+the cuts' first seconds better but lost a window-confirmed call, WD2E, at 20); the tail in the level filter and in the next rise's
+window; a tail that changes within a track; more of the owner's clips; W1AW's published texts as a cleaner held-out set. The
+synthetic tail set (synth-tail-1's generator, a stress set) reads 0.31, 0.27, 0.35, 0.40 by f_D cell (main 0.39, 0.37, 0.68, 1.47;
+the top cell asked 21 to 42 Hz, the generator realizing about 18 to 25 Hz).
 
 **Status 2026-11-21 (`text-fast-1`):** both causes modeled, by default. The clips' decorrelation is mostly the tail: kz4ap-fading's
 ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mark's end into another path's tail give, and the decoder's
