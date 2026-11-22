@@ -42,6 +42,7 @@ struct Args {
     std::optional<std::filesystem::path> record_channels;
     std::optional<std::filesystem::path> score_decoded;
     bool timing = true;
+    bool symbol_times = false;  // --symbol-times: each track's final characters with their start and end, s
     bool oracle = false;
     FrontEnd front_end = FrontEnd::Matched;  // the decoder (--decoder; --front-end is its old name, kept as an alias)
     // The new decoder (--decoder viterbi): its --set and --genie options as given, and its configuration with the
@@ -123,6 +124,7 @@ Args parse_args(int argc, char** argv) {
         else if (a == "--json") args.json = value();
         else if (a == "--baseline") args.baseline = value();
         else if (a == "--no-timing") args.timing = false;
+        else if (a == "--symbol-times") args.symbol_times = true;
         else if (a == "--oracle") args.oracle = true;
         else if (a == "--threads") {
             args.threads = std::stoi(text());
@@ -501,6 +503,11 @@ int run_engine(const Args& args) {
             std::vector<std::string> symbols;
             for (const auto& symbol : it->second.final_symbols()) symbols.push_back(symbol);
             j["plausible"] = text_evidence(symbols).plausible();
+            if (args.symbol_times) {  // [text, start_s, end_s] per final character, stream time
+                nlohmann::json timed = nlohmann::json::array();
+                for (const auto& c : it->second.final_timed()) timed.push_back({c.text, c.start_s, c.end_s});
+                j["symbols"] = std::move(timed);
+            }
         }
         if (const auto it = wpm.find(id); it != wpm.end()) j["wpm"] = it->second;
         if (args.timing) {  // not with --no-timing: two runs' files must be the same
