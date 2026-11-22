@@ -6209,8 +6209,15 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   with the signed bar 3: every list's calls those of `main` (no list: the contest 1 false, fresh seed 0, strong pairs 1 and 0,
   crowded 1, 100 stations 0, G2 0 and 2, H2 2 and 0; G2-01's second seed shows EA4J reported 13.8 s later). The stage's CPU
   (`kz4ap-calls`, the stage's wall time over channel-seconds, three replays side by side with another program's tests running): on
-  the 2026-11-18 CWT, 20 m 2.41 ms per channel-second and 40 m 4.65 ms at bar 4 (the old rule, in an earlier batch, 2.75 and 3.98 ms; the wall times move by 10% with the machine's load); against the bar's 40 ms and the goal's 8 ms. A heuristic, the bars the test set's
-  choice.
+  the 2026-11-18 CWT, 20 m 2.41 ms per channel-second and 40 m 4.65 ms at bar 4 (the old rule, in an earlier batch, 2.75 and 3.98 ms; the wall times move by 10% with the machine's load); against the bar's 40 ms and the goal's 8 ms. *Held out, once* (the two 2026-11-19 recordings, run after the
+  choice, to report only; `build/cl-1/heldout2/`, git-ignored), calls / window-confirmed / spotted that day / misread / unknown, the
+  old rule to the defaults: no list 502 / 260 / 65 / 102 / 75 to 509 / 261 / 68 / 105 / 75, with MASTER.SCP 494 / 259 / 67 / 91 / 77
+  to 501 / 260 / 69 / 95 / 77 (never-issued US calls of other shapes 3 throughout). Plainly: no real call gained. The one
+  "window-confirmed" gain is A7TA (80 m, during the CWT's 03:00Z session), a member's number, 1701 in cut digits, which 4 RBN
+  skimmers also took for a call; E5E, E5I (80 m) and S5O (40 m) are misreadings by the judge, and with the list OK1M (40 m, in
+  MASTER.SCP, one edit from three calls spotted that day) too; T5T (80 m and 40 m) and H8M (40 m) the RBN spotted elsewhere that
+  day, unverified (T5T is gained on four recordings of two days, 20 m to 80 m, more like a fragment than a Somali station). None lost. A heuristic,
+  the bars the test set's choice.
 - `cq_event_signed` (the review of `calls-list-1`): the CQ and an event word sign the call after them (Role, above). *Measured* at
   bar 8 and signed bar 2, on and off: on the 2026-11-17 and 2017 replays and the generated sets the same calls (4 rows signed now,
   N5ZC, W0ECC, WA3AER on KC2LRC-2 and AB9CA on W3OA, and some rows placed at their signed reading); on the 2026-11-18 CWT W8K
