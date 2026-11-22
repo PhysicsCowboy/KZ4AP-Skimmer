@@ -130,6 +130,11 @@ bool is_keyword(std::string_view w) {
 
 bool is_prosign(std::string_view w) { return !w.empty() && w[0] == '<'; }
 
+// A keyword run onto the contest report: R5NN, TU5NN, UR5NN, K5NN (CallSearchConfig::keyword_report_signed).
+bool is_keyword_report(std::string_view base) {
+    return base.size() > 3 && base.ends_with("5NN") && is_keyword(base.substr(0, base.size() - 3));
+}
+
 // A base call up to and with its last digit: K1 of K1ABC, VE3 of VE3XYZ, 3DA0 of 3DA0RU.
 std::string_view call_area(std::string_view base) {
     std::size_t d = base.size();
@@ -271,6 +276,11 @@ double call_length_nats(std::size_t n) {
 }
 
 // ---- The grammar
+
+bool is_cq_event_word(std::string_view w) {
+    return any_of_word(w, {"CWT", "SST", "MST", "NS", "NAQP", "SS", "FD", "NA", "QRP", "FOC", "SKCC", "BUG", "ARRL", "WAE", "WWFF",
+                           "IOTA", "BOTA", "LOTA", "SEQP", "SPRINT"});
+}
 
 bool allocated_pair(char a, char b) {
     if (!(is_letter(a) || is_digit(a)) || !(is_letter(b) || is_digit(b))) return false;
@@ -630,7 +640,7 @@ std::vector<Word> words_of(std::span<const DecodedSymbol> symbols, std::span<con
         if (t.size() > 1 && t[0] == '<') {
             flush();
             Word w;
-            w.text = t;
+            w.text = t == "<BK>" ? std::string("BK") : t;  // the abbreviation BK run together: the word BK (Word::text)
             w.start_s = s.start_s;
             w.end_s = s.end_s;
             w.first = i;
@@ -700,13 +710,26 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         out.push_back(std::move(r));
     };
     // The role of a call in words [first, last): past its repeats on either side.
+    // Whether the words before index i are CQ and one contest or event word (ReadOptions::cq_event), past stray E and T.
+    const auto cq_event_before = [&](std::size_t i) {
+        if (options.cq_event == 0) return false;
+        while (i > 0 && tiny_word(words[i - 1].text)) --i;
+        if (i == 0 || !is_cq_event_word(words[i - 1].text)) return false;
+        return before(i - 1) == "CQ";
+    };
+    // The role from the words around; with nothing before it but CQ and an event word, signed (prev_outside: prev is the word
+    // before index i, not a piece of the same word).
+    const auto role_with = [&](std::string_view prev, std::string_view next, bool prev_outside, std::size_t i) {
+        const Role role = role_from(prev, next);
+        return role == Role::Unknown && prev_outside && cq_event_before(i) ? Role::Sender : role;
+    };
     const auto role_of = [&](const std::string& text, std::size_t first, std::size_t last) {
         std::size_t a = first;
         while (a > 0 && words[a - 1].text == text) --a;
         std::size_t b = last;
         while (b < words.size() && words[b].text == text) ++b;
         const std::string_view prev = before(a), next = after(b);
-        return role_from(prev, next);
+        return role_with(prev, next, true, a);
     };
 
     for (std::size_t i = from; i < to; ++i) {
@@ -774,7 +797,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 readings.push_back(s.text);
                 for (const std::string& text : readings) {
                     const std::size_t before_emit = out.size();
-                    emit(text, how, i, i + 1, role_from(prev, next), twice);
+                    emit(text, how, i, i + 1, role_with(prev, next, a == 0, i), twice);
                     if (out.size() > before_emit) {
                         segmented = true;
                         if (timed) {
@@ -796,11 +819,12 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (!parse_call(pieces[k])) continue;
                 std::string_view prev = k > 0 ? std::string_view(pieces[k - 1]) : before(i);
                 std::string_view next = k + 1 < pieces.size() ? std::string_view(pieces[k + 1]) : after(i + 1);
+                const bool prev_outside = k == 0 || prev == pieces[k];
                 if (prev == pieces[k]) prev = before(i);
                 if (next == pieces[k]) next = after(i + 1);
                 const bool twice = pieces.size() >= 2 && ((k > 0 && pieces[k - 1] == pieces[k]) || (k + 1 < pieces.size() && pieces[k + 1] == pieces[k]));
                 const std::size_t before_emit = out.size();
-                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next), twice);
+                emit(pieces[k], Reading::Glued, i, i + 1, role_with(prev, next, prev_outside, i), twice);
                 if (timed && out.size() > before_emit && offset + pieces[k].size() <= w.size() &&
                     w.compare(offset, pieces[k].size(), pieces[k]) == 0) {
                     out.back().start_s = symbols[word.first + offset].start_s;
@@ -1039,6 +1063,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     options.costs = config_.segmentation;
     options.joined_periodic = static_cast<int>(config_.joined_periodic);
     options.x_as_tu = static_cast<int>(config_.x_as_tu);
+    options.cq_event = static_cast<int>(config_.cq_event_signed);
     for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
@@ -1074,12 +1099,13 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
         }
     }
     if (reading_log_) reading_log_(r, freq_hz);
-    // A special form and a word of CW, and by default an unusual one (four letters after the digit) and one whose only digit is its
-    // prefix's, from a list only.
-    const bool listed_only = r.special || r.cw_word || (r.unusual && config_.unusual_listed_only != 0.0) ||
-                             (r.prefix_digit && config_.prefix_digit_listed_only != 0.0) ||
-                             (config_.cut_number_form == 1.0 && is_cut_number_form(r.base));
-    if (listed_only && !(known_ && known_->contains(r.base))) return;
+    // A form set to be reported from a list only (CallSearchConfig::unusual_form and the like at 1) is not held unlisted.
+    const bool listed = known_ && known_->contains(r.base);
+    if (listed_only(r.base, r.special, r.unusual, r.prefix_digit, r.cw_word) && !listed) return;
+    // A form with its own bar, unlisted, from whole and glued words only (CallSearchConfig::form_whole_words).
+    const bool own_bar = (r.special && config_.special_form == 2.0) || (r.unusual && config_.unusual_form == 2.0) ||
+                         (r.prefix_digit && config_.prefix_digit_form == 2.0) || (r.cw_word && config_.cw_word_form == 2.0);
+    if (own_bar && !listed && config_.form_whole_words != 0.0 && r.reading != Reading::Whole && r.reading != Reading::Glued) return;
     if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
     Candidate& c = it->second;
@@ -1089,6 +1115,10 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
         c.known = known_ && known_->contains(r.base);
         c.first_s = r.start_s;
     }
+    c.special = c.special || r.special;
+    c.unusual = c.unusual || r.unusual;
+    c.prefix_digit = c.prefix_digit || r.prefix_digit;
+    c.cw_word = c.cw_word || r.cw_word;
     c.first_s = std::min(c.first_s, r.start_s);  // a correction can read something earlier than what came first
     const bool word = r.reading == Reading::Whole || r.reading == Reading::Glued;
     const double points = word ? 1.0 : (r.reading == Reading::Joined ? config_.joined_points : config_.stripped_points);
@@ -1162,14 +1192,39 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
     return s;
 }
 
+bool CallSearch::listed_only(std::string_view base, bool special, bool unusual, bool prefix_digit, bool cw_word) const {
+    return (special && config_.special_form == 1.0) || (unusual && config_.unusual_form == 1.0) ||
+           (prefix_digit && config_.prefix_digit_form == 1.0) || (cw_word && config_.cw_word_form == 1.0) ||
+           (config_.cut_number_form == 1.0 && is_cut_number_form(base));
+}
+
+bool CallSearch::holds_nothing(const Candidate& c) const {
+    if (c.known || c.reported || config_.form_rival_reported == 0.0) return false;
+    return (c.unusual && config_.unusual_form == 2.0) || (c.prefix_digit && config_.prefix_digit_form == 2.0) ||
+           (c.cw_word && config_.cw_word_form == 2.0) || (c.special && config_.special_form == 2.0);
+}
+
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
-    // An unlisted call of three characters, or of a number's shape in cut digits, needs at least this, fewer points when an occurrence
-    // counted signed, whatever else it passes on (CallSearchConfig::short_points, cut_number_points).
+    // An unlisted call of three characters, of a number's shape in cut digits, or of a form with its own bar (four letters after the
+    // digit, its only digit the prefix's, a word of CW, a special form) needs at least this, fewer points when an occurrence counted
+    // signed, whatever else it passes on; of two such forms, the higher bar (CallSearchConfig::short_points, unusual_form and the
+    // like). A form set to a list only is never reported unlisted (held from before a list was taken away, set_known).
     double need = 0.0;
-    if (!c.known && is_short_call(c.base)) need = s.sender ? config_.short_points_signed : config_.short_points;
-    else if (!c.known && config_.cut_number_form == 2.0 && is_cut_number_form(c.base))
-        need = s.sender ? config_.cut_number_points_signed : config_.cut_number_points;
+    if (!c.known) {
+        if (listed_only(c.base, c.special, c.unusual, c.prefix_digit, c.cw_word)) return false;
+        const auto bar = [&](bool applies, double form, double bare, double signed_points) {
+            if (applies && form == 2.0) need = std::max(need, s.sender ? signed_points : bare);
+        };
+        bar(is_short_call(c.base), 2.0, config_.short_points, config_.short_points_signed);
+        bar(is_cut_number_form(c.base), config_.cut_number_form, config_.cut_number_points, config_.cut_number_points_signed);
+        bar(c.unusual, config_.unusual_form, config_.unusual_points, config_.unusual_points_signed);
+        bar(c.prefix_digit, config_.prefix_digit_form, config_.prefix_digit_points, config_.prefix_digit_points_signed);
+        bar(c.cw_word, config_.cw_word_form, config_.cw_word_points, config_.cw_word_points_signed);
+        bar(c.special, config_.special_form, config_.special_points, config_.special_points_signed);
+        if (c.cw_word && config_.cw_word_form == 2.0 && config_.keyword_report_signed != 0.0 && !s.sender && is_keyword_report(c.base))
+            return false;
+    }
     if (points < need) return false;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
     if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
@@ -1233,6 +1288,9 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
     const double mine = mine_s.points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
+        // An unlisted call of a form with its own bar, not yet reported, holds nothing back (CallSearchConfig::form_rival_reported);
+        // not reported, it is no row for this call to withdraw either.
+        if (holds_nothing(other)) continue;
         // Its occurrences' span must come within variant_s of now, on either side (now is a loser's last reading when a withdrawal is judged).
         const auto [oldest, newest] = std::minmax_element(other.recent.begin(), other.recent.end(),
                                                           [](const Occurrence& a, const Occurrence& b) { return a.end_s < b.end_s; });
