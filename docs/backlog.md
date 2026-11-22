@@ -755,6 +755,19 @@ section 4.3.1.
 
 ### Fast fading with an echo: the owner's "auroral" clips (found 2026-11-21, `text-level-1`; the owner's top plain-text priority)
 
+**Status 2026-11-22 (`text-tail-2`):** the clips are now scored on the clip's span (a decoded character counts if the midpoint of
+its start and end lies within the owner's clip, 1049 to 1080 s and 879 to 910 s of the recording; the copy aligned globally), since
+the 38 s cut runs 1 s past the clip and the whole track 0.5 s past. An error breakdown found 37 of 107 edits past the copy's end, 31
+of them a defect (the over's end at the stream's end read the tail of a flush sample, none: a row of one-sample E's), now fixed. The
+tail's power is now absolute, g M̄, M̄ the stream's recent mark power, as the clips show it (0.06 to 0.24 dB per dB of the mark's
+power), and the first shape is made from the 16th strong run. On the span, no-space CER: cut to 38 s 0.284 and 0.156 (main) to 0.068
+and 0.065; whole tracks 0.239 and 0.156 to 0.057 and 0.052; DeepCW 0.398 and 0.338. Dits read as dahs behind a tail at −10 dB re
+the dit or more: 26 of 203 to 0; gaps at −5 dB re the mark before or more joined: 21 of 80 to 5. What is left on the clips: marks
+lost in deep fades (−15 to −3 dB re the median mark), a few gaps filled, a character at each cut's start. The synthetic tail set
+(synth-tail-1's generator, a stress set) still reads 0.25 at f_D under 5 Hz and 0.48 to 0.63 above: some stations collapse to dahs,
+not traced. Open as before: the tail in the level filter and in the next rise's window, a tail that changes within a track, more
+of the owner's clips.
+
 **Status 2026-11-21 (`text-fast-1`):** both causes modeled, by default. The clips' decorrelation is mostly the tail: kz4ap-fading's
 ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mark's end into another path's tail give, and the decoder's
 estimator, inside the marks only, reads f_D about 4.6 Hz, not 9 to 10 Hz; the tail itself is incoherent with the mark (coherence 0.94
