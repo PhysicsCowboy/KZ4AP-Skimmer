@@ -356,6 +356,31 @@ TEST(ModelTables, AWeightIsTheFistsShiftAndWeightZeroIsTheOldFist) {
     EXPECT_GE(tables.open_hi(), plain.open_hi());
 }
 
+TEST(ModelTables, AScaledWeightMovesTheMediansInstead) {
+    // fist_weight_scaled: a weight's fist reads the tables of a fist with medians {1 + w, 3 + w, 1 - w, 3 - w, 7 - w} dots.
+    SegmentalConfig scaled;
+    scaled.fist_weights_dots = {0.0, 0.4};
+    scaled.fist_weight_prior = 0.01;
+    scaled.fist_weight_scaled = true;
+    const ModelTables tables(scaled);
+    SegmentalConfig own = weightless();
+    own.model.fist_medians_dots = {{1.4, 3.4, 0.6, 2.6, 6.6}};
+    const ModelTables reference(own);
+    for (const int speed : {0, 12, 31}) {
+        const int f = tables.first_of_group(tables.group_of(tables.first_fist(speed)) + 1);
+        ASSERT_DOUBLE_EQ(tables.weight_of(f), 0.4);
+        const int g = reference.first_fist(speed);
+        for (int kind = 0; kind < 5; ++kind) {
+            ASSERT_EQ(tables.range(kind, f).lo, reference.range(kind, g).lo) << speed << " " << kind;
+            ASSERT_EQ(tables.range(kind, f).hi, reference.range(kind, g).hi) << speed << " " << kind;
+            const int length = (reference.range(kind, g).lo + reference.range(kind, g).hi) / 2;
+            EXPECT_DOUBLE_EQ(tables.log_end(kind, f, length), reference.log_end(kind, g, length));
+        }
+        EXPECT_EQ(tables.mark_survival(f, 40), reference.mark_survival(g, 40));
+        EXPECT_EQ(tables.gap_survival(f, 40), reference.gap_survival(g, 40));
+    }
+}
+
 TEST(ModelTables, AWeightsLetterGapsAndStretchesAreOptions) {
     SegmentalConfig config;
     config.fist_weights_dots = {0.0, 0.4};

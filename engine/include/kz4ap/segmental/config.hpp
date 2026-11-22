@@ -228,6 +228,9 @@ struct SegmentalConfig {
     // on or off: a weight at every gap stretch; off, weights other than 0 at g = 1 only, 242 fists in place of 534 at m = 1. Off read
     // the clips and C2 as on did, for less memory and CPU (heuristic by measurement).
     bool fist_weight_stretched = false;
+    // on or off: the weight moves each kind's median (a dot's (1 + w) T_s, an element gap's (1 - w) T_s, the log-normal's spread
+    // about it) in place of adding a constant w T_s to the length (a keyer's rule, the default). A variant.
+    bool fist_weight_scaled = false;
 
     // --- The front filter's widths (segmental_decoder.hpp) ---
 

@@ -54,7 +54,8 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     // The fists. A stretch of n steps reads a letter or word gap at speed s as speed s + n x gap_stretch_speed_steps does, so
     // the gaps' tables are kept per such a speed and shared. A speed keeps the stretches whose gap unit is within gap_unit_max_s.
     // A weight w moves every mark by +w T_s and the gap after it by -w T_s (letter and word gaps too with fist_weight_letter_gaps):
-    // a Fist of its own, the model's shifts plus these. The weights' order is 0 first, then the others as configured.
+    // a Fist of its own, the model's shifts plus these, or with fist_weight_scaled its medians moved by them, the shifts as they are.
+    // The weights' order is 0 first, then the others as configured.
     const std::vector<double>& weights = config.fist_weights_dots;
     if (std::count(weights.begin(), weights.end(), 0.0) != 1)
         throw std::invalid_argument("segmental: fist_weights_dots must hold 0, once");
@@ -70,20 +71,22 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
     const int weight_count = static_cast<int>(order.size());
     const int extra = (config.gap_stretches - 1) * config.gap_stretch_speed_steps;
     const int table_speeds = speeds_ + extra;
-    std::vector<std::array<double, 5>> shifts_of;  // by weight: dots
-    std::vector<viterbi::Fist> fist_of;            // by weight
+    std::vector<std::array<double, 5>> shifts_of;   // by weight: dots
+    std::vector<std::array<double, 5>> medians_of;  // by weight: dots
+    std::vector<viterbi::Fist> fist_of;             // by weight
     for (const double w : order) {
         viterbi::ViterbiConfig longer = model;
         longer.speed_count = table_speeds;
-        std::array<double, 5>& shifts = longer.fist_shifts_dots;
-        shifts[kDot] += w;
-        shifts[kDash] += w;
-        shifts[kElementGap] -= w;
+        std::array<double, 5>& moved = config.fist_weight_scaled ? longer.fist_medians_dots : longer.fist_shifts_dots;
+        moved[kDot] += w;
+        moved[kDash] += w;
+        moved[kElementGap] -= w;
         if (config.fist_weight_letter_gaps) {
-            shifts[kLetterGap] -= w;
-            shifts[kWordGap] -= w;
+            moved[kLetterGap] -= w;
+            moved[kWordGap] -= w;
         }
-        shifts_of.push_back(shifts);
+        shifts_of.push_back(longer.fist_shifts_dots);
+        medians_of.push_back(longer.fist_medians_dots);
         fist_of.emplace_back(longer);
     }
     const auto dot_s = [&](int speed) { return model.dot_min_ms * std::pow(model.speed_ratio, speed) / 1000.0; };
@@ -134,7 +137,7 @@ ModelTables::ModelTables(const SegmentalConfig& config) {
         if (made[index] == 0) {
             const double sigma = model.fist_sigmas[static_cast<std::size_t>(kind)];
             const double dot_samples = dot_s(speed) / model.sample_interval_s;
-            const double median = model.fist_medians_dots[static_cast<std::size_t>(kind)] * dot_samples;
+            const double median = medians_of[static_cast<std::size_t>(k)][static_cast<std::size_t>(kind)] * dot_samples;
             const double shift = shifts_of[static_cast<std::size_t>(k)][static_cast<std::size_t>(kind)] * dot_samples;
             const int lo = std::max(1, static_cast<int>(std::floor(shift + median * std::exp(-config.duration_z_max * sigma))));
             const int hi = std::max(lo, static_cast<int>(std::ceil(shift + median * std::exp(config.duration_z_max * sigma))));

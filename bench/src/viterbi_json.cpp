@@ -569,6 +569,10 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         config.fist_weight_stretched = std::stod(text) != 0.0;
         return;
     }
+    if (name == "fist_weight_scaled") {
+        config.fist_weight_scaled = std::stod(text) != 0.0;
+        return;
+    }
     apply_setting(config.model, setting);
 }
 
