@@ -223,9 +223,9 @@ void SegmentalDecoder::update_walk() {
                       doppler_->runs_hz() >= c.doppler_min_runs_ratio * spread;
     const bool fast = loud && (walk_fast_ ? spread >= c.doppler_slow_hz : spread >= c.doppler_fast_hz);
     const double walk = std::clamp(c.doppler_walk_per_hz * spread, c.level_walk_nepers_per_sqrt_s, c.doppler_walk_max);
-    // Short frames only once the tail is decided, where the runs are strong enough to learn one (review of text-fast-1: a fresh track
-    // ran them for 3 to 5 s before its tail was in): a short frame lets the level follow a tail into the gaps.
-    bool decided = doppler_->level_db() < c.echo_min_db || c.echo_max_s == 0.0;
+    // A variant, off: short frames only once the tail is decided, where the runs are strong enough to learn one (review of text-fast-1:
+    // a fresh track ran them for 6 to 8 s before its tail was in; config.hpp, doppler_hold_frames).
+    bool decided = c.doppler_hold_frames == 0.0 || doppler_->level_db() < c.echo_min_db || c.echo_max_s == 0.0;
     for (const Stream& stream : streams_) decided = decided || stream.echo->decided();
     if (fast == walk_fast_ && (!fast || (std::fabs(walk - walk_now_) < 0.5 && decided == walk_short_))) return;
     walk_fast_ = fast;

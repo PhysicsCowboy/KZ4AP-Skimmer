@@ -370,7 +370,7 @@ public:
     void set_echo(const EchoShape& shape);
     // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
     // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
-    // short_frames false keeps the frame at level_frame_s for now (the tail not yet decided).
+    // short_frames false keeps the frame at level_frame_s for now (the variant doppler_hold_frames: the tail not yet decided).
     void set_walk(bool fast, double walk_nepers_per_sqrt_s, bool short_frames = true);
     bool fast() const { return fast_; }
 

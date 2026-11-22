@@ -111,6 +111,10 @@ struct SegmentalConfig {
     // apart, and lost WA2SCB (40 m 2026-11-17), KE3TW (20 m) and WB4OSS (40 m 2026-11-18), each back with the walk off (traced).
     double doppler_min_runs_ratio = 0.5;
     double doppler_walk_max = 20.0;
+    // 0 or 1: 1 holds the fast walk's frames at level_frame_s until a stream's tail is decided (the review's suggestion). A variant,
+    // off by measurement: on the owner's clips cut to 38 s, clip11 0.325 off and 0.377 on, the whole tracks 0.341 and 0.234 off,
+    // 0.341 and 0.221 on (no-space CER against his copy).
+    double doppler_hold_frames = 0.0;
     // s: the pairs read for the spread lie in each stretch of a run at or above -10 dB re its median power, this far inside its ends, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its
     // tail, another path's, take |rho| down in proportion to tau (the clips' straight line in ln |rho|; kz4ap-fading). Heuristic: 3
     // samples at the widest filter, its edge's half.

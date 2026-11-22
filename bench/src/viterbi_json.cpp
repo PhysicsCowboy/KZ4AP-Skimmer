@@ -479,6 +479,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"doppler_shape_lo", &config.doppler_shape_lo},
         {"doppler_shape_hi", &config.doppler_shape_hi},
         {"doppler_min_runs_ratio", &config.doppler_min_runs_ratio},
+        {"doppler_hold_frames", &config.doppler_hold_frames},
         {"doppler_walk_max", &config.doppler_walk_max},
         {"doppler_end_guard_s", &config.doppler_end_guard_s},
         {"doppler_memory_runs", &config.doppler_memory_runs},

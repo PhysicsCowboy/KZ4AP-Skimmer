@@ -397,9 +397,10 @@ DopplerEstimator::DopplerEstimator(const SegmentalConfig& config, const std::arr
           std::isfinite(config.doppler_walk_per_hz) && config.doppler_walk_per_hz >= 0.0 && std::isfinite(config.doppler_walk_max) &&
           config.doppler_walk_max >= config.level_walk_nepers_per_sqrt_s && config.doppler_shape_lo > 0.0 &&
           config.doppler_shape_lo <= 1.0 && config.doppler_shape_hi >= 1.0 && std::isfinite(config.doppler_shape_hi) &&
-          config.doppler_min_runs_ratio >= 0.0 && config.doppler_min_runs_ratio <= 1.0 && std::isfinite(config.echo_run_db)))
+          config.doppler_min_runs_ratio >= 0.0 && config.doppler_min_runs_ratio <= 1.0 && std::isfinite(config.echo_run_db) &&
+          (config.doppler_hold_frames == 0.0 || config.doppler_hold_frames == 1.0)))
         throw std::invalid_argument("segmental: a doppler_ setting is out of range (Hz, dB, s, runs; doppler_walk_max at least "
-                                    "level_walk_nepers_per_sqrt_s; the shape's band around 1; the runs' ratio within 0 to 1)");
+                                    "level_walk_nepers_per_sqrt_s; the shape's band around 1; the runs' ratio within 0 to 1; doppler_hold_frames 0 or 1)");
     interval_s_ = config.model.sample_interval_s;
     run_ratio_ = std::pow(10.0, config.echo_run_db / 10.0);
     guard_ = static_cast<int>(std::ceil(config.doppler_end_guard_s / interval_s_ - 1e-9));
