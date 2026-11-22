@@ -394,7 +394,7 @@ analyzer, reads as such a leak (noise only, stage 3); a variant subtracts it (A.
 −15 dB re the mark for 40 ms, incoherent, 0.06 to 0.24 dB per dB of the mark's power). Per stream, runs above +10 dB re F
 with median M ≥ +20 dB re F give e² − F from their last sample ≥ M/4 (h = 7, the template's half point; derived) to the next run,
 at m − h, memory 200 runs: the tail is g_m M̄, g_m = Σ(e² − F)/ΣM, M̄ the runs' M over 30 runs. On if the mean of (e² − F)/M at
-m = 11 is ≥ −15 dB re the mark, to −25 dB re the mark or 48 ms, from the 16th run (heuristics). A variant, off: g_m a² at the belief's level.
+m = 11 is ≥ −15 dB re the mark, to −25 dB re the mark or 48 ms, from the 33rd run (heuristics). A variant, off: g_m a² at the belief's level.
 
 **Stage 3: the level filter.** A hidden Markov model over key (up, down) × level:
 
@@ -4594,8 +4594,8 @@ sample and each later one until a sample starts the next run or span = 11 + P �
 positions (`echo_max_s`; 18 at m = 1, 6 at m = 3), h the last m with 1 − s_m ≥ 0.5 (7 at m = 1, 6 at m = 3; derived from the
 template). Each closed profile enters, with memory λ = e^(−1/200) per run (`echo_memory_runs`) and for the positions it reached, the
 sums S[q] ← λS + (e² − F)/M, N[q] ← λN + 1, and (text-tail-2) P[q] ← λP + (e² − F), Σ_M[q] ← λΣ_M + M. Once the memory's weight Σλⁱ
-reaches 15 runs (`echo_min_runs`; at the 16th strong run) the shape is made, and again at every 5th run after (echo_min_runs / 3):
-A[q] = S[q]/N[q] where N[q] ≥ 5, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), for q = 0, 1, … while A[11 + q − h] ≥ 10^(−2.5)
+reaches 30 runs (`echo_min_runs`; at the 33rd strong run) the shape is made, and again at every 10th run after (echo_min_runs / 3):
+A[q] = S[q]/N[q] where N[q] ≥ 10, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), for q = 0, 1, … while A[11 + q − h] ≥ 10^(−2.5)
 (`echo_end_db`), at most P, the tail g_(11+q) = P[11 + q − h] / Σ_M[11 + q − h] (`echo_absolute` 1, the default), or A[11 + q − h]
 (`echo_absolute` 0, text-fast-1's form); the fall window's six positions take g at 11 − h. A new shape goes to `set_echo` at once,
 and M̄ to `LevelEvidence::set_echo_level` before every sample; `push` keeps M̄/σ² per sample, σ² as the sample's z is taken.
@@ -4693,18 +4693,20 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   same Gaussian (binomial) one.
 
 **Provenance.** All in `docs/decision-log.md`, 2026-11-21 (`text-fast-1`) and 2026-11-22 (`text-tail-2`).
-- `echo_absolute` 1 by measurement (text-tail-2), on the owner's clips scored on their span, no-space CER: cut to 38 s 0.261 and
-  0.156 to 0.068 and 0.065, whole tracks 0.239 and 0.156 to 0.057 and 0.052 (DeepCW 0.398 and 0.338); the matched set with a tail
-  (synth-tail-1's generator: −7 dB re the mark, τ 15 ms, f_D 8 Hz) 0.386, 0.374, 0.686, 1.462 to 0.253, 0.254, 0.482, 0.627 by f_D cell
+- `echo_absolute` 1 by measurement (text-tail-2), on the owner's clips scored on their span, no-space CER, with the over's end fixed:
+  cut to 38 s 0.261 and 0.156 to 0.102 and 0.078, whole tracks 0.239 and 0.156 to 0.080 and 0.026 (DeepCW 0.398 and 0.338); the matched set with a tail (synth-tail-1's generator: −7 dB re the mark, τ 15 ms, f_D 8 Hz) 0.386, 0.374,
+  0.686, 1.462 to 0.277, 0.273, 0.487, 0.639 by f_D cell
   (0.7 to 1.4, 2.1 to 4.2, 7 to 14 Hz, and 21 to 42 Hz asked, which the generator's direct path realizes as about 18 to 25 Hz);
-  the matched set without a tail and VE3NEA's conditions the same or within a few edits. On the tests' own channel (a −10 dB re the
+  the matched set without a tail the same to the symbol, VE3NEA's conditions the same in 39 of 40 cells (hand, f_D 3 Hz, +13.78 dB
+  S₅₀₀: 947 to 952 edits of 13 054). On the tests' own channel (a −10 dB re the
   mark tail at 5 Hz, the direct path at f_D 0.3 and 1 Hz, four seeds) the two forms read alike: 0.300 against 0.332 at 0.3 Hz,
   0.332 against 0.315 at 1 Hz (mean no-space CER; measured). The tail's presence and length decided by the mean of the ratios in both
   forms, by measurement: with the ratio of means deciding, clip03's tail, about −15 dB re the mark, stood under `echo_on_db` until
   18.9 s and clip03 read 0.511. `echo_level_runs` 30: heuristic, 10 and 200 read the clips cut to 38 s 0.136 and 0.052, 0.125 and
-  0.091, 30 0.102 and 0.078 (with 30 runs before the first shape). `echo_min_runs` 15 (was 30): by measurement on the clips cut to
-  38 s, 0.102 and 0.078 to 0.068 and 0.065 (10 the same, 20 0.080 and 0.065): a fresh track's first 3 to 4 s at 35 WPM are read
-  without a tail rather than 6 to 8 s.
+  0.091, 30 0.102 and 0.078 (with 30 runs before the first shape). `echo_min_runs` 30 kept (text-tail-2, by measurement): fewer runs read a fresh track's first seconds better, the clips cut to
+  38 s 0.102 and 0.078 at 30, 0.080 and 0.065 at 20, 0.068 and 0.065 at 15 and 10; but at 20 the 2026-11-17 20 m replay lost WD2E, a
+  window-confirmed call at the 2-point bar (kept at 30, and by the proportional form at 20), and at 15 DEV2's E2 (seed 1, oracle) read
+  +0.0010 (+0.0001 to +0.0021, 95% bootstrap interval) re main.
 - The tail's estimator (+10 dB re F, kz4ap-fading's run threshold; 32 ms; 200 and 30 runs), echo_on_db −15 dB re the mark, echo_end_db −25 dB re the mark,
   48 ms: heuristics. echo_min_db +20 dB re F by measurement: without it VE3NEA's clean stations at 12 to 15 dB re F read a tail of −7
   to −14 dB re the mark (a bias at the run threshold) and their CER rose (+1.78 dB S₅₀₀, f_D 3 Hz, hand: 0.705 to 0.739). On the
@@ -4726,7 +4728,7 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 
 **Limitations.**
 - The tail is one shape per stream, for every fall: a channel whose tail changes faster than about 200 runs (40 s at 35 WPM) is read
-  with the shape before; a track's first 15 strong runs are read without one (about 3 to 4 s at 35 WPM). Its absolute power follows
+  with the shape before; a track's first 32 strong runs are read without one (about 6 to 8 s at 35 WPM). Its absolute power follows
   M̄ over 30 runs (about 6 s at 35 WPM): a tail that does follow the mark's fades (a single delayed path fading with the direct one) is
   read too strong in a fade and too weak at a peak; the proportional form, `echo_absolute` 0, is that case's. M̄ is the runs' median
   e², noise included, and only of runs at +20 dB re F or more, so it reads high while the station is in a deep fade.
@@ -5100,7 +5102,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: the fast frame (text-fast-1) | 10.67 ms, 4 samples at m = 1; 8 ms, 1 sample at m = 3; joined into level_frame_s while the walk is slow and where a tail is modeled (and, with `doppler_hold_frames` 1, until it is decided) | `level_fast_frame_s` | heuristic by measurement |
 | Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more, ln \|ρ(21.33 ms)\| / ln \|ρ(τ)\| within 0.4 to 1.6 of (21.33 ms / τ)² at τ = 8 … 18.67 ms (`doppler_shape_lo`, `doppler_shape_hi`), and each run's own \|C\| reading at least 0.5 of f_D (`doppler_min_runs_ratio`); W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
 | Segmental: the Doppler estimator (text-fast-1) | the widest stream's runs above +10 dB re F; pairs 8 to 21.33 ms apart within each stretch at or above −10 dB re the run's median, 8 ms inside its ends, the front filter's noise correlation taken out; memory 100 runs, used from 20; f_D = 2σ_D at 21.33 ms, Gaussian spectrum | `doppler_end_guard_s`, `doppler_memory_runs`, `doppler_min_runs` | form derived; values heuristic |
-| Segmental: the channel's tail (text-fast-1, text-tail-2) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 16th strong run (weight 15), then every 5th; on at the mean of (e² − F)/M at m = 11 ≥ −15 dB re the mark, kept while ≥ −25 dB re the mark, to 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` and `echo_min_runs` by measurement |
+| Segmental: the channel's tail (text-fast-1, text-tail-2) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 33rd strong run (weight 30), then every 10th; on at the mean of (e² − F)/M at m = 11 ≥ −15 dB re the mark, kept while ≥ −25 dB re the mark, to 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` and `echo_min_runs` by measurement |
 | Segmental: the tail's power (text-tail-2) | absolute, g_m M̄: g_m = Σ(e² − F)/ΣM, M̄ the strong runs' median e² over 30 runs (exponential memory); 0: g_m a² at the belief's level, g_m the mean of (e² − F)/M (text-fast-1's) | `echo_absolute` 1, `echo_level_runs` 30 | form derived; 1 by measurement, 30 heuristic |
 | Segmental: look-ahead, commit | 8 frames each, 170.7 ms; a sample committed 64 to 127 samples after it arrives | `level_lookahead_s`, `level_commit_s` | heuristic; no measured effect from 0.085 to 1.5 s |
 | Segmental: belief threshold, edge groups | P̂ ≥ 10⁻⁴; at most 8 groups of levels for the edges | evidence.cpp, `kEdgeLevels` | heuristic |
