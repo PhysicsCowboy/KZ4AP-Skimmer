@@ -149,13 +149,8 @@ bool sender_before(std::string_view w) { return any_of_word(w, {"K", "KN", "<KN>
 bool named_before(std::string_view w) { return any_of_word(w, {"DE", "5NN", "ENN", "599", "UR", "NR", "RST", "GM", "GA", "GE", "GN", "FB", "TNX", "TKS", "R", "SRI", "AGN"}); }
 bool stray_start(char c) { return c == 'E' || c == 'T' || c == 'I'; }
 bool stray_end(char c) { return c == 'E' || c == 'T' || c == 'K'; }
-// A letter that also ends an over or a word sent after a call (K, R, the stray E, I, T): a join form's last letter of this kind
-// needs its gap measured (CallSearchConfig::unusual_evidence).
-bool join_letter(char c) { return c == 'K' || c == 'R' || c == 'E' || c == 'I' || c == 'T'; }
-// A call's place in an ordinary QSO (CallReading::qso_frame): DE before or after it, a sign-off after it, or sent twice.
-bool qso_frame_from(std::string_view prev, std::string_view next, bool twice) {
-    return twice || prev == "DE" || next == "DE" || any_of_word(next, {"K", "KN", "BK", "AR", "SK", "<KN>", "<AR>", "<SK>"});
-}
+// A call's place in an ordinary QSO (CallReading::qso_frame): DE before or after it, or sent twice; a sign-off after it alone is none.
+bool qso_frame_from(std::string_view prev, std::string_view next, bool twice) { return twice || prev == "DE" || next == "DE"; }
 bool tiny_word(std::string_view w) { return any_of_word(w, {"E", "T", "I", "EE", "TT", "IE", "EI", "ET", "TE"}); }
 
 // The piece of a word a keyword is glued to. Returned in order; empty when the word does not split that way.
@@ -350,7 +345,7 @@ bool is_cw_word(std::string_view base) {
     if ((base.size() == 4 || base.size() == 5) && base.ends_with("5NN") && is_letter(base[0]) && (base.size() == 4 || is_letter(base[1])))
         return true;
     // Rigs, antennas and software that have a call's form.
-    return any_of_word(base, {"G5RV", "K3S", "K4D", "N1MM", "K1EL", "K9AY", "TH7DX", "TH6DX", "TH5DX", "TH3JR", "TH2MK", "HF5B", "HF6V", "HF9V", "HF2V", "FT8DX", "FT5DX", "FT3DX", "W2DU", "W8JK", "W3DZZ"});
+    return any_of_word(base, {"G5RV", "K3S", "K4D", "N1MM", "K1EL", "K9AY", "TH7DX", "TH6DX", "TH5DX", "TH3JR", "TH2MK", "HF5B", "HF6V", "HF9V", "HF2V", "W2DU", "W8JK", "W3DZZ"});
 }
 
 bool is_locator(std::string_view w) {
@@ -716,26 +711,6 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         r.end_s = words[last - 1].end_s;
         out.push_back(std::move(r));
     };
-    // The gaps of a reading whose n characters are symbols [a, a + n) (CallReading::letter_gap_s and the like).
-    const auto measure = [&](CallReading& r, std::size_t a, std::size_t n) {
-        if (n < 3 || a + n > symbols.size()) return;
-        std::vector<double> gaps;
-        for (std::size_t k = a; k + 1 < a + n; ++k) gaps.push_back(symbols[k + 1].start_s - symbols[k].end_s);
-        r.last_gap_s = gaps.back();
-        gaps.pop_back();
-        std::nth_element(gaps.begin(), gaps.begin() + static_cast<std::ptrdiff_t>(gaps.size() / 2), gaps.end());
-        r.letter_gap_s = gaps[gaps.size() / 2];
-        for (std::size_t k = a; k-- > 0;) {
-            if (symbols[k].text == " ") continue;
-            r.space_before_s = symbols[a].start_s - symbols[k].end_s;
-            break;
-        }
-        for (std::size_t k = a + n; k < symbols.size(); ++k) {
-            if (symbols[k].text == " ") continue;
-            r.space_after_s = symbols[k].start_s - symbols[a + n - 1].end_s;
-            break;
-        }
-    };
     // The role of a call in words [first, last): past its repeats on either side.
     // Whether the words before index i are CQ and one contest or event word (ReadOptions::cq_event), past stray E and T.
     const auto cq_event_before = [&](std::size_t i) {
@@ -783,7 +758,6 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
             const std::size_t before_emit = out.size();
             emit(w, Reading::Whole, i, i + 1, role_of(w, i, i + 1), twice);
             if (out.size() > before_emit) out.back().qso_frame = frame_of(w, i, i + 1);
-            if (out.size() > before_emit && words[i].last - words[i].first == w.size()) measure(out.back(), words[i].first, w.size());
             direct = true;
         }
         // A joined word cut by segment_word (ReadOptions::segment_joined): the copies of each believed call, each with the role its
@@ -842,7 +816,6 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                         if (timed) {
                             out.back().start_s = symbols[word.first + offset].start_s;
                             out.back().end_s = symbols[word.first + offset + text.size() - 1].end_s;
-                            if (text == s.text) measure(out.back(), word.first + offset, text.size());
                         }
                     }
                 }
@@ -870,7 +843,6 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                     w.compare(offset, pieces[k].size(), pieces[k]) == 0) {
                     out.back().start_s = symbols[word.first + offset].start_s;
                     out.back().end_s = symbols[word.first + offset + pieces[k].size() - 1].end_s;
-                    measure(out.back(), word.first + offset, pieces[k].size());
                 }
             }
         }
@@ -1185,10 +1157,6 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     // A reading made by stripping a stray off the front gets no listed weight in the arbitration (CallSearchConfig::flat_stripped).
     const bool flat = !r.stripped_front.empty() &&
                       (config_.flat_stripped >= 2.0 || (config_.flat_stripped >= 1.0 && r.stripped_front.find('X') != std::string::npos));
-    // The join form's gap before its last letter (CallSearchConfig::unusual_evidence): measured, a letter gap or a word space's.
-    const bool measured = r.letter_gap_s > 0.0 && r.last_gap_s >= 0.0;
-    const bool gap_ok = measured && r.last_gap_s <= config_.join_gap_ratio * r.letter_gap_s;
-    const bool gap_long = measured && !gap_ok && join_letter(r.base.back());
     // One transmission, one occurrence: another track's or another reading's copy of the same moment at this place only betters it.
     for (Occurrence& o : c.recent) {
         if (r.start_s < o.end_s && o.start_s < r.end_s && std::abs(o.freq_hz - freq_hz) <= config_.same_place_hz) {
@@ -1201,14 +1169,14 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
             if (framed) o.framed = true;
             if (r.role != Role::Named) o.own = true;
             if (r.role == Role::Sender) o.sender = true;
-            if (gap_ok) o.gap_ok = true;
-            o.gap_long = o.gap_long && gap_long;
             if (r.qso_frame) o.qso = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
             o.margin = std::max(o.margin, margin);
             if (o.covers.empty() && !r.covers.empty()) o.covers = r.covers;
             c.covers = c.covers || !r.covers.empty();
+            const bool was_reported = c.reported;
             evaluate(c, freq_hz, r.end_s);
+            after_reading(c, was_reported ? &o : nullptr, r.end_s);
             return;
         }
     }
@@ -1221,8 +1189,6 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     o.framed = framed;
     o.own = r.role != Role::Named;
     o.sender = r.role == Role::Sender;
-    o.gap_ok = gap_ok;
-    o.gap_long = gap_long;
     o.qso = r.qso_frame;
     o.margin = margin;
     o.flat = flat;
@@ -1233,7 +1199,16 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     ++c.count;
     ++c.forms[r.full];
     c.last_s = std::max(c.last_s, r.end_s);
+    const bool was_reported = c.reported;
     evaluate(c, freq_hz, r.end_s);
+    after_reading(c, was_reported ? &c.recent.back() : nullptr, r.end_s);
+}
+
+void CallSearch::after_reading(const Candidate& c, const Occurrence* touched, double now_s) {
+    // A reported call's reading may now contain a reported fragment's: only the occurrence it touched, or all of a call reported just
+    // now (CallSearchConfig::truncation_evidence); then the fragments of calls withdrawn meanwhile are judged again.
+    if (c.reported) withdraw_fragments(c, touched, now_s);
+    recheck_fragments(now_s);
 }
 
 void CallSearch::count(Support& s, const Occurrence& o, const std::vector<const Candidate*>& by) const {
@@ -1249,21 +1224,31 @@ void CallSearch::count(Support& s, const Occurrence& o, const std::vector<const 
     } else {
         s.truncation_points += config_.contained_weight * o.points;
     }
-    s.join_points += o.gap_long ? config_.join_weight * o.points : o.points;
-    if (o.gap_ok) {
-        s.gap_points += o.points;
-        s.gap_sender = s.gap_sender || o.sender;
+}
+
+double CallSearch::frame_overs(std::vector<const Occurrence*> occurrences) const {
+    std::erase_if(occurrences, [](const Occurrence* o) { return !o->qso; });
+    std::sort(occurrences.begin(), occurrences.end(), [](const Occurrence* a, const Occurrence* b) {
+        return a->start_s < b->start_s || (a->start_s == b->start_s && a->end_s < b->end_s);
+    });
+    double overs = 0.0, last_end = -std::numeric_limits<double>::infinity();
+    for (const Occurrence* o : occurrences) {
+        if (o->start_s - last_end > config_.over_gap_s) overs += 1.0;
+        last_end = std::max(last_end, o->end_s);
     }
-    if (o.qso) s.frame_points += o.points;
+    return overs;
 }
 
 CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, double now_s, double within_hz, bool forms) const {
     Support s;
     const std::vector<const Candidate*> by = forms ? containers(c) : std::vector<const Candidate*>();
+    std::vector<const Occurrence*> counted;
     for (const Occurrence& o : c.recent) {
         if (std::abs(o.freq_hz - freq_hz) > within_hz || std::abs(now_s - o.end_s) > config_.window_s) continue;
         count(s, o, by);
+        counted.push_back(&o);
     }
+    if (forms) s.frame_overs = frame_overs(counted);
     return s;
 }
 
@@ -1282,7 +1267,8 @@ std::vector<const CallSearch::Candidate*> CallSearch::containers(const Candidate
 bool CallSearch::contained(const Occurrence& o, const std::vector<const Candidate*>& by) const {
     for (const Candidate* longer : by) {
         for (const Occurrence& x : longer->recent) {
-            if (std::abs(x.freq_hz - o.freq_hz) <= config_.variant_hz && x.start_s - config_.truncation_s < o.end_s &&
+            // The longer call's own occurrence, not its name sent by another: a runner names each caller on his own carrier.
+            if (x.own && std::abs(x.freq_hz - o.freq_hz) <= config_.truncation_hz && x.start_s - config_.truncation_s < o.end_s &&
                 o.start_s < x.end_s + config_.truncation_s)
                 return true;
         }
@@ -1290,15 +1276,51 @@ bool CallSearch::contained(const Occurrence& o, const std::vector<const Candidat
     return false;
 }
 
-void CallSearch::withdraw_fragments(const Candidate& longer, double now_s) {
+void CallSearch::withdraw_fragments(const Candidate& longer, const Occurrence* touched, double now_s) {
     if (config_.truncation_evidence == 0.0 || config_.pool_places == 0.0) return;
+    std::vector<const Candidate*> by{&longer};
     for (std::size_t n = 3; n < longer.base.size(); ++n) {
         for (std::size_t a = 0; a + n <= longer.base.size(); ++a) {
             const auto it = candidates_.find(longer.base.substr(a, n));
             if (it == candidates_.end()) continue;
             Candidate& f = it->second;
             if (!f.reported || containers(f).empty()) continue;
-            if (!passes(f, pooled_support(f, std::min(now_s, f.last_s)))) withdraw(f);
+            // Only a fragment the longer call's occurrence lies beside: an occurrence of the fragment it contains.
+            bool near = false;
+            for (const Occurrence& o : f.recent) {
+                if (touched) {
+                    near = touched->own && std::abs(touched->freq_hz - o.freq_hz) <= config_.truncation_hz &&
+                           touched->start_s - config_.truncation_s < o.end_s && o.start_s < touched->end_s + config_.truncation_s;
+                } else {
+                    near = contained(o, by);
+                }
+                if (near) break;
+            }
+            if (!near) continue;
+            // Withdrawn only when the containment makes it fail: a fragment that fails for other reasons is the arbitration's.
+            const double at = std::min(now_s, f.last_s);
+            if (!passes(f, pooled_support(f, at)) && passes(f, pooled_support(f, at, false))) withdraw(f);
+        }
+    }
+}
+
+void CallSearch::recheck_fragments(double now_s) {
+    for (int guard = 0; !recheck_.empty() && guard < 1000; ++guard) {
+        const std::string base = recheck_.back();
+        recheck_.pop_back();
+        const auto container = candidates_.find(base);
+        if (container == candidates_.end() || container->second.reported) continue;
+        const std::vector<const Candidate*> by{&container->second};
+        for (std::size_t n = 3; n < base.size(); ++n) {
+            for (std::size_t a = 0; a + n <= base.size(); ++a) {
+                const auto it = candidates_.find(base.substr(a, n));
+                if (it == candidates_.end()) continue;
+                Candidate& f = it->second;
+                if (f.reported || f.known || f.recent.empty()) continue;
+                if (!is_short_call(f.base) && !(f.prefix_digit && config_.prefix_digit_form == 2.0)) continue;
+                const bool was_contained = std::any_of(f.recent.begin(), f.recent.end(), [&](const Occurrence& o) { return contained(o, by); });
+                if (was_contained) evaluate(f, f.freq_hz, now_s);
+            }
         }
     }
 }
@@ -1328,7 +1350,7 @@ bool CallSearch::passes(const Candidate& c, const Support& s) const {
         const auto reaches = [](double counted, bool sender, double bare, double signed_points) {
             return counted >= (sender ? signed_points : bare);
         };
-        const bool truncation = config_.truncation_evidence != 0.0, join = config_.unusual_evidence != 0.0, frame = config_.cw_word_evidence != 0.0;
+        const bool truncation = config_.truncation_evidence != 0.0, frame = config_.cw_word_evidence != 0.0;
         const double t_points = truncation ? s.truncation_points : points;
         const bool t_sender = truncation ? s.clean_sender : s.sender;
         bool below = false;
@@ -1339,14 +1361,11 @@ bool CallSearch::passes(const Candidate& c, const Support& s) const {
         if (is_cut_number_form(c.base) && config_.cut_number_form == 2.0 &&
             !reaches(points, s.sender, config_.cut_number_points, config_.cut_number_points_signed))
             below = true;
-        // The join form: its bar on its weighed points, or the lower bar on the occurrences that measured a letter gap.
-        if (c.unusual && config_.unusual_form == 2.0 &&
-            !reaches(join ? s.join_points : points, s.sender, config_.unusual_points, config_.unusual_points_signed) &&
-            !(join && reaches(s.gap_points, s.gap_sender, config_.unusual_gap_points, config_.unusual_gap_points_signed)))
+        if (c.unusual && config_.unusual_form == 2.0 && !reaches(points, s.sender, config_.unusual_points, config_.unusual_points_signed))
             below = true;
-        // A word of CW: its bar on every occurrence, or the lower bar on those in a QSO's frame.
+        // A word of CW: its bar on every occurrence, or framed occurrences from enough overs.
         if (c.cw_word && config_.cw_word_form == 2.0 && !reaches(points, s.sender, config_.cw_word_points, config_.cw_word_points_signed) &&
-            !(frame && s.frame_points >= config_.cw_word_frame_points))
+            !(frame && s.frame_overs >= config_.cw_word_frame_overs))
             below = true;
         if (c.special && config_.special_form == 2.0 && !reaches(points, s.sender, config_.special_points, config_.special_points_signed))
             below = true;
@@ -1365,11 +1384,14 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
         if (std::abs(a.freq_hz - freq_hz) <= config_.variant_hz || now_s - a.end_s > config_.window_s) continue;
         Support alone;
         const std::vector<const Candidate*> by = containers(c);
+        std::vector<const Occurrence*> counted;
         for (const Occurrence& o : c.recent) {
             if (std::abs(o.freq_hz - freq_hz) <= config_.variant_hz) continue;
             if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
             count(alone, o, by);
+            counted.push_back(&o);
         }
+        alone.frame_overs = frame_overs(counted);
         alone.named = false;  // a word named does not count here (withdraw_own_place)
         alone.flat = 0.0;
         if (passes(c, alone)) return true;
@@ -1377,10 +1399,10 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
     return false;
 }
 
-CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s) {
+CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s, bool weigh) {
     Support s;
     std::vector<const Occurrence*> counted;
-    const std::vector<const Candidate*> by = containers(c);
+    const std::vector<const Candidate*> by = weigh ? containers(c) : std::vector<const Candidate*>();
     std::vector<char> clean;  // per counted occurrence: no reported longer call contains it (truncation_evidence)
     for (const Occurrence& o : c.recent) {
         if (std::abs(now_s - o.end_s) > config_.window_s) continue;
@@ -1417,13 +1439,8 @@ CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s)
     };
     s.points = groups([](std::size_t) { return 1.0; });
     s.truncation_points = groups([&](std::size_t k) { return clean[k] != 0 ? 1.0 : config_.contained_weight; });
-    s.join_points = groups([&](std::size_t k) { return counted[k]->gap_long ? config_.join_weight : 1.0; });
-    s.gap_points = groups([&](std::size_t k) { return counted[k]->gap_ok ? 1.0 : 0.0; });
-    s.frame_points = groups([&](std::size_t k) { return counted[k]->qso ? 1.0 : 0.0; });
-    for (std::size_t k = 0; k < counted.size(); ++k) {
-        s.clean_sender = s.clean_sender || (clean[k] != 0 && counted[k]->sender);
-        s.gap_sender = s.gap_sender || (counted[k]->gap_ok && counted[k]->sender);
-    }
+    s.frame_overs = frame_overs(counted);
+    for (std::size_t k = 0; k < counted.size(); ++k) s.clean_sender = s.clean_sender || (clean[k] != 0 && counted[k]->sender);
     return s;
 }
 
@@ -1560,8 +1577,6 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
         for (Candidate* b : beaten) {
             if (leaves(*b, c.best_points)) withdraw(*b);
         }
-        // Its new reading may contain a reported fragment's (CallSearchConfig::truncation_evidence): the same test then withdraws it.
-        withdraw_fragments(c, now_s);
     }
 }
 
@@ -1576,6 +1591,7 @@ void CallSearch::report(Candidate& c, double now_s) {
 
 void CallSearch::withdraw(Candidate& c) {
     c.reported = false;
+    if (config_.truncation_evidence != 0.0) recheck_.push_back(c.base);  // its fragments are judged again (recheck_fragments)
     std::erase_if(rows_, [&](const CallRow& r) { return r.base == c.base; });
     ++withdrawn_;
     ++version_;

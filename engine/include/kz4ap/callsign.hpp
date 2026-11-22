@@ -147,16 +147,8 @@ struct CallReading {
     std::string covers;
     // A stripped reading's characters taken off the front (EIK0HBN: EI; XW3RJ: X); empty for any other reading.
     std::string stripped_front;
-    // s: the gaps around and inside a whole or glued reading whose characters have their own times (read_calls given the symbols),
-    // from the characters' start and end: letter_gap_s the median of the gaps between its characters but the last, last_gap_s the
-    // gap before its last character, space_before_s and space_after_s the gaps to the nearest character outside it (word spaces
-    // skipped); -1 where there is none (CallSearchConfig::unusual_evidence).
-    double letter_gap_s = -1.0;
-    double last_gap_s = -1.0;
-    double space_before_s = -1.0;
-    double space_after_s = -1.0;
-    // In a call's place in an ordinary QSO: DE right before it or right after it, K, KN, BK, AR or SK after it (prosigns too), or
-    // the same word right before or after it (CallSearchConfig::cw_word_evidence). Past its repeats and stray E, T, I.
+    // In a call's place in an ordinary QSO: DE right before it or right after it, or the same word right before or after it (sent
+    // twice); a sign-off after it alone is none (CallSearchConfig::cw_word_evidence). Past its repeats and stray E, T, I.
     bool qso_frame = false;
 };
 
@@ -476,33 +468,30 @@ struct CallSearchConfig {
     //
     // Truncation forms, the 1x1 (is_short_call) and the prefix-digit form: what goes wrong is a fragment of a longer call (DL3I
     // read L3I, N3QE read N3Q). At 1 an occurrence that a reported call containing the call (a substring: L3I of DL3I, N4K of
-    // KN4KX) has an occurrence within variant_hz and truncation_s of counts toward the form's bar (short_points, prefix_digit_points)
-    // at contained_weight times its points, and lowers the bar as signed only when no such call contains it; an occurrence
-    // elsewhere counts in full. A fragment read often enough is still reported. Heuristics, chosen by measurement (A.12): 30 s and
-    // a weight of 0.75 lost K1LGQ (window-confirmed) to its fragment K1L, 0.25 lost N4N (spotted that day); 600 s changed nothing.
+    // KN4KX) has an occurrence of its own (not only named by another: Occurrence::own) within truncation_hz and truncation_s of
+    // counts toward the form's bar (short_points,
+    // prefix_digit_points) at contained_weight times its points, and lowers the bar as signed only when no such call contains it;
+    // an occurrence elsewhere counts in full. A fragment read often enough is still reported. When a call is reported, a reported
+    // fragment it now contains is withdrawn if the containment alone makes it fail, and when a call is withdrawn, the fragments it
+    // contained are judged again. truncation_hz measured: of the 399 readings of the 1x1 and prefix-digit calls `main` reported that
+    // the RBN judge calls misread or unknown and that lie within 150 Hz and 120 s of a reported call containing them, 376 lie within
+    // 1 Hz of it and 382 within 10 Hz (the rest spread to 130 Hz, where a pileup's callers lie too), on the replays of 2026-11-17,
+    // 2017 and 2026-11-18. truncation_s and contained_weight heuristics, chosen by measurement (A.12): 30 s and a weight of 0.75
+    // lost K1LGQ (window-confirmed) to its fragment K1L, 0.25 lost N4N (spotted that day); 600 s changed nothing.
     double truncation_evidence = 1.0;
+    double truncation_hz = 10.0;
     double truncation_s = 120.0;
     double contained_weight = 0.5;
-    // The join form, four letters after the digit (ParsedCall::unusual): what goes wrong is a call glued to a letter after it
-    // (DL1ABC K read DL1ABCK, VE3NA TU read VE3NATU). At 1 an occurrence whose call ends in K, R, E, I or T, a letter that also ends
-    // an over or is a stray, and all of whose readings show the gap before that letter (CallReading::last_gap_s) longer than
-    // join_gap_ratio times the call's other letter gaps' median (letter_gap_s), a word space read as a letter gap, counts toward the
-    // bar at join_weight times its points; an occurrence with no such measurement counts in full. And the bar is at most
-    // unusual_gap_points (unusual_gap_points_signed) on the points of occurrences with a measured letter gap before their last
-    // letter (within join_gap_ratio), the evidence a join is not there. The ratio measured: 99.5% of 2 412 whole readings of reported
-    // calls of 5 to 7 characters lie within 1.6; the weight a heuristic; the lower bar off (3 and 2 signed changed no call, A.12).
-    double unusual_evidence = 1.0;
-    double join_gap_ratio = 1.6;
-    double join_weight = 0.5;
-    double unusual_gap_points = 4.0;
-    double unusual_gap_points_signed = 3.0;
     // Words of CW (ParsedCall::cw_word: N1MM, K9AY): what goes wrong is the word itself in conversation (USING N1MM LOGGER, K9AY
-    // LOOP). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is at most
-    // cw_word_frame_points on the points of occurrences in a call's place in an ordinary QSO (CallReading::qso_frame: DE before it,
-    // DE after it, K, KN, BK, AR or SK after it, or the call sent twice in a row), frames of casual QSOs and contests alike. The
-    // owner's ruling (frames of ordinary QSO practice, adding evidence only); 2 a heuristic, any framed call's bar (points_framed).
+    // LOOP). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is also passed when
+    // occurrences in a call's place in an ordinary QSO (CallReading::qso_frame: DE before or after it, or sent twice) come from at
+    // least cw_word_frame_overs overs: occurrences in a frame that start within over_gap_s of the end of the one before are one
+    // over, so a call sent twice in one over counts once. Frames of casual QSOs and contests alike. The owner's ruling (frames of
+    // ordinary QSO practice, adding evidence only); the review's (an over counts once, two overs needed, a sign-off alone no
+    // frame). Heuristics: 2 overs, any framed call's two points; 10 s, a pause no shorter than a turn's (the other station's over).
     double cw_word_evidence = 1.0;
-    double cw_word_frame_points = 2.0;
+    double cw_word_frame_overs = 2.0;
+    double over_gap_s = 10.0;
 };
 
 // One line of the list.
@@ -573,10 +562,6 @@ private:
         bool flat = false;  // its points are a flat stripped reading's (CallSearchConfig::flat_stripped)
         std::string covers;  // CallReading::covers of a joined reading it holds, the first one
         bool sender = false;  // some reading of it had the role Sender (CallSearchConfig::short_points_signed, cut_number_points_signed)
-        // The join form's gap before its last letter (CallSearchConfig::unusual_evidence): some reading of it measured it within
-        // join_gap_ratio (gap_ok), every reading measured it longer (gap_long).
-        bool gap_ok = false;
-        bool gap_long = false;
         bool qso = false;  // some reading of it was in a QSO's frame (CallReading::qso_frame)
     };
     struct Candidate {
@@ -616,16 +601,12 @@ private:
         bool sure = false;   // a whole or glued word the decoder had no near rival for (CallSearchConfig::known_margin_nats)
         double flat = 0;     // of points, those of flat occurrences (Occurrence::flat)
         bool sender = false;  // some occurrence counted is Occurrence::sender
-        // The points each form's bar weighs (CallSearchConfig::truncation_evidence, unusual_evidence, cw_word_evidence): every
-        // occurrence, a contained one at contained_weight (truncation_points; clean_sender, a signed one not contained); every
-        // occurrence, one whose gap before its last letter was long at join_weight (join_points); those with a measured letter
-        // gap there (gap_points, gap_sender); those in a QSO's frame (frame_points).
+        // What each form's bar weighs (CallSearchConfig::truncation_evidence, cw_word_evidence): every occurrence, a contained one
+        // at contained_weight (truncation_points; clean_sender, a signed one not contained); the overs of occurrences in a QSO's
+        // frame (frame_overs).
         double truncation_points = 0;
         bool clean_sender = false;
-        double join_points = 0;
-        double gap_points = 0;
-        bool gap_sender = false;
-        double frame_points = 0;
+        double frame_overs = 0;
     };
 
     void read_track(TrackText& track, bool all);
@@ -650,8 +631,16 @@ private:
     bool contained(const Occurrence& occurrence, const std::vector<const Candidate*>& by) const;
     // An occurrence's points and marks added to a support (the forms' counted points among them).
     void count(Support& s, const Occurrence& o, const std::vector<const Candidate*>& by) const;
-    // The reported 1x1 and prefix-digit calls inside this reported call that no longer pass, withdrawn (truncation_evidence).
-    void withdraw_fragments(const Candidate& longer, double now_s);
+    // The reported 1x1 and prefix-digit calls inside this reported call that have an occurrence within truncation_hz and
+    // truncation_s of `touched` (or of any of its occurrences, when null) and that fail only because it contains them, withdrawn
+    // (truncation_evidence).
+    void withdraw_fragments(const Candidate& longer, const Occurrence* touched, double now_s);
+    // After a reading of this call (evaluate): withdraw_fragments, then recheck_fragments.
+    void after_reading(const Candidate& candidate, const Occurrence* touched, double now_s);
+    // After a withdrawal: the unreported 1x1 and prefix-digit calls inside the withdrawn call, judged again (truncation_evidence).
+    void recheck_fragments(double now_s);
+    // The overs of these occurrences in a QSO's frame (CallSearchConfig::over_gap_s).
+    double frame_overs(std::vector<const Occurrence*> occurrences) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);
@@ -661,7 +650,8 @@ private:
     std::pair<double, double> covered_points(const Candidate& fragment, const Candidate& longer, double freq_hz, double now_s) const;
     // The call's support over the whole band (CallSearchConfig::pool_places): its occurrences within window_s of now_s, one per
     // transmission, leaving out those at places where it is held.
-    Support pooled_support(const Candidate& candidate, double now_s);
+    // weigh: a contained occurrence weighed down (truncation_evidence); false, as if no call contained it.
+    Support pooled_support(const Candidate& candidate, double now_s, bool weigh = true);
     // Whether the call's readings more than variant_hz from this place pass by themselves, at any one place.
     bool stands_elsewhere(const Candidate& candidate, double freq_hz, double now_s) const;
     void report(Candidate& candidate, double now_s);
@@ -681,6 +671,7 @@ private:
     double now_s_ = 0;
     double last_read_s_ = 0;
     double last_prune_s_ = 0;
+    std::vector<std::string> recheck_;  // withdrawn calls whose fragments are to be judged again (recheck_fragments)
 };
 
 // The list as the scoring tool (training/kz4ap_proto/calls_score.py) reads it: CSV, a header line, one row per call. center_hz, when
