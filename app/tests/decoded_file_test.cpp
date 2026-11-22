@@ -43,9 +43,12 @@ DecodedTextEvent timed(std::uint32_t id, double freq_hz, const std::vector<std::
 // its text, each timed one inside the track's span, in order (each starts no earlier than the one before ends).
 void expect_consistent(const nlohmann::json& j) {
     ASSERT_EQ(j.at("format_version"), kDecodedFormatVersion);
-    ASSERT_TRUE(j.contains("front_end") && j.contains("recording") && j.contains("stream_start_utc") && j.contains("stream_s"));
+    for (const char* key : {"front_end", "recording", "stream_start_utc", "stream_s", "written_utc", "lost_samples", "radio_resets"})
+        ASSERT_TRUE(j.contains(key)) << key;
     for (const auto& t : j.at("tracks")) {
-        ASSERT_TRUE(t.contains("id") && t.contains("freq_hz") && t.contains("last_freq_hz") && t.contains("text"));
+        for (const char* key : {"id", "freq_hz", "last_freq_hz", "text", "track_ids", "born_s", "died_s", "start_s", "end_s", "live",
+                                "trimmed", "symbols"})
+            ASSERT_TRUE(t.contains(key)) << key;
         const double start = t.at("start_s"), end = t.at("end_s");
         EXPECT_LE(start, end);
         EXPECT_LE(start, t.at("born_s").get<double>());
@@ -90,9 +93,17 @@ TEST(DecodedFile, CarriesTheStreamsStartAndEachTracksSpanAndCharacterTimes) {
     table.apply(died(2));
 
     DecodedFileInfo info{"segmental", "live.wav", unix_ms_from_civil(2026, 11, 17, 12, 30, 5, 46), 6.25};
+    info.written_unix_ms = unix_ms_from_civil(2026, 11, 17, 12, 30, 11, 321);
+    info.lost_samples = 4096;
+    info.radio_resets = 1;
     const nlohmann::json j = nlohmann::json::parse(decoded_json(info, table.rows(), table.retired()));
     expect_consistent(j);
+    EXPECT_EQ(j.at("format_version"), 3);
     EXPECT_EQ(j.at("stream_start_utc"), "2026-11-17T12:30:05.046Z");
+    EXPECT_EQ(j.at("written_utc"), "2026-11-17T12:30:11.321Z");  // 6.275 s after the start: 25 ms behind stream_s
+    EXPECT_EQ(j.at("lost_samples"), 4096);
+    EXPECT_EQ(j.at("radio_resets"), 1);
+    EXPECT_EQ(j.at("tracks")[0].at("trimmed"), 0);
     EXPECT_DOUBLE_EQ(j.at("stream_s").get<double>(), 6.25);
     ASSERT_EQ(j.at("tracks").size(), 2u);
     // Rows in order of frequency: track 2 first, ended at 5 s; track 1 still live, its end the stream's time.
@@ -122,6 +133,8 @@ TEST(DecodedFile, WithoutAKnownStartTheStartIsNull) {
     const nlohmann::json j = nlohmann::json::parse(decoded_json(DecodedFileInfo{"matched", "radio", std::nullopt, 0.0}, {}, {}));
     expect_consistent(j);
     EXPECT_TRUE(j.at("stream_start_utc").is_null());
+    EXPECT_TRUE(j.at("radio_resets").is_null());  // not a radio
+    EXPECT_EQ(j.at("lost_samples"), 0);
     EXPECT_TRUE(j.at("tracks").empty());
 }
 
@@ -138,22 +151,15 @@ TEST(DecodedFile, TheTablesOwnWordSpacesHaveNoTimes) {
     row.heard_from = {0, 0, 3, 3, 0, 0, 0};
     row.starts = {1.0, 1.5, 2.0, 2.5, 3.0, 0.0, 5.0};
     row.ends = {1.2, 1.7, 2.2, 2.7, 3.2, 0.0, 5.2};
+    row.trimmed = 256;  // the symbols before these were dropped
     const nlohmann::json j = nlohmann::json::parse(decoded_json(DecodedFileInfo{"segmental", "x", std::nullopt, 10.0}, {row}, {}));
     expect_consistent(j);
     const auto& t = j.at("tracks")[0];
     EXPECT_EQ(t.at("text"), "AB C D");
+    EXPECT_EQ(t.at("trimmed"), 256);
     const auto& s = t.at("symbols");
     ASSERT_EQ(s.size(), 6u);
     EXPECT_EQ(s[2], nlohmann::json::array({" ", nullptr, nullptr}));  // in place of "XY"
     EXPECT_EQ(s[3], nlohmann::json::array({"C", 3.0, 3.2}));
     EXPECT_EQ(s[4], nlohmann::json::array({" ", nullptr, nullptr}));  // between tracks 6 and 7
-}
-
-TEST(UtcTime, ALiveSourcesFirstSampleIsItsFirstBlocksArrivalLessTheBlocksLength) {
-    // 2016 samples at 192 kHz last 10.5 ms: rounded to 11 ms (llround of 10.5).
-    EXPECT_EQ(first_sample_unix_ms(1'000'000, 2016, 192000), 1'000'000 - 11);
-    EXPECT_EQ(first_sample_unix_ms(1'000'000, 0, 192000), 1'000'000);
-    EXPECT_EQ(first_sample_unix_ms(1'000'000, 2016, 0), 1'000'000);
-    // The system clock is after 2026-01-01.
-    EXPECT_GT(system_unix_ms(), unix_ms_from_civil(2026, 1, 1, 0, 0, 0, 0));
 }

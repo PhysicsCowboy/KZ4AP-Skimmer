@@ -39,6 +39,7 @@ nlohmann::json row_json(const TrackRow& row, double stream_s) {
     track["start_s"] = ms_rounded(start_s);
     track["end_s"] = ms_rounded(end_s);
     track["live"] = row.live();
+    track["trimmed"] = row.trimmed;
     track["symbols"] = std::move(symbols);
     return track;
 }
@@ -55,6 +56,9 @@ std::string decoded_json(const DecodedFileInfo& info, const std::vector<TrackRow
     root["recording"] = info.recording;
     root["stream_start_utc"] = info.stream_start_unix_ms ? nlohmann::json(utc_text(*info.stream_start_unix_ms)) : nlohmann::json(nullptr);
     root["stream_s"] = ms_rounded(info.stream_s);
+    root["written_utc"] = utc_text(info.written_unix_ms);
+    root["lost_samples"] = info.lost_samples;
+    root["radio_resets"] = info.radio_resets ? nlohmann::json(*info.radio_resets) : nlohmann::json(nullptr);
     root["tracks"] = std::move(tracks);
     // One line; a byte that is not UTF-8 (none is expected: the symbols are ASCII) becomes U+FFFD rather than failing the file.
     return root.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) + "\n";

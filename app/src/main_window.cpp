@@ -1266,6 +1266,11 @@ void MainWindow::write_decoded(double stream_s) {
     info.recording = source_name_;
     info.stream_start_unix_ms = stream_start_unix_ms_;
     info.stream_s = stream_s;
+    info.written_unix_ms = system_unix_ms();
+    if (runner_) {
+        info.lost_samples = runner_->source().dropped_samples();  // the report's pipeline_lost_samples
+        if (runner_->source().radio() != nullptr) info.radio_resets = runner_->source().radio()->radio_status().resets;
+    }
     const std::string text = decoded_json(info, model_->table().rows(), model_->table().retired());
     QFile file(automation_.decoded_path);
     if (file.open(QIODevice::WriteOnly)) file.write(text.data(), static_cast<qint64>(text.size()));
