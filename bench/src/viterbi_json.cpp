@@ -493,6 +493,8 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"echo_end_db", &config.echo_end_db},
         {"echo_absolute", &config.echo_absolute},
         {"echo_level_runs", &config.echo_level_runs},
+        {"echo_level_min_db", &config.echo_level_min_db},
+        {"echo_level_margin_db", &config.echo_level_margin_db},
         {"channel_floor_window_s", &config.channel_floor_window_s},
         {"channel_floor_quantile", &config.channel_floor_quantile},
         {"channel_floor_margin_db", &config.channel_floor_margin_db},

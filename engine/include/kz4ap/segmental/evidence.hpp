@@ -190,7 +190,7 @@ private:
     // absolute (text-tail-2): the tail's power (e^2 - floor, FS^2) and the runs' level M (FS^2), summed by position
     bool absolute_ = false;
     std::vector<double> power_sum_, level_sum_;
-    double level_forget_ = 0.0, level_mean_ = 0.0;
+    double level_forget_ = 0.0, level_mean_ = 0.0, level_min_ = 100.0;
     double runs_ = 0.0;
     int since_update_ = 0;
     bool fresh_ = false;
@@ -450,6 +450,7 @@ private:
     bool echo_on_ = false;
     bool echo_absolute_ = false;
     double echo_level_fs2_ = 0.0;
+    double echo_margin_ = 1e300;  // 10^(echo_level_margin_db / 10)
     std::vector<float> echo_scale_;  // by sample in the ring: M-bar / sigma^2 (absolute tail)
     std::array<double, kEdgeCount> echo_in_fall_{};
     std::vector<double> echo_tail_;
