@@ -317,6 +317,17 @@ bool only_tiny_pieces(std::string_view base) {
     return std::all_of(base.begin(), base.end(), [](char c) { return std::string_view("ETISHANMU5").find(c) != std::string_view::npos; });
 }
 
+bool is_short_call(std::string_view base) {
+    return base.size() == 3 && is_letter(base[0]) && is_digit(base[1]) && is_letter(base[2]);
+}
+
+bool is_cut_number_form(std::string_view base) {
+    if (base.size() < 4 || !(base[0] >= '2' && base[0] <= '9') || !is_digit(base[2])) return false;
+    if (base[1] != 'A' && base[1] != 'N' && base[1] != 'T') return false;
+    const std::string_view pair = base.substr(0, 2);
+    return pair != "9A" && pair != "7N" && pair != "8N";
+}
+
 bool is_cw_word(std::string_view base) {
     // One or two letters glued to 5NN (R5NN, TU5NN, FN5NN): the report run onto a word, or a call of that form (DJ5NN, W5NN).
     if ((base.size() == 4 || base.size() == 5) && base.ends_with("5NN") && is_letter(base[0]) && (base.size() == 4 || is_letter(base[1])))
@@ -1066,7 +1077,8 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     // A special form and a word of CW, and by default an unusual one (four letters after the digit) and one whose only digit is its
     // prefix's, from a list only.
     const bool listed_only = r.special || r.cw_word || (r.unusual && config_.unusual_listed_only != 0.0) ||
-                             (r.prefix_digit && config_.prefix_digit_listed_only != 0.0);
+                             (r.prefix_digit && config_.prefix_digit_listed_only != 0.0) ||
+                             (config_.cut_number_form == 1.0 && is_cut_number_form(r.base));
     if (listed_only && !(known_ && known_->contains(r.base))) return;
     if (only_tiny_pieces(r.base) && !(config_.tiny_points > 0.0)) return;
     auto [it, fresh] = candidates_.try_emplace(r.base);
@@ -1106,6 +1118,7 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
             }
             if (framed) o.framed = true;
             if (r.role != Role::Named) o.own = true;
+            if (r.role == Role::Sender) o.sender = true;
             if (r.role != Role::Unknown && o.role == Role::Unknown) o.role = r.role;
             o.margin = std::max(o.margin, margin);
             if (o.covers.empty() && !r.covers.empty()) o.covers = r.covers;
@@ -1122,6 +1135,7 @@ void CallSearch::add(const CallReading& reading, double freq_hz) {
     o.role = r.role;
     o.framed = framed;
     o.own = r.role != Role::Named;
+    o.sender = r.role == Role::Sender;
     o.margin = margin;
     o.flat = flat;
     o.covers = r.covers;
@@ -1141,6 +1155,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
         s.points += o.points;
         if (o.flat) s.flat += o.points;
         s.framed = s.framed || o.framed;
+        s.sender = s.sender || o.sender;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
         s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
@@ -1149,6 +1164,13 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
 
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
     const double points = s.points;
+    // An unlisted call of three characters, or of a number's shape in cut digits, needs at least this, fewer points when an occurrence
+    // counted signed, whatever else it passes on (CallSearchConfig::short_points, cut_number_points).
+    double need = 0.0;
+    if (!c.known && is_short_call(c.base)) need = s.sender ? config_.short_points_signed : config_.short_points;
+    else if (!c.known && config_.cut_number_form == 2.0 && is_cut_number_form(c.base))
+        need = s.sender ? config_.cut_number_points_signed : config_.cut_number_points;
+    if (points < need) return false;
     if (only_tiny_pieces(c.base)) return points >= config_.tiny_points;
     if (s.named && points >= config_.points_named && (c.known || !known_ || config_.named_listed_only == 0.0)) return true;
     if (c.known) return points >= (s.framed || s.sure ? config_.points_known : config_.points_known_bare);
@@ -1164,6 +1186,7 @@ bool CallSearch::stands_elsewhere(const Candidate& c, double freq_hz, double now
             if (std::abs(o.freq_hz - a.freq_hz) > config_.same_place_hz || now_s - o.end_s > config_.window_s) continue;
             alone.points += o.points;
             alone.framed = alone.framed || o.framed;
+            alone.sender = alone.sender || o.sender;
             alone.sure = alone.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
         }
         if (passes(c, alone)) return true;
@@ -1179,6 +1202,7 @@ CallSearch::Support CallSearch::pooled_support(const Candidate& c, double now_s)
         if (held_at(c, o.freq_hz, now_s, nullptr, nullptr)) continue;
         counted.push_back(&o);
         s.framed = s.framed || o.framed;
+        s.sender = s.sender || o.sender;
         s.named = s.named || (o.role == Role::Named && o.points >= 1.0);
         s.sure = s.sure || (config_.known_margin_nats > 0.0 && o.points >= 1.0 && o.margin >= config_.known_margin_nats);
     }
