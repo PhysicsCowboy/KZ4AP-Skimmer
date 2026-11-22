@@ -4691,7 +4691,11 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   walk, its frame long).
 - The fast walk's matrix in the backward message is the current W's, though a boundary's step was taken at an earlier W (W moves by
   0.5 at most at a time).
-- The fast walk costs DEV2 nothing because DEV2 holds no fast-fading station above +10 dB S₅₀₀; cells of strong fast fading are in
+- The estimator reads a neighbor's beat inside the filter as spread: E2's unfaded stations read 5 to 27 Hz and take the fast walk,
+  which reads E2 better (measured, not designed); on the 2026-11-18 CWT recordings 16% (40 m) and 18% (20 m) of the tracks end in the
+  fast walk, 1% to 7% on the 2026-11-17 recordings, where the tail is on at 0% to 0.8% (traced). Untried: telling a beat by the two
+  lags' disagreement (a Gaussian spectrum's −ln |ρ| goes as τ², a beat's does not).
+- The fast walk leaves DEV2's other groups alone: DEV2 holds no fast-fading station above +10 dB S₅₀₀; cells of strong fast fading are in
   the backlog.
 
 ### A neighbor's leak (segmental)

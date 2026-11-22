@@ -97,6 +97,11 @@ struct SegmentalConfig {
     // nepers per square root of a second per Hz of f_D, and the most: the fast walk, at least level_walk_nepers_per_sqrt_s.
     // Heuristic: the matched set reads 7 to 14 Hz best at 10 to 14 nepers per square root of a second.
     double doppler_walk_per_hz = 1.4;
+    // 1: the least ln |rho(21.33 ms)| / ln |rho(10.67 ms)| the walk is fast at: 4 for a Gaussian spectrum (and any smooth one while
+    // |rho| is near 1), a neighbor's beat 30 to 60 Hz away under about 1.2 (derived, for a weak neighbor). Heuristic, by measurement:
+    // without it a neighbor's beat took the fast walk on 16% to 18% of the 2026-11-18 CWT's tracks and cost confirmed calls (WA2SCB,
+    // KE2BVB on 40 m 2026-11-17).
+    double doppler_min_shape = 2.5;
     double doppler_walk_max = 20.0;
     // s: the pairs read for the spread lie between a run's first and last samples at or above -6 dB re its median power, this far
     // inside them, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its

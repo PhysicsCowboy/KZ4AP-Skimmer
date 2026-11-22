@@ -1524,10 +1524,30 @@ TEST(DopplerEstimator, ReadsAFadingCarriersSpreadAndNoneOnASteadyOne) {
         ASSERT_GE(estimator.runs(), config.doppler_min_runs) << f_d;
         if (f_d == 0.0) EXPECT_LT(estimator.spread_hz(), 1.0);
         else EXPECT_NEAR(estimator.spread_hz(), f_d, 0.25 * f_d) << f_d;
+        // A Gaussian spectrum: ln |rho(21.33 ms)| / ln |rho(10.67 ms)| = 4.
+        if (f_d > 0.0) EXPECT_NEAR(estimator.shape(), 4.0, 1.0) << f_d;
         EXPECT_NEAR(estimator.level_db(), f_d > 0.0 ? 28.0 : 30.0, 3.0) << f_d;  // a Rayleigh mark's median power is -1.6 dB re its mean
     }
 }
 
+TEST(DopplerEstimator, ANeighborsBeatReadsAsSpreadButNotAsItsShape) {
+    // A steady carrier at +30 dB re the floor with a steady neighbor 60 Hz away at -6 dB re it, keyed together: |rho| at 21.33 ms
+    // falls as a spread's would, but ln |rho| is not 4 times its value at 10.67 ms (a beat's is r (cos 2 pi df tau - 1)), so the walk
+    // stays slow (doppler_min_shape).
+    const SegmentalConfig config;
+    DopplerEstimator estimator(config);
+    std::mt19937 rng(43);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    for (std::size_t k = 0; k < 375 * 120; ++k) {
+        const bool down = k % 60 < 38;
+        const double t = static_cast<double>(k) / 375.0;
+        const std::complex<double> neighbor = std::sqrt(250.0) * std::polar(1.0, 2.0 * std::numbers::pi * 60.0 * t);
+        const std::complex<double> y = (down ? std::sqrt(1000.0) + neighbor : 0.0) + std::complex<double>(unit(rng), unit(rng));
+        estimator.push(y, 1.0);
+    }
+    EXPECT_GT(estimator.spread_hz(), config.doppler_fast_hz);
+    EXPECT_LT(estimator.shape(), config.doppler_min_shape);
+}
 // A channel's samples at 1 500 samples/s: a text keyed at 35 WPM (51 samples a dot), +30 dB S500, through a fading gain of f_D (or none),
 // with another path's, a zero-mean complex Gaussian fading at 5 Hz of `tail` x the mark's power, for `tail_samples` after each fall;
 // then the decoder's text, its walk and its tail.

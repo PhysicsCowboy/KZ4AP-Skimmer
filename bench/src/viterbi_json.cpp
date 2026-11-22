@@ -476,6 +476,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"doppler_slow_hz", &config.doppler_slow_hz},
         {"doppler_min_db", &config.doppler_min_db},
         {"doppler_walk_per_hz", &config.doppler_walk_per_hz},
+        {"doppler_min_shape", &config.doppler_min_shape},
         {"doppler_walk_max", &config.doppler_walk_max},
         {"doppler_end_guard_s", &config.doppler_end_guard_s},
         {"doppler_memory_runs", &config.doppler_memory_runs},

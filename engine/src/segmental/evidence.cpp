@@ -390,7 +390,7 @@ DopplerEstimator::DopplerEstimator(const SegmentalConfig& config) {
     const double interval_s = config.model.sample_interval_s;
     if (!(config.doppler_slow_hz >= 0.0 && config.doppler_slow_hz <= config.doppler_fast_hz && std::isfinite(config.doppler_min_db) &&
           config.doppler_end_guard_s >= 0.0 && config.doppler_memory_runs >= 1.0 && config.doppler_min_runs >= 1.0 &&
-          config.doppler_walk_per_hz >= 0.0 && config.doppler_walk_max > 0.0))
+          config.doppler_walk_per_hz >= 0.0 && config.doppler_walk_max > 0.0 && std::isfinite(config.doppler_min_shape)))
         throw std::invalid_argument("segmental: the doppler_ settings must be finite and in range (Hz, dB, s, runs)");
     on_ = true;
     run_ratio_ = std::pow(10.0, config.echo_run_db / 10.0);
@@ -435,8 +435,9 @@ void DopplerEstimator::end_run() {
     const double median = sorted[sorted.size() / 2];
     // Pairs within each stretch at or above M / 10, guard_ inside its ends: a gap a tail fills (-12.6 to -13.4 dB re the mark at the
     // widest filter's output on the clips) splits the run, a fade to -6 dB re the median does not (heuristic).
-    std::complex<double> cross = 0.0;
-    double p0 = 0.0, p1 = 0.0;
+    std::complex<double> cross = 0.0, cross_half = 0.0;
+    double p0 = 0.0, p1 = 0.0, h0 = 0.0, h1 = 0.0;
+    const int half = std::max(1, lag_ / 2);
     bool any = false;
     for (int k = 0; k < n;) {
         if (power[static_cast<std::size_t>(k)] < median / 10.0) {
@@ -452,18 +453,31 @@ void DopplerEstimator::end_run() {
             p1 += power[static_cast<std::size_t>(i + lag_)] - run_floor_[static_cast<std::size_t>(i + lag_)];
             any = true;
         }
+        // The same pairs half as far apart, from the same samples on (text-fast-1: telling a spread from a beat).
+        for (int i = first; i + lag_ < end; ++i) {
+            cross_half += run_[static_cast<std::size_t>(i + half)] * std::conj(run_[static_cast<std::size_t>(i)]);
+            h0 += power[static_cast<std::size_t>(i)] - run_floor_[static_cast<std::size_t>(i)];
+            h1 += power[static_cast<std::size_t>(i + half)] - run_floor_[static_cast<std::size_t>(i + half)];
+        }
         k = e;
     }
     if (!any) return;
     cross_ = cross_ * forget_ + cross;
     power0_ = power0_ * forget_ + p0;
     power1_ = power1_ * forget_ + p1;
+    cross_half_ = cross_half_ * forget_ + cross_half;
+    half0_ = half0_ * forget_ + h0;
+    half1_ = half1_ * forget_ + h1;
     level_sum_ = level_sum_ * forget_ + 10.0 * std::log10(median / run_floor_[run_floor_.size() / 2]);
     runs_ = runs_ * forget_ + 1.0;
     level_db_ = level_sum_ / runs_;
     const double rho = power0_ > 0.0 && power1_ > 0.0 ? std::abs(cross_) / std::sqrt(power0_ * power1_) : 1.0;
     // |rho| = exp(-2 pi^2 sigma_D^2 tau^2), f_D = 2 sigma_D
     spread_hz_ = rho < 1.0 && rho > 0.0 ? 2.0 * std::sqrt(-std::log(rho) / (2.0 * std::numbers::pi * std::numbers::pi)) / tau_s_ : 0.0;
+    // ln |rho(tau)| / ln |rho(tau / 2)|: 4 for a Gaussian spectrum (and for any smooth one while |rho| is near 1), under about 1.2 for
+    // a neighbor's beat 30 to 60 Hz away (derived: ln |rho| goes as r (cos 2 pi df tau - 1) for a beat of relative power r).
+    const double rho_half = half0_ > 0.0 && half1_ > 0.0 ? std::abs(cross_half_) / std::sqrt(half0_ * half1_) : 1.0;
+    shape_ = rho < 1.0 && rho > 0.0 && rho_half < 1.0 && rho_half > 0.0 ? std::log(rho) / std::log(rho_half) : 0.0;
 }
 
 LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& tables, RunningSums& sums)

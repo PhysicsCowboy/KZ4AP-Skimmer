@@ -308,7 +308,8 @@ private:
 // doppler_end_guard_s inside its ends (past the front filter's edges; a gap a tail fills splits the run), the pairs tau = round(21.33 ms / Delta) apart give
 //     |rho(tau)| = |sum y[k + tau] y*[k]| / sqrt(sum (|y[k]|^2 - floor) sum (|y[k + tau]|^2 - floor)),
 // kept with an exponential memory in runs, and the Gaussian spectrum's |rho(tau)| = exp(-2 pi^2 sigma_D^2 tau^2) gives
-// f_D = 2 sigma_D (Watterson's and DeepCW's width). A constant frequency offset turns every product alike and leaves |rho|.
+// f_D = 2 sigma_D (Watterson's and DeepCW's width). A constant frequency offset turns every product alike and leaves |rho|. The same at
+// tau / 2 tells a spread from a neighbor's beat inside the filter: ln |rho(tau)| / ln |rho(tau / 2)| is 4 for a Gaussian spectrum.
 // The level is the runs' median power re the floor, dB, averaged with the same memory.
 class DopplerEstimator {
 public:
@@ -317,6 +318,8 @@ public:
     bool push(std::complex<double> y_fs, double floor_fs2);
     // Hz: f_D = 2 sigma_D; dB re the floor: the runs' median level.
     double spread_hz() const { return spread_hz_; }
+    // ln |rho(tau)| / ln |rho(tau / 2)|, 1: 4 for a spread, low for a neighbor's beat (0 while |rho| reads 1).
+    double shape() const { return shape_; }
     double level_db() const { return level_db_; }
     double runs() const { return runs_; }
 
@@ -335,6 +338,8 @@ private:
     std::complex<double> cross_ = 0.0;
     double power0_ = 0.0, power1_ = 0.0, level_sum_ = 0.0, runs_ = 0.0;
     double spread_hz_ = 0.0, level_db_ = -1e9;
+    std::complex<double> cross_half_ = 0.0;
+    double half0_ = 0.0, half1_ = 0.0, shape_ = 0.0;
 };
 
 class LevelEvidence {public:

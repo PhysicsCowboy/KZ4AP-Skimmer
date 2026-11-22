@@ -216,7 +216,7 @@ void SegmentalDecoder::start() {
 void SegmentalDecoder::update_walk() {
     const segmental::SegmentalConfig& c = shared_->config;
     const double spread = doppler_->spread_hz();
-    const bool loud = doppler_->level_db() >= c.doppler_min_db;
+    const bool loud = doppler_->level_db() >= c.doppler_min_db && doppler_->shape() >= c.doppler_min_shape;
     const bool fast = loud && (walk_fast_ ? spread >= c.doppler_slow_hz : spread >= c.doppler_fast_hz);
     const double walk = std::clamp(c.doppler_walk_per_hz * spread, c.level_walk_nepers_per_sqrt_s, c.doppler_walk_max);
     if (fast == walk_fast_ && (!fast || std::fabs(walk - walk_now_) < 0.5)) return;
