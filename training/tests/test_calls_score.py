@@ -26,8 +26,8 @@ def test_base_call(word, base):
     ("N4A/K4SV", "N4A"), ("KH6A/W1AW", "KH6A"), ("VP2V/VK9X", "VP2V"),
     ("VE3/K1ABC", "K1ABC"), ("KH6/K1ABC", "K1ABC"), ("K1ABC/KH6", "K1ABC"), ("DL1ABC/P", "DL1ABC"), ("K1ABC/MM", "K1ABC"),
     ("K1ABC/QRP", "K1ABC"), ("K1ABC/4", "K1ABC"), ("4U1ITU/HB9", "4U1ITU"), ("K1ABC/VE3XYZ", None),
-    # The reader has no prefix-digit form, unlike the engine: a spot of one is kept as it stands (rbn_judge).
-    ("D4C", None), ("C6AGU", None),
+    # The engine's prefix-digit form (call-form-2), taken by the reader since the review of calls-list-1.
+    ("D4C", "D4C"), ("C6AGU", "C6AGU"), ("L3I", "L3I"), ("E7DX/P", "E7DX"),
 ])
 def test_base_call_around_a_slash(word, base):
     assert base_call(word) == base
@@ -195,3 +195,22 @@ def test_command_line_rbn_filters(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "in both 1; in run only 1; in other only 0" in out
     assert "5 rows outside the filters" in out
+
+
+def test_every_reported_call_is_scored():
+    """Review of calls-list-1: a prefix-digit call was skipped by the reader's grammar, so a false one (L3I, a misreading of DL3I) went
+    uncounted. Every call the engine can report is scored: the prefix-digit form, false (L3I) and true (C6AGU), a special form, an
+    unusual one, a word of CW, a 1x1, a cut number's shape; and a row the grammar does not take is scored as it stands and counted."""
+    rows = ["call,base,freq_hz,count", "L3I,L3I,28729.0,2", "C6AGU,C6AGU,1000.0,3", "TM100TF,TM100TF,2000.0,2", "VK3FABC,VK3FABC,3000.0,2",
+            "N1MM,N1MM,4000.0,4", "K1A,K1A,5000.0,3", "2T7A,2T7A,6000.0,5", "XQ9,XQ9,7000.0,2"]
+    run = read_calls_text("\n".join(rows) + "\n")
+    assert run.adapter == "csv"
+    assert set(run.calls) == {"L3I", "C6AGU", "TM100TF", "VK3FABC", "N1MM", "K1A", "2T7A", "XQ9"}
+    assert run.skipped_lines == 0
+    assert run.unparsed == 1 and run.unparsed_examples == ["XQ9"]
+    truth = {"DL3I": [28742.3], "C6AGU": [1000.0]}
+    score = score_truth(run, truth, 100.0)
+    assert score.found == ["C6AGU"]
+    assert "L3I" in score.false_calls and "XQ9" in score.false_calls
+    assert ("L3I", "DL3I") in score.misreadings
+    assert "calls outside this reader's grammar" in calls_score._describe("run", run)

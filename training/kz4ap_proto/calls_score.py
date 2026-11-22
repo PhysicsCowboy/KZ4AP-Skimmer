@@ -22,7 +22,8 @@ adapter used is printed so that a wrong guess shows:
 - `csv`: a comma-separated file with a header naming the call's column: `dx`, `dx_call`, `call`, `callsign`, or `station`, in that order of
   preference, since in the Reverse Beacon Network's files `callsign` is the skimmer and `dx` the station spotted. A frequency from a
   column `freq_khz`, `freq`, `frequency` or `qrg` (kHz; values under 100 are taken as MHz) or `freq_hz` (Hz, relative frequencies kept).
-  A column `count` gives the readings of a row; otherwise each row counts one.
+  A column `count` gives the readings of a row; otherwise each row counts one. A row whose call this reader's grammar does not take is
+  scored as it stands, never dropped, and counted and printed as such (`CallFile.unparsed`): what a program reports is its own test.
 - `list`: anything else, a plain call list or an unknown log: on each line, the first word with a call's form is the call; a number
   between 1 800 and 30 000 with a decimal point is a frequency in kHz. Lines with no such word are counted and reported as skipped.
 
@@ -97,6 +98,10 @@ def _location_form(word: str) -> bool:
 
 
 def _is_base(word: str) -> bool:
+    # A letter-digit prefix whose digit is the call's, then one to four letters (C6AGU, E7DX, D4C, L3I): the engine's prefix-digit
+    # form (call-form-2), outside the whole-letter series.
+    if re.fullmatch(r"[A-Z][0-9][A-Z]{1,4}", word) and word[0] not in _WHOLE_LETTER and _prefix_ok(word[:2]):
+        return True
     # Prefixes of one, two, three characters in turn: the first that leaves one run of digits and then letters.
     for length in (1, 2, 3):
         if len(word) <= length:
@@ -125,6 +130,9 @@ class CallFile:
     skipped_lines: int = 0
     skipped_examples: list[str] = field(default_factory=list)
     filtered: int = 0  # rows a SpotFilter dropped
+    # CSV rows whose call this reader's grammar does not take, scored as they stand (the word, upper case) and counted here.
+    unparsed: int = 0
+    unparsed_examples: list[str] = field(default_factory=list)
 
 
 def _utc_second(text: str) -> str:
@@ -222,7 +230,8 @@ def _row_khz(row: dict[str, str]) -> float | None:
     return value / 1000.0 if value is not None else None
 
 
-def _read_csv(text: str, call_column: str, spot_filter: SpotFilter | None = None) -> tuple[dict[str, Listed], int, list[str], int]:
+def _read_csv(text: str, call_column: str, spot_filter: SpotFilter | None = None,
+              unparsed: list[str] | None = None) -> tuple[dict[str, Listed], int, list[str], int]:
     calls: dict[str, Listed] = {}
     skipped, examples, filtered = 0, [], 0
     reader = csv.DictReader(io.StringIO(text), skipinitialspace=True)
@@ -232,10 +241,24 @@ def _read_csv(text: str, call_column: str, spot_filter: SpotFilter | None = None
             filtered += 1
             continue
         count = _to_float(row.get("count"))
-        if not _note(calls, row.get(call_column) or "", count=int(count) if count else 1, freq=_row_khz(row), row=row):
+        word = (row.get(call_column) or "").strip().upper()
+        if _note(calls, word, count=int(count) if count else 1, freq=_row_khz(row), row=row):
+            continue
+        if not word:
             skipped += 1
             if len(examples) < 5:
                 examples.append(str(row.get(call_column)))
+            continue
+        # A call the grammar here does not take: the program reported it, so it is scored as it stands, and counted.
+        entry = calls.setdefault(word, Listed())
+        entry.count += int(count) if count else 1
+        entry.forms.add(word)
+        freq = _row_khz(row)
+        if freq is not None:
+            entry.freqs_khz.append(freq)
+        entry.row = row
+        if unparsed is not None:
+            unparsed.append(word)
     return calls, skipped, examples, filtered
 
 
@@ -284,8 +307,9 @@ def read_calls_text(text: str, spot_filter: SpotFilter | None = None) -> CallFil
     if "," in first:
         column = _call_column(next(csv.reader([first], skipinitialspace=True)))
         if column:
-            calls, skipped, examples, filtered = _read_csv(text, column, spot_filter)
-            return CallFile("csv", calls, skipped, examples, filtered)
+            unparsed: list[str] = []
+            calls, skipped, examples, filtered = _read_csv(text, column, spot_filter, unparsed)
+            return CallFile("csv", calls, skipped, examples, filtered, len(unparsed), unparsed[:5])
     if spot_filter is not None:
         raise ValueError("spot filters apply to a Reverse Beacon Network CSV, not to spots or a plain list")
     calls, skipped, examples, spots = _read_lines(text)
@@ -416,6 +440,8 @@ def _describe(name: str, listed: CallFile) -> str:
         text += f", {listed.skipped_lines} lines skipped, for example {listed.skipped_examples[:3]}"
     if listed.filtered:
         text += f", {listed.filtered} rows outside the filters"
+    if listed.unparsed:
+        text += f", {listed.unparsed} calls outside this reader's grammar scored as they stand, for example {listed.unparsed_examples[:3]}"
     return text
 
 
