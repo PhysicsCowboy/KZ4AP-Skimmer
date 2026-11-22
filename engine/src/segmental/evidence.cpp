@@ -301,7 +301,8 @@ void EchoEstimator::close_profile() {
     runs_ = runs_ * forget_ + 1.0;
     profile_.clear();
     if (runs_ < min_runs_) return;
-    if (++since_update_ >= std::max(1, static_cast<int>(min_runs_ / 3.0))) since_update_ = 0;
+    // The first shape as soon as the memory holds min_runs_ (the 33rd strong run at 30 and 200), then every min_runs_ / 3.
+    if (!decided_ || ++since_update_ >= std::max(1, static_cast<int>(min_runs_ / 3.0))) since_update_ = 0;
     if (since_update_ == 0) update_shape();
 }
 

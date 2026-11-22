@@ -4601,7 +4601,7 @@ M/4 and takes (e² − F)/M at that sample and each later one until a sample sta
 taken, P = min(18, ⌊48 ms / Δ⌋) positions (`echo_max_s`; 18 at m = 1, 6 at m = 3), h the last m with 1 − s_m ≥ 0.5 (7 at m = 1, 6 at
 m = 3; derived from the template). Each closed profile enters sums S[q] and counts N[q] with memory λ = e^(−1/200) per run
 (`echo_memory_runs`): S ← λS + value, N ← λN + 1, for the positions it reached. Once the memory's weight Σλⁱ reaches 30 runs
-(`echo_min_runs`; at the 33rd), at every 10th run after (so first at the 42nd strong run) the shape is made again: A[q] = S[q]/N[q] where N[q] ≥ 10, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), the tail g_(11+q) =
+(`echo_min_runs`; at the 33rd strong run) the shape is made, and again at every 10th run after: A[q] = S[q]/N[q] where N[q] ≥ 10, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), the tail g_(11+q) =
 A[11 + q − h] for q = 0, 1, … while ≥ 10^(−2.5) (`echo_end_db`), at most P; g at the fall window's six positions all A[11 − h]. A
 new shape goes to `set_echo` at once. There, per table level i (r_i² = a_i²/σ², the grid's index with the tables' shift): the fall's
 terms `LevelTables::make_term`(r_i², 1 − s_m, f′², v_m + g₁₁) in place of the tables' fall terms; and for each tail position q,
@@ -4698,8 +4698,8 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 
 **Limitations.**
 - The tail is one shape per stream, for every fall: a channel whose tail changes faster than about 200 runs (40 s at 35 WPM) is read
-  with the shape before; a track's first 41 strong runs are read without one (8 to 10 s at 35 WPM), and its frames stay long until
-  then. A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
+  with the shape before; a track's first 32 strong runs are read without one (about 6 to 8 s at 35 WPM), and its frames stay long
+  until then. A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
 - The tail's mean is read low by about 2 dB re the true tail's power: a Rayleigh tail's samples above −6 dB re the mark move the last −6 dB sample into it
   (test `EchoEstimator.LearnsATailAfterTheFallAndNoneWhereThereIsNone`: 0.06 for 0.1).
 - The tail is not in the level filter, and not in the next mark's rise window: where a gap is shorter than the tail, the next rise
@@ -5064,7 +5064,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: the fast frame (text-fast-1) | 10.67 ms, 4 samples at m = 1; 8 ms, 1 sample at m = 3; joined into level_frame_s while the walk is slow, until the stream's tail is decided, and where one is modeled | `level_fast_frame_s` | heuristic by measurement |
 | Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more, ln \|ρ(21.33 ms)\| / ln \|ρ(τ)\| within 0.4 to 1.6 of (21.33 ms / τ)² at τ = 8 … 18.67 ms (`doppler_shape_lo`, `doppler_shape_hi`), and each run's own \|C\| reading at least 0.5 of f_D (`doppler_min_runs_ratio`); W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
 | Segmental: the Doppler estimator (text-fast-1) | the widest stream's runs above +10 dB re F; pairs 8 to 21.33 ms apart within each stretch at or above −10 dB re the run's median, 8 ms inside its ends, the front filter's noise correlation taken out; memory 100 runs, used from 20; f_D = 2σ_D at 21.33 ms, Gaussian spectrum | `doppler_end_guard_s`, `doppler_memory_runs`, `doppler_min_runs` | form derived; values heuristic |
-| Segmental: the channel's tail (text-fast-1) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 42nd strong run (weight 30 at the 33rd, then every 10th); on at g₁₁ ≥ −15 dB re the mark, kept to −25 dB re the mark or 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` by measurement |
+| Segmental: the channel's tail (text-fast-1) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 33rd strong run (weight 30), then every 10th; on at g₁₁ ≥ −15 dB re the mark, kept to −25 dB re the mark or 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` by measurement |
 | Segmental: look-ahead, commit | 8 frames each, 170.7 ms; a sample committed 64 to 127 samples after it arrives | `level_lookahead_s`, `level_commit_s` | heuristic; no measured effect from 0.085 to 1.5 s |
 | Segmental: belief threshold, edge groups | P̂ ≥ 10⁻⁴; at most 8 groups of levels for the edges | evidence.cpp, `kEdgeLevels` | heuristic |
 | Segmental: template's window | m = 5 … 10 (0 below, 1 from 11); elements below 6 samples by the pair's template | `kEdgeFirst`, `kEdgeCount`; `short_score` | derived approximation |
