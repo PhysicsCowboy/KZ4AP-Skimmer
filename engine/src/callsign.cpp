@@ -1256,6 +1256,7 @@ CallSearch::Support CallSearch::support(const Candidate& c, double freq_hz, doub
 std::vector<const CallSearch::Candidate*> CallSearch::containers(const Candidate& c) const {
     std::vector<const Candidate*> out;
     if (c.known || config_.truncation_evidence == 0.0) return out;
+    if (c.reported && c.reported_signed) return out;  // reported on a signed reading: containment no longer weighs it
     if (!is_short_call(c.base) && !(c.prefix_digit && config_.prefix_digit_form == 2.0)) return out;
     for (const CallRow& row : rows_) {
         if (row.base.size() <= c.base.size() || row.base.find(c.base) == std::string::npos) continue;
@@ -1569,10 +1570,14 @@ void CallSearch::evaluate(Candidate& c, double freq_hz, double now_s) {
     }
     if (c.reported) {
         update_row(c);
-    } else if (pool ? passes(c, pooled_support(c, now_s)) : passes(c, s)) {
-        // Pooled, the test that reports is the test that withdraws (local points can exceed pooled ones: they keep held occurrences
-        // within same_place_hz), so a row does not come and go.
-        report(c, now_s);
+    } else {
+        const Support at_report = pool ? pooled_support(c, now_s) : s;
+        if (passes(c, at_report)) {
+            // Pooled, the test that reports is the test that withdraws (local points can exceed pooled ones: they keep held occurrences
+            // within same_place_hz), so a row does not come and go.
+            report(c, now_s);
+            c.reported_signed = at_report.clean_sender;
+        }
     }
     if (c.reported) {
         for (Candidate* b : beaten) {
@@ -1592,6 +1597,7 @@ void CallSearch::report(Candidate& c, double now_s) {
 
 void CallSearch::withdraw(Candidate& c) {
     c.reported = false;
+    c.reported_signed = false;
     if (config_.truncation_evidence != 0.0) recheck_.push_back(c.base);  // its fragments are judged again (recheck_fragments)
     std::erase_if(rows_, [&](const CallRow& r) { return r.base == c.base; });
     ++withdrawn_;

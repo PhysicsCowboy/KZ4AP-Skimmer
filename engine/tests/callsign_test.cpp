@@ -3024,3 +3024,87 @@ TEST(FormEvidence, AOneByOneWithItsSignOffGluedIsReported) {
         EXPECT_NE(s.row("K4N"), nullptr) << evidence;
     }
 }
+
+// The re-review's probe of a runner and a zero-beat caller: N4A, reported on its signed CQ, works KN4ABC 5 Hz off (a caller tuned to
+// zero beat, whose call contains it) and then other callers. Reported on a signed reading, N4A is not weighed by containment again
+// while it stays reported (Candidate::reported_signed), so it stays on the list throughout, as on `main`.
+TEST(FormEvidence, ASignedRunnerIsNotWithdrawnByAZeroBeatCaller) {
+    for (const double evidence : {1.0, 0.0}) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 1005.0);
+        s.born(3, 950.0);
+        s.text(1, 1000.0, "CQ N4A N4A K ", 0.0);
+        s.search.advance(14.0);
+        ASSERT_NE(s.row("N4A"), nullptr) << evidence;
+        s.text(2, 1005.0, "KN4ABC KN4ABC ", 8.0);
+        s.text(1, 1000.0, "KN4ABC 5NN ", 14.0);
+        s.text(2, 1005.0, "TU 5NN ", 20.0);
+        s.text(1, 1000.0, "TU N4A ", 26.0);
+        s.search.advance(40.0);
+        EXPECT_NE(s.row("N4A"), nullptr) << evidence;
+        double t = 30.0;
+        for (int q = 0; q < 6; ++q) {
+            s.text(3, 950.0, "W1AB W1AB ", t);
+            s.text(1, 1000.0, "W1AB 5NN ", t + 6);
+            s.text(1, 1000.0, "TU N4A ", t + 18);
+            t += 25.0;
+            s.search.advance(t + 12.0);
+            EXPECT_NE(s.row("N4A"), nullptr) << evidence << " " << q;
+        }
+        EXPECT_EQ(s.search.withdrawn(), 0u) << evidence;
+    }
+}
+
+// The re-review's flicker probe: K4N reported on its signed CQ; AK4NB, containing it, reported on its carrier 3 Hz off; then AK4MB,
+// read more, takes AK4NB's place. K4N stays reported throughout, whatever the tracks' ids; only AK4NB leaves.
+TEST(FormEvidence, ASignedOneByOneStaysThroughAContainersRiseAndFall) {
+    for (const bool swap : {false, true}) {
+        Stage s;
+        const std::uint32_t a = swap ? 3 : 1, b = 2, m = swap ? 1 : 3;
+        s.born(a, 1000.0);
+        s.born(b, 1003.0);
+        s.born(m, 1003.0);
+        s.text(a, 1000.0, "CQ K4N K4N K ", 0.0);
+        s.search.advance(14.0);
+        ASSERT_NE(s.row("K4N"), nullptr) << swap;
+        s.text(b, 1003.0, "DE AK4NB AK4NB K ", 20.0);
+        s.search.advance(35.0);
+        EXPECT_NE(s.row("K4N"), nullptr) << swap;
+        EXPECT_NE(s.row("AK4NB"), nullptr) << swap;
+        for (int i = 0; i < 4; ++i) s.text(m, 1003.0, "DE AK4MB AK4MB K ", 40.0 + 15.0 * i);
+        s.search.advance(120.0);
+        EXPECT_NE(s.row("K4N"), nullptr) << swap;
+        EXPECT_EQ(s.row("AK4NB"), nullptr) << swap;
+        EXPECT_NE(s.row("AK4MB"), nullptr) << swap;
+        EXPECT_EQ(s.search.withdrawn(), 1u) << swap;
+    }
+}
+
+// The re-review's over probes. Two framed DJ5NN readings 15 s apart on two tracks are two overs in either track order. One long over
+// with DE DJ5NN at both ends counts as two overs when its two readings lie more than over_gap_s (10 s) apart, here 10.5 s at the
+// test's 0.1 s a character, and is reported (a limitation: the overs are told by the pause, not by the sign-off); the same over with
+// its readings 7 s apart is one over and not reported.
+TEST(FormEvidence, OversAreToldByTheirPauseInEitherTrackOrder) {
+    for (const bool swap : {false, true}) {
+        Stage s;
+        const std::uint32_t a = swap ? 2 : 1, b = swap ? 1 : 2;
+        s.born(a, 1000.0);
+        s.born(b, 1100.0);
+        s.text(a, 1000.0, "W1AW DE DJ5NN K ", 15.0);
+        s.text(b, 1100.0, "DJ5NN DE W1AW ", 0.0);
+        s.search.advance(60.0);
+        EXPECT_NE(s.row("DJ5NN"), nullptr) << swap;
+    }
+    const auto one_over = [](const std::string& text) {
+        Stage s;
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, text, 0.0);
+        s.search.advance(60.0);
+        return s.row("DJ5NN") != nullptr;
+    };
+    EXPECT_TRUE(one_over("DE DJ5NN UR RST 599 599 NAME HANS HANS QTH BONN BONN RIG IC7300 ES ANT DIPOLE UP 10M WX CLOUDY TEMP 5C HW CPY DE DJ5NN K "));
+    EXPECT_FALSE(one_over("DE DJ5NN UR RST 599 599 NAME HANS QTH BONN RIG IC7300 ES ANT DIPOLE HW CPY DE DJ5NN K "));
+}

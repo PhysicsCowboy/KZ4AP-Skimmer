@@ -569,6 +569,10 @@ private:
         std::uint64_t made = 0;  // the order of its first reading
         bool known = false;
         bool reported = false;
+        // Reported on a counted signed occurrence that no reported longer call contained (Support::clean_sender): while it stays
+        // reported, containment no longer weighs it (CallSearchConfig::truncation_evidence), so containment alone never withdraws
+        // it; a rival at its place still can (the re-review of calls-form-3: a 1x1 running a pileup of callers containing it).
+        bool reported_signed = false;
         std::deque<Occurrence> recent;       // within window_s of the latest
         std::map<std::string, std::uint32_t> forms;  // base, or with a slash: how often
         std::uint32_t count = 0;
