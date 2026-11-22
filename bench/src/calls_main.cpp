@@ -74,7 +74,8 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"prefix_digit_points_signed", &c.prefix_digit_points_signed},
         {"cw_word_form", &c.cw_word_form}, {"cw_word_points", &c.cw_word_points}, {"cw_word_points_signed", &c.cw_word_points_signed},
         {"special_form", &c.special_form}, {"special_points", &c.special_points}, {"special_points_signed", &c.special_points_signed},
-        {"form_whole_words", &c.form_whole_words}, {"keyword_report_signed", &c.keyword_report_signed}, {"form_rival_weight", &c.form_rival_weight},
+        {"form_whole_words", &c.form_whole_words}, {"keyword_report_signed", &c.keyword_report_signed}, {"form_rival_reported", &c.form_rival_reported},
+        {"cq_event_signed", &c.cq_event_signed},
         // The names before calls-list-1: 1 from a list only, 0 as any call, as the *_form settings take them.
         {"unusual_listed_only", &c.unusual_form}, {"prefix_digit_listed_only", &c.prefix_digit_form},
         {"joined_periodic", &c.joined_periodic}, {"x_as_tu", &c.x_as_tu}, {"joined_covers", &c.joined_covers}, {"covers_own_points", &c.covers_own_points}, {"flat_stripped", &c.flat_stripped},

@@ -228,7 +228,14 @@ struct ReadOptions {
     // E, T or I is: T (-) and U (..-) with their letter space lost are X (-..-) (derived), and TU before his own call ends a
     // runner's every QSO in a contest. The half point is stripped_points, a heuristic; chosen by measurement (call-arb-1).
     int x_as_tu = 0;
+    // When not 0, a call after CQ and one contest or event word (is_cq_event_word: CQ CWT K5NN, CQ SST W1AW, CQ SKCC N1MM) has the role
+    // Sender, as after CQ itself: the station calling CQ in the event. A heuristic (calls-list-1's review).
+    int cq_event = 0;
 };
+
+// A contest or event word that a station calling CQ puts between CQ and its call (CQ CWT K5NN): CWT, SST, MST, NS, NAQP, SS, FD, NA,
+// QRP, FOC, SKCC, BUG, ARRL, WAE, WWFF, IOTA, BOTA, LOTA, SEQP, SPRINT (TEST, POTA, SOTA and DX already sign the call after them).
+bool is_cq_event_word(std::string_view word);
 
 // Every reading of a call that begins in the words [from, to). A word can give several: they are alternatives, and the evidence
 // decides among them. `words` may reach past `to` and before `from`, for context.
@@ -361,33 +368,38 @@ struct CallSearchConfig {
     // known-call list only (the rule before calls-list-1); 0, as any call. A listed call needs only what any listed call needs. The
     // owner's ruling (2026-11-21): without the list no real form may be excluded outright ("poor N1MM would never be spotted when he
     // chooses to operate"), several repeats should be enough, a signature not required, fewer repeats if signed. The bars are
-    // heuristics, chosen by measurement (calls-list-1; appendix A.12); a call of two such forms needs the higher bar. The bare bar,
-    // 8 for each form: with form_whole_words and form_rival_weight, the lowest of 3, 5, 6 and 8 that on the three replay sets lost no
-    // window-confirmed call and no other call to a variant (at 5 and 6 E7R, read 13 times whole, took EE7R's row on the 2026-11-18
-    // CWT) and added the fewest misread or unknown calls (2026-11-17 misread 73 to 77, 2017 52 to 53, 2026-11-18 239 to 241).
+    // heuristics, chosen by measurement (calls-list-1's review; appendix A.12); a call of two such forms needs the higher bar. The
+    // bars apply with a known-call list loaded too, to a call the list does not hold: MASTER.SCP is one-sided evidence (a call off it
+    // proves nothing), and CW Skimmer does the same. The signed bar, 3 for each form: at 2, a misreading of DL3I as L3I, signed once
+    // and read twice, became a false call on the generated contest (fresh seed) at every bare bar (the scorer's own call pattern
+    // refuses the form, so its score lines did not show it); at 3 no generated list changes. The bare bar, 4 for each form: of 4, 5,
+    // 6, 7 and 8 the lowest, and every one of them loses no window-confirmed call on the three replay sets, without the list or with
+    // MASTER.SCP, and adds no generated false call. The data give no recall evidence for any bare bar: every call these forms
+    // gained on their bare bar was junk, an exchange number or an RBN skimmer's own one-spot misreading (T5M); the one real call
+    // gained, AM800CT, signed. CW Skimmer's bar for a pattern absent from its table is 5 repeats; the owner asked for "several".
     //
     // Four letters after the digit (ParsedCall::unusual: VK3FABC, EE4EEEE). CW Skimmer's practice in kind (an unusual pattern needs
     // 5 repeats at its Normal level, against 2 or 3; RBN 2021). Measured (call-form-1): of the base calls three or more RBN skimmers
     // spotted on 2026-11-17, 11 of 4 366 (0.25%) have this form, most of them busts (SD6MCWT, IK4EATX, W0RAUW), while on the seven
     // 2026-11-17 recordings all 8 such calls the stage reported as any call were false (EE4EEEE, TE7TTTD, GA5NNON).
     double unusual_form = 2.0;
-    double unusual_points = 8.0;
-    double unusual_points_signed = 2.0;
+    double unusual_points = 4.0;
+    double unusual_points_signed = 3.0;
     // Its only digit its prefix's (ParsedCall::prefix_digit: C6AGU, E7DX, D4C). Measured (call-form-2): as any call, the form added
     // only junk on the three replay sets (E5E, T5E, A9E; 2026-11-17 misread 85 to 115, no confirmed call gained), though the RBN
     // spots real ones (C8K, E6DX, T2DE).
     double prefix_digit_form = 2.0;
-    double prefix_digit_points = 8.0;
-    double prefix_digit_points_signed = 2.0;
+    double prefix_digit_points = 4.0;
+    double prefix_digit_points_signed = 3.0;
     // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, G5RV, R5NN, DJ5NN): read in text about rigs, antennas and
     // software, or a report glued to a word, far more often than sent as a call.
     double cw_word_form = 2.0;
-    double cw_word_points = 8.0;
-    double cw_word_points_signed = 2.0;
+    double cw_word_points = 4.0;
+    double cw_word_points_signed = 3.0;
     // Two or more digits after the prefix (ParsedCall::special: W100AW, TM100TF, II0IARU), a special-event form.
     double special_form = 2.0;
-    double special_points = 8.0;
-    double special_points_signed = 2.0;
+    double special_points = 4.0;
+    double special_points_signed = 3.0;
     // Which readings of those four forms reach a candidate, unlisted: 1, the default, whole words and glued ones only (a joined or
     // stripped reading is dropped, as a tiny call's is); 0, every reading. Joined pieces of grid squares (CM 96AX), of serial numbers
     // and of fragments (A 9E, E 7L) make these forms far more often than a station does.
@@ -395,11 +407,14 @@ struct CallSearchConfig {
     // A word of CW that is a keyword run onto 5NN (R5NN, TU5NN, UR5NN, K5NN: is_keyword_report), unlisted, needs a counted signed
     // reading, when not 0: a runner's UR 5NN or TU 5NN read as one word in every exchange passes any bar of repeats.
     double keyword_report_signed = 1.0;
-    // In the arbitration between near variants, an unlisted call of those four forms counts its points times points_bare over its
-    // form's bare bar (2 / 8 = 0.25 at the defaults), when not 0: a form that needs k times the evidence to be reported needs k times
-    // it to hold a rival back, as a listed call weighs known_rival_factor times. Without it, E7R (read 8 times or more) took EE7R's
-    // row and E5EB, never reported, held G5EB on the 2026-11-18 CWT. Heuristic (calls-list-1; appendix A.12).
-    double form_rival_weight = 1.0;
+    // In the arbitration between near variants, an unlisted call of those four forms holds a rival back only once it is reported,
+    // that is once it has passed its own bar, when not 0: a candidate that cannot be reported holds nothing back, and one that has
+    // reached its bar holds and defends at its full points, as any call. Its defense is never weighed down, so its readings are
+    // never left out of its own pooled support by a weaker rival. Without it, on the 2026-11-18 CWT, E5EB (never reported) held
+    // G5EB and junk candidates of these forms held S58M and others. Heuristic (calls-list-1's review; appendix A.12).
+    double form_rival_reported = 1.0;
+    // ReadOptions::cq_event.
+    double cq_event_signed = 1.0;
     // ReadOptions::joined_periodic; on since call-form-1.
     double joined_periodic = 1.0;
     // ReadOptions::x_as_tu; on since call-arb-1: on the 2026-11-18 CWT W3RJ (116 RBN skimmers) was withdrawn for XW3RJ (2), its
@@ -565,8 +580,8 @@ private:
     // Whether a call of these marks is reported from a known-call list only (a form's setting at 1, CallSearchConfig::unusual_form
     // and the like).
     bool listed_only(std::string_view base, bool special, bool unusual, bool prefix_digit, bool cw_word) const;
-    // The factor on an unlisted call's points in the arbitration for the form's bar (CallSearchConfig::form_rival_weight); 1 else.
-    double rival_weight(const Candidate& candidate) const;
+    // Whether an unlisted call of a form with its own bar holds no rival back yet (CallSearchConfig::form_rival_reported).
+    bool holds_nothing(const Candidate& candidate) const;
     // Whether a better-supported near variant holds the call back at this place (CallSearchConfig::variant_hz); the best such rival's best
     // is added to rival_best, and the reported calls it beats here to beaten, when given.
     bool held_at(const Candidate& candidate, double freq_hz, double now_s, double* rival_best, std::vector<Candidate*>* beaten);

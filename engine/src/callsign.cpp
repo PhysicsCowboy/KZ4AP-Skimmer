@@ -277,6 +277,11 @@ double call_length_nats(std::size_t n) {
 
 // ---- The grammar
 
+bool is_cq_event_word(std::string_view w) {
+    return any_of_word(w, {"CWT", "SST", "MST", "NS", "NAQP", "SS", "FD", "NA", "QRP", "FOC", "SKCC", "BUG", "ARRL", "WAE", "WWFF",
+                           "IOTA", "BOTA", "LOTA", "SEQP", "SPRINT"});
+}
+
 bool allocated_pair(char a, char b) {
     if (!(is_letter(a) || is_digit(a)) || !(is_letter(b) || is_digit(b))) return false;
     if (a == 'Q') return false;
@@ -705,13 +710,26 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
         out.push_back(std::move(r));
     };
     // The role of a call in words [first, last): past its repeats on either side.
+    // Whether the words before index i are CQ and one contest or event word (ReadOptions::cq_event), past stray E and T.
+    const auto cq_event_before = [&](std::size_t i) {
+        if (options.cq_event == 0) return false;
+        while (i > 0 && tiny_word(words[i - 1].text)) --i;
+        if (i == 0 || !is_cq_event_word(words[i - 1].text)) return false;
+        return before(i - 1) == "CQ";
+    };
+    // The role from the words around; with nothing before it but CQ and an event word, signed (prev_outside: prev is the word
+    // before index i, not a piece of the same word).
+    const auto role_with = [&](std::string_view prev, std::string_view next, bool prev_outside, std::size_t i) {
+        const Role role = role_from(prev, next);
+        return role == Role::Unknown && prev_outside && cq_event_before(i) ? Role::Sender : role;
+    };
     const auto role_of = [&](const std::string& text, std::size_t first, std::size_t last) {
         std::size_t a = first;
         while (a > 0 && words[a - 1].text == text) --a;
         std::size_t b = last;
         while (b < words.size() && words[b].text == text) ++b;
         const std::string_view prev = before(a), next = after(b);
-        return role_from(prev, next);
+        return role_with(prev, next, true, a);
     };
 
     for (std::size_t i = from; i < to; ++i) {
@@ -779,7 +797,7 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 readings.push_back(s.text);
                 for (const std::string& text : readings) {
                     const std::size_t before_emit = out.size();
-                    emit(text, how, i, i + 1, role_from(prev, next), twice);
+                    emit(text, how, i, i + 1, role_with(prev, next, a == 0, i), twice);
                     if (out.size() > before_emit) {
                         segmented = true;
                         if (timed) {
@@ -801,11 +819,12 @@ std::vector<CallReading> read_calls(std::span<const Word> words, std::size_t fro
                 if (!parse_call(pieces[k])) continue;
                 std::string_view prev = k > 0 ? std::string_view(pieces[k - 1]) : before(i);
                 std::string_view next = k + 1 < pieces.size() ? std::string_view(pieces[k + 1]) : after(i + 1);
+                const bool prev_outside = k == 0 || prev == pieces[k];
                 if (prev == pieces[k]) prev = before(i);
                 if (next == pieces[k]) next = after(i + 1);
                 const bool twice = pieces.size() >= 2 && ((k > 0 && pieces[k - 1] == pieces[k]) || (k + 1 < pieces.size() && pieces[k + 1] == pieces[k]));
                 const std::size_t before_emit = out.size();
-                emit(pieces[k], Reading::Glued, i, i + 1, role_from(prev, next), twice);
+                emit(pieces[k], Reading::Glued, i, i + 1, role_with(prev, next, prev_outside, i), twice);
                 if (timed && out.size() > before_emit && offset + pieces[k].size() <= w.size() &&
                     w.compare(offset, pieces[k].size(), pieces[k]) == 0) {
                     out.back().start_s = symbols[word.first + offset].start_s;
@@ -1044,6 +1063,7 @@ void CallSearch::read_track(TrackText& t, bool all) {
     options.costs = config_.segmentation;
     options.joined_periodic = static_cast<int>(config_.joined_periodic);
     options.x_as_tu = static_cast<int>(config_.x_as_tu);
+    options.cq_event = static_cast<int>(config_.cq_event_signed);
     for (CallReading& r : read_calls(words, from, to, timed_by, options)) {
         const std::size_t a = words[r.first_word].first, b = words[r.last_word - 1].last;
         // The least margin; an unknown one (-1) wins the minimum, so that a reading is sure only if every symbol says so.
@@ -1178,14 +1198,10 @@ bool CallSearch::listed_only(std::string_view base, bool special, bool unusual, 
            (config_.cut_number_form == 1.0 && is_cut_number_form(base));
 }
 
-double CallSearch::rival_weight(const Candidate& c) const {
-    if (c.known || config_.form_rival_weight == 0.0) return 1.0;
-    double bar = 0.0;
-    if (c.unusual && config_.unusual_form == 2.0) bar = std::max(bar, config_.unusual_points);
-    if (c.prefix_digit && config_.prefix_digit_form == 2.0) bar = std::max(bar, config_.prefix_digit_points);
-    if (c.cw_word && config_.cw_word_form == 2.0) bar = std::max(bar, config_.cw_word_points);
-    if (c.special && config_.special_form == 2.0) bar = std::max(bar, config_.special_points);
-    return bar > config_.points_bare && config_.points_bare > 0.0 ? config_.points_bare / bar : 1.0;
+bool CallSearch::holds_nothing(const Candidate& c) const {
+    if (c.known || c.reported || config_.form_rival_reported == 0.0) return false;
+    return (c.unusual && config_.unusual_form == 2.0) || (c.prefix_digit && config_.prefix_digit_form == 2.0) ||
+           (c.cw_word && config_.cw_word_form == 2.0) || (c.special && config_.special_form == 2.0);
 }
 
 bool CallSearch::passes(const Candidate& c, const Support& s) const {
@@ -1272,6 +1288,9 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
     const double mine = mine_s.points;
     for (auto& [base, other] : candidates_) {
         if (&other == &c || other.recent.empty()) continue;
+        // An unlisted call of a form with its own bar, not yet reported, holds nothing back (CallSearchConfig::form_rival_reported);
+        // not reported, it is no row for this call to withdraw either.
+        if (holds_nothing(other)) continue;
         // Its occurrences' span must come within variant_s of now, on either side (now is a loser's last reading when a withdrawal is judged).
         const auto [oldest, newest] = std::minmax_element(other.recent.begin(), other.recent.end(),
                                                           [](const Occurrence& a, const Occurrence& b) { return a.end_s < b.end_s; });
@@ -1305,9 +1324,6 @@ bool CallSearch::held_at(const Candidate& c, double freq_hz, double now_s, doubl
                 }
             }
         }
-        // An unlisted call of a form with its own bar weighs less (CallSearchConfig::form_rival_weight).
-        mine_vs *= rival_weight(c);
-        theirs_vs *= rival_weight(other);
         // Two letters' difference only against a much better call.
         const double need = d >= 2 ? (short_pair ? config_.short_variant_ratio : config_.far_variant_ratio) : 1.0;
         // A listed call's points count known_rival_factor times against an unlisted call's, but for its flat ones (flat_stripped).
