@@ -456,6 +456,7 @@ void SegmentalDecoder::push_sample(Stream& stream, const viterbi::EnvelopeSample
     if (stream.echo->push(hit ? floor : sample.e_fs * sample.e_fs, floor)) {
         stream.evidence->set_echo(stream.echo->shape());
     }
+    stream.evidence->set_echo_level(stream.echo->level_fs2());
     stream.evidence->push(sample.e_fs, sigma2, floor, hit && impulse_->mode == 1);
     stream.search->advance();  // at once: the short elements' context reaches back only so far
     stream.advance_free_key();

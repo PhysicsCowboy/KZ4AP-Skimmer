@@ -90,6 +90,12 @@ public:
     int tail_filled(std::int64_t i) const { return tail_filled_[static_cast<std::size_t>(i) & kMask]; }
     // samples: the tail positions of the last sample pushed (0 with no tail).
     int tail_positions() const { return tail_positions_; }
+    // samples: the tail positions that follow a fall claimed at i, those pushed with sample i + 11, its first tail position
+    // (text-tail-2); the last sample's while that sample is still to come. i within the last kRing samples.
+    int tail_length(std::int64_t i) const {
+        if (i + kEdgeDone >= count_) return tail_positions_;
+        return tail_count_[static_cast<std::size_t>(i + kEdgeDone) & kMask];
+    }
     // The context of a sample within the last 1 024.
     const SampleContext& context(std::int64_t k) const { return context_[static_cast<std::size_t>(k) & kContextMask]; }
 
@@ -121,13 +127,17 @@ private:
     std::vector<std::uint8_t> tail_filled_ = std::vector<std::uint8_t>(kRing, 0);
     std::vector<double> tail_whole_ = std::vector<double>(kRing, 0.0);
     int tail_positions_ = 0;
+    std::vector<std::uint8_t> tail_count_ = std::vector<std::uint8_t>(kRing, 0);  // by sample: the tail positions pushed with it
 };
 
 // The channel's tail after a fall, as power re the mark's key-down power at the filter's output (text-fast-1; config.hpp,
 // echo_max_s). Empty (on false) for a clean channel.
+// With `absolute` (SegmentalConfig::echo_absolute, text-tail-2) the values are re the stream's mean mark power, and the tail's power
+// at a sample is the value times M-bar, the stream's recent mark power (EchoEstimator::level_fs2), whatever the level.
 struct EchoShape {
     bool on = false;
-    // at the fall window's positions m = 5 ... 10: added to the template's variance v_m
+    bool absolute = false;
+    // at the fall window's positions m = 5 ... 10: added to the template's variance v_m (absolute: to the noise)
     std::array<double, kEdgeCount> in_fall{};
     // at the positions m = 11 ... 10 + tail.size() after the claimed fall
     std::vector<double> tail;
@@ -147,6 +157,8 @@ public:
     bool push(double e2_fs2, double floor_fs2);
     const EchoShape& shape() const { return shape_; }
     double runs() const { return runs_; }
+    // FS^2: M-bar, the mean of the strong runs' median e^2 with a memory of echo_level_runs runs (text-tail-2); 0 before the first.
+    double level_fs2() const { return level_mean_; }
     // Whether a shape has been made yet (on or off): from echo_min_runs strong runs.
     bool decided() const { return decided_; }
 
@@ -175,6 +187,10 @@ private:
     double profile_level_ = 0.0;
     std::vector<double> profile_;
     std::vector<double> sum_, count_;
+    // absolute (text-tail-2): the tail's power (e^2 - floor, FS^2) and the runs' level M (FS^2), summed by position
+    bool absolute_ = false;
+    std::vector<double> power_sum_, level_sum_;
+    double level_forget_ = 0.0, level_mean_ = 0.0, level_min_ = 100.0;
     double runs_ = 0.0;
     int since_update_ = 0;
     bool fresh_ = false;
@@ -370,6 +386,8 @@ public:
     // The channel's tail from here on (EchoEstimator): the fall's terms with its variance and the tail's terms after the fall.
     // An empty shape takes it out.
     void set_echo(const EchoShape& shape);
+    // FS^2: M-bar for the samples pushed from here on, with an absolute tail (text-tail-2).
+    void set_echo_level(double level_fs2) { echo_level_fs2_ = level_fs2; }
     // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
     // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
     // short_frames false keeps the frame at level_frame_s for now (the variant doppler_hold_frames: the tail not yet decided).
@@ -433,6 +451,12 @@ private:
     // The tail (set_echo): on, its fall terms by position and table level, and its tail terms (rho / (1 + rho), ln(1 + rho)) by
     // position and table level.
     bool echo_on_ = false;
+    bool echo_absolute_ = false;
+    double echo_level_fs2_ = 0.0;
+    double echo_margin_ = 1e300;  // 10^(echo_level_margin_db / 10)
+    std::vector<float> echo_scale_;  // by sample in the ring: M-bar / sigma^2 (absolute tail)
+    std::array<double, kEdgeCount> echo_in_fall_{};
+    std::vector<double> echo_tail_;
     int echo_positions_ = 0;
     std::vector<LevelTables::Term> echo_fall_;
     std::vector<float> echo_gain_, echo_cost_;

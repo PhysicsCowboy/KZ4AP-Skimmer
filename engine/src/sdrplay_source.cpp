@@ -1,4 +1,5 @@
 #include "kz4ap/sdrplay_source.hpp"
+#include "kz4ap/utc_time.hpp"
 
 #if defined(KZ4AP_HAVE_SDRPLAY_HEADERS)
 #if defined(_WIN32)
@@ -78,7 +79,7 @@ struct SdrplaySource::Api {};
 std::vector<SdrplayDevice> list_sdrplay_devices(const std::filesystem::path&) { throw std::runtime_error(kNoHeaders); }
 
 SdrplaySource::SdrplaySource(const SdrplaySettings& settings, const std::filesystem::path&)
-    : settings_(settings), ring_(2), recorder_(settings.sample_rate > 0 ? settings.sample_rate : 1) {
+    : settings_(settings), sample_rate_(settings.sample_rate), center_hz_(settings.center_hz), ring_(2), recorder_(settings.sample_rate > 0 ? settings.sample_rate : 1) {
     check_sdrplay_settings(settings);
     throw std::runtime_error(kNoHeaders);
 }
@@ -320,6 +321,8 @@ struct SdrplayCallbacks {
 
 SdrplaySource::SdrplaySource(const SdrplaySettings& settings, const std::filesystem::path& library)
     : settings_(settings),
+      sample_rate_(settings.sample_rate),
+      center_hz_(settings.center_hz),
       ring_(static_cast<std::size_t>(kRingS * (settings.sample_rate > 0 ? settings.sample_rate : 1))),
       recorder_(settings.sample_rate > 0 ? settings.sample_rate : 1),
       api_(std::make_unique<Api>()) {
@@ -402,6 +405,8 @@ void SdrplaySource::on_samples(const short* xi, const short* xq, unsigned int co
     // The API sets reset on its first block as well: only a later one is a restart of the stream.
     if (reset && received_.load(std::memory_order_relaxed) > 0) resets_.fetch_add(1, std::memory_order_relaxed);
     received_.fetch_add(count, std::memory_order_relaxed);
+    // The stream's start, once: the system clock at its first block with samples, less that block's length (LiveStart).
+    start_.on_block(count, sample_rate_, system_unix_ms);
     recorder_.push(xi, xq, count);
     if (convert_.size() < count) convert_.resize(count);  // once, at the first block larger than any before
     constexpr float kScale = 1.0f / 32768.0f;  // as WavIqReader, so a recording of this reads the same

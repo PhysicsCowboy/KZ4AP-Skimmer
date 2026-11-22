@@ -22,6 +22,7 @@ void RunningSums::push(double l1, const std::array<double, kEdgeCount>& rise, co
         tail_whole_[c & kMask] = 0.0;
     }
     tail_positions_ = tail_count;
+    tail_count_[static_cast<std::size_t>(k) & kMask] = static_cast<std::uint8_t>(tail_count);
     if (tail_count > 0) {
         if (tail_prefix_.empty()) tail_prefix_.assign((kTailMask + 1) * (kTailMax + 1), 0.0);
         for (int q = 0; q < tail_count; ++q) {
@@ -225,6 +226,16 @@ EchoEstimator::EchoEstimator(const SegmentalConfig& config, const viterbi::Templ
     min_runs_ = config.echo_min_runs;
     on_ratio_ = std::pow(10.0, config.echo_on_db / 10.0);
     end_ratio_ = std::pow(10.0, config.echo_end_db / 10.0);
+    if (!(config.echo_absolute == 0.0 || config.echo_absolute == 1.0))
+        throw std::invalid_argument("segmental: echo_absolute must be 0 or 1");
+    if (!(config.echo_level_runs >= 1.0)) throw std::invalid_argument("segmental: echo_level_runs must be at least 1 run");
+    absolute_ = config.echo_absolute == 1.0;
+    level_forget_ = std::exp(-1.0 / config.echo_level_runs);
+    if (!std::isfinite(config.echo_level_min_db))
+        throw std::invalid_argument("segmental: echo_level_min_db must be finite (dB re the floor)");
+    if (!std::isfinite(config.echo_level_margin_db))
+        throw std::invalid_argument("segmental: echo_level_margin_db must be finite (dB re the level)");
+    level_min_ = std::pow(10.0, config.echo_level_min_db / 10.0);
     positions_ = std::min(kTailMax, static_cast<int>(std::floor(config.echo_max_s / interval_s + 1e-9)));
     // h: the fall template's last position at or above half the key-down amplitude
     half_ = kEdgeFirst;
@@ -233,6 +244,8 @@ EchoEstimator::EchoEstimator(const SegmentalConfig& config, const viterbi::Templ
     span_ = kEdgeDone + positions_ - half_;
     sum_.assign(static_cast<std::size_t>(span_), 0.0);
     count_.assign(static_cast<std::size_t>(span_), 0.0);
+    power_sum_.assign(static_cast<std::size_t>(span_), 0.0);
+    level_sum_.assign(static_cast<std::size_t>(span_), 0.0);
 }
 
 bool EchoEstimator::push(double e2_fs2, double floor_fs2) {
@@ -276,6 +289,9 @@ void EchoEstimator::end_run(std::int64_t end) {
     std::vector<double> sorted = run_;
     std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2), sorted.end());
     const double level = sorted[sorted.size() / 2];
+    // M-bar follows every run at echo_level_min_db re the floor or more, so a weaker station's runs take it down (review of text-tail-2)
+    if (level >= level_min_ * run_floor_[run_floor_.size() / 2])
+        level_mean_ = level_mean_ > 0.0 ? level_forget_ * level_mean_ + (1.0 - level_forget_) * level : level;
     if (level < min_level_ * run_floor_[run_floor_.size() / 2]) return;
     std::size_t last = 0;
     for (std::size_t i = 0; i < run_.size(); ++i)
@@ -293,10 +309,14 @@ void EchoEstimator::close_profile() {
     for (std::size_t q = 0; q < sum_.size(); ++q) {
         sum_[q] *= forget_;
         count_[q] *= forget_;
+        power_sum_[q] *= forget_;
+        level_sum_[q] *= forget_;
     }
     for (std::size_t q = 0; q < profile_.size() && q < sum_.size(); ++q) {
         sum_[q] += profile_[q];
         count_[q] += 1.0;
+        power_sum_[q] += profile_[q] * profile_level_;
+        level_sum_[q] += profile_level_;
     }
     runs_ = runs_ * forget_ + 1.0;
     profile_.clear();
@@ -307,22 +327,31 @@ void EchoEstimator::close_profile() {
 }
 
 void EchoEstimator::update_shape() {
+    // The mean of the ratios (e^2 - floor) / M, which decides whether there is a tail and how long it is, as in text-fast-1.
     const auto mean_at = [&](int m) {
         const int q = m - half_;
         if (q < 0 || q >= span_) return 0.0;
         const double c = count_[static_cast<std::size_t>(q)];
         return c >= min_runs_ / 3.0 ? sum_[static_cast<std::size_t>(q)] / c : 0.0;
     };
+    // absolute (text-tail-2): the tail's value is the mean tail power re the mean mark power (a ratio of means: for a tail that does
+    // not follow the mark's level it is the power re the mean level, where a mean of ratios weighs the faded marks' tails up).
+    const auto value_at = [&](int m) {
+        if (!absolute_) return mean_at(m);
+        const int q = m - half_;
+        if (q < 0 || q >= span_ || !(level_sum_[static_cast<std::size_t>(q)] > 0.0)) return 0.0;
+        return power_sum_[static_cast<std::size_t>(q)] / level_sum_[static_cast<std::size_t>(q)];
+    };
     EchoShape shape;
+    shape.absolute = absolute_;
     const double first = mean_at(kEdgeDone);
     if (first >= on_ratio_) {
         shape.on = true;
         for (int q = 0; q < positions_; ++q) {
-            const double g = mean_at(kEdgeDone + q);
-            if (g < end_ratio_) break;
-            shape.tail.push_back(g);
+            if (mean_at(kEdgeDone + q) < end_ratio_) break;
+            shape.tail.push_back(std::max(0.0, value_at(kEdgeDone + q)));
         }
-        shape.in_fall.fill(first);
+        shape.in_fall.fill(std::max(0.0, value_at(kEdgeDone)));
     }
     shape_ = shape;
     fresh_ = true;
@@ -521,6 +550,10 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
       key_switch_(config.key_switch_per_s * config.model.sample_interval_s) {
     if (!(key_switch_ > 0.0 && key_switch_ < 0.5))
         throw std::invalid_argument("segmental: key_switch_per_s x sample_interval_s must lie in (0, 0.5)");
+    if (!(std::isfinite(config.echo_level_margin_db)))
+        throw std::invalid_argument("segmental: echo_level_margin_db must be finite (dB re the level)");
+    // 1000 dB or more leaves the bound out
+    echo_margin_ = config.echo_level_margin_db >= 1000.0 ? 1e300 : std::pow(10.0, config.echo_level_margin_db / 10.0);
     const std::size_t levels = static_cast<std::size_t>(levels_);
     const std::size_t ring = static_cast<std::size_t>(ring_frames_);
     const std::size_t ring_samples = ring * static_cast<std::size_t>(frame_samples_);
@@ -555,7 +588,14 @@ void LevelEvidence::set_echo(const EchoShape& shape) {
     const int table_levels = tables_.table_levels();
     echo_on_ = shape.on && !shape.tail.empty();
     echo_positions_ = echo_on_ ? std::min(kTailMax, static_cast<int>(shape.tail.size())) : 0;
+    echo_absolute_ = echo_on_ && shape.absolute;
     if (!echo_on_) return;
+    if (echo_absolute_) {
+        // The tail's power is A M-bar at every level (text-tail-2): commit_frame scores it from each sample's M-bar / sigma^2.
+        echo_in_fall_ = shape.in_fall;
+        echo_tail_.assign(shape.tail.begin(), shape.tail.begin() + echo_positions_);
+        return;
+    }
     // The fall's window: the template's term with the tail's power added to its variance, v = 1 + r^2 (f^2 (1 - s)^2 + v_m + g).
     echo_fall_.resize(static_cast<std::size_t>(kEdgeCount * table_levels));
     for (int position = 0; position < kEdgeCount; ++position)
@@ -598,6 +638,8 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2, bool 
     z_[slot] = z;
     shift_[slot] = static_cast<std::uint8_t>(shift);
     unknown_[slot] = unknown ? 1 : 0;
+    if (echo_scale_.empty()) echo_scale_.assign(z_.size(), 0.0f);
+    echo_scale_[slot] = static_cast<float>(echo_level_fs2_ / sigma2);
     float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
     const double w = tables_.w();
     const double common = w * z2;  // what x_k(l) holds apart from x[level]
@@ -865,7 +907,7 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             // short element reads nothing here either.
             const std::array<double, kEdgeCount> none{};
             for (int q = 0; q < echo_positions_; ++q) tail_scratch_[q] = 0.0;
-            sums_.push(0.0, none, none, SampleContext{}, tail_scratch_, echo_on_ && edge_count > 0 ? echo_positions_ : 0);
+            sums_.push(0.0, none, none, SampleContext{}, tail_scratch_, (echo_absolute_ || echo_on_) && edge_count > 0 ? echo_positions_ : 0);
             continue;
         }
         const double z = z_[slot];
@@ -882,11 +924,43 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
 
         std::array<double, kEdgeCount> rise{};
         std::array<double, kEdgeCount> fall{};
+        // An absolute tail (text-tail-2): per group i of the belief's levels, rho_i = A min(M-bar, margin a_i^2) / sigma^2 (below). In
+        // the fall's window its power is noise, sigma^2 (1 + rho_i): taken in whole grid steps d_i (nearest; an approximation, none for
+        // rho_i < 0.1885), as a sigma^2 above the floor is, the fall reads the plain table at level - shift - d_i with
+        // z' = z / sqrt(1 + rho'), rho' = 10^(d_i step / 10) - 1, less w ln(1 + rho') (derived for that rho').
+        const double scale = echo_absolute_ ? static_cast<double>(echo_scale_[slot]) : 0.0;
+        // The tail's level by group of the belief's levels, re sigma^2: M-bar / sigma^2, at most echo_level_margin_db above the
+        // group's own a^2 / sigma^2 (the tail is its station's; review of text-tail-2).
+        double tail_level[kEdgeLevels];
+        int fall_steps[kEdgeLevels];
+        double fall_z[kEdgeLevels], fall_z2[kEdgeLevels], fall_cost[kEdgeLevels];
+        if (echo_absolute_) {
+            for (int i = 0; i < edge_count; ++i) {
+                const double own = tables_.r2(edge_level[i] - shift + tables_.below());
+                tail_level[i] = std::min(scale, echo_margin_ * own);
+                const double rho = echo_in_fall_[0] * tail_level[i];
+                fall_steps[i] = rho > 0.0 ? static_cast<int>(std::lround(10.0 * std::log10(1.0 + rho) / tables_.step_db())) : 0;
+                fall_z[i] = z;
+                fall_z2[i] = z2;
+                fall_cost[i] = 0.0;
+                if (fall_steps[i] > 0) {
+                    const double ln_noise = fall_steps[i] * tables_.step_db() / 10.0 * std::numbers::ln10;
+                    fall_z[i] = z * std::exp(-0.5 * ln_noise);
+                    fall_z2[i] = fall_z[i] * fall_z[i];
+                    fall_cost[i] = w * ln_noise;
+                }
+            }
+        }
         for (int position = 0; position < kEdgeCount; ++position) {
             double up_top = -1e300, down_top = -1e300;
             double up[kEdgeLevels], down[kEdgeLevels];
             for (int i = 0; i < edge_count; ++i) {
                 up[i] = term_value(tables_.rise(position, edge_level[i], shift), z, z2, w);
+                if (echo_absolute_) {
+                    // the table's lowest index at most (the grid's bottom re sigma^2 with level_noise_bottom)
+                    const int at = std::min(shift + fall_steps[i], edge_level[i] + tables_.below());
+                    down[i] = term_value(tables_.fall(position, edge_level[i], at), fall_z[i], fall_z2[i], w) - fall_cost[i];
+                } else
                 down[i] = echo_on_ ? term_value(echo_fall_[static_cast<std::size_t>(position * tables_.table_levels() + edge_level[i] - shift +
                                                                                     tables_.below())], z, z2, w)
                                    : term_value(tables_.fall(position, edge_level[i], shift), z, z2, w);
@@ -910,7 +984,28 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
             context.probability[static_cast<std::size_t>(i)] = static_cast<float>(edge_p[i]);
         }
         int tail_count = 0;
-        if (echo_on_ && edge_count > 0) {
+        if (echo_absolute_ && edge_count > 0) {
+            // The tail's positions, absolute: noise plus a zero-mean Gaussian of power A_q min(M-bar, margin a_i^2), against key-up, per
+            // group i and mixed over the groups as the edges are; without the bound one value whatever the level (text-tail-2).
+            const bool bounded = echo_margin_ < 1e300;
+            for (int q = 0; q < echo_positions_ && !bounded; ++q) {
+                const double rho = echo_tail_[static_cast<std::size_t>(q)] * scale;
+                tail_scratch_[q] = w * (z2 * rho / (1.0 + rho) - std::log1p(rho));
+            }
+            for (int q = 0; q < echo_positions_ && bounded; ++q) {
+                double values[kEdgeLevels];
+                double value_top = -1e300;
+                for (int i = 0; i < edge_count; ++i) {
+                    const double rho = echo_tail_[static_cast<std::size_t>(q)] * tail_level[i];
+                    values[i] = w * (z2 * rho / (1.0 + rho) - std::log1p(rho));
+                    value_top = std::max(value_top, values[i]);
+                }
+                double tail_sum = 0.0;
+                for (int i = 0; i < edge_count; ++i) tail_sum += edge_p[i] * fast::exp_neg(values[i] - value_top);
+                tail_scratch_[q] = value_top + fast::log(tail_sum);
+            }
+            tail_count = echo_positions_;
+        } else if (echo_on_ && edge_count > 0) {
             // The tail's positions after a fall: noise plus the tail's power at the belief's levels, against key-up.
             const int table_levels = tables_.table_levels();
             const int below = tables_.below();

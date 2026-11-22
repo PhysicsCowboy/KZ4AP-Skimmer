@@ -150,6 +150,7 @@ add_executable(kz4ap_engine_tests
   tests/callsign_test.cpp
   tests/worker_pool_test.cpp
   tests/iq_recorder_test.cpp
+  tests/live_start_test.cpp
   tests/matched_front_end_test.cpp
   tests/frequency_tracker_test.cpp
   tests/listen_test.cpp
