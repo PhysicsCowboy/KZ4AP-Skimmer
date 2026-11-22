@@ -8,7 +8,7 @@
 //     generator's notes, docs/research/deepcw-generator-notes.md). The carrier's mean frequency is removed first (the lag-1 phase).
 //   - the slow fading: the median key-down level per second, dB re the noise, its range and spread.
 //   - the median mark and gap lengths, ms (key-down runs with gaps under 6 ms closed; gaps up to 300 ms).
-//   kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv]
+//   kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv] [--fall FALL.csv] [--end-guard-ms G]
 // Refused, exit status 1 and one line on stderr: an option without its value, a value that is not a number, --seconds not above
 // 0 s, --start below 0 s, a span the file does not hold (no sample read, or too few for one noise block after the low-pass), and
 // a span with no key-down run.
@@ -51,21 +51,25 @@ double number(const std::string& option, const std::string& value) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc < 2) throw std::runtime_error("usage: kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv]");
-        std::string file = argv[1], rho_csv;
-        double offset_hz = 0.0, start_s = 0.0, seconds = 0.0;
+        if (argc < 2) throw std::runtime_error("usage: kz4ap-fading FILE.wav --offset-hz F --start S --seconds T [--rho RHO.csv] [--fall FALL.csv] [--end-guard-ms G]");
+        std::string file = argv[1], rho_csv, fall_csv;
+        double offset_hz = 0.0, start_s = 0.0, seconds = 0.0, end_guard_ms = 30.0;
         for (int i = 2; i < argc; i += 2) {
             const std::string a = argv[i];
-            if (a != "--offset-hz" && a != "--start" && a != "--seconds" && a != "--rho") throw std::runtime_error("unknown option " + a);
+            if (a != "--offset-hz" && a != "--start" && a != "--seconds" && a != "--rho" && a != "--fall" && a != "--end-guard-ms")
+                throw std::runtime_error("unknown option " + a);
             if (i + 1 >= argc) throw std::runtime_error(a + " needs a value");
             const std::string v = argv[i + 1];
             if (a == "--offset-hz") offset_hz = number(a, v);
             else if (a == "--start") start_s = number(a, v);
             else if (a == "--seconds") seconds = number(a, v);
+            else if (a == "--end-guard-ms") end_guard_ms = number(a, v);
+            else if (a == "--fall") fall_csv = v;
             else rho_csv = v;
         }
         if (!(seconds > 0.0)) throw std::runtime_error("--seconds must be above 0 s (the span to measure)");
         if (start_s < 0.0) throw std::runtime_error("--start must not be below 0 s (s from the recording's first sample)");
+        if (end_guard_ms < 0.0) throw std::runtime_error("--end-guard-ms must not be below 0 ms (the span left off each run's end)");
         kz4ap::WavIqReader reader(file);
         const double fs = reader.sample_rate();
         const int decimation = std::max(1, static_cast<int>(std::lround(fs / 1500.0)));
@@ -165,6 +169,40 @@ int main(int argc, char** argv) {
             ++used;
         }
         const double sigma = used > 0 && sxy < 0.0 ? std::sqrt(-sxy / sxx / (2.0 * std::numbers::pi * std::numbers::pi)) : std::nan("");
+        // The same correlation with the pairs kept off each run's last end_guard_ms (text-fast-1): an echo or a run's end, where
+        // another path's or the noise's samples follow the mark's, takes |rho| down in proportion to tau (a straight line in
+        // ln |rho|), where a Doppler spread takes it down as tau^2. And the fit of ln |rho| = -a tau - b tau^2 over the same lags,
+        // sigma_D from b alone.
+        std::vector<double> rho_guard(41, 0.0);
+        const std::size_t guard = static_cast<std::size_t>(std::lround(end_guard_ms * 1e-3 * rate));
+        for (int tau = 1; tau <= 40; ++tau) {
+            C r = 0.0;
+            double p = 0.0;
+            for (const auto& [b, e] : runs) {
+                if (e < b + guard) continue;
+                for (std::size_t k = b; k + static_cast<std::size_t>(tau) < e - guard; ++k) {
+                    r += y[k + static_cast<std::size_t>(tau)] * std::conj(y[k]);
+                    p += std::norm(y[k]) - noise;
+                }
+            }
+            rho_guard[static_cast<std::size_t>(tau)] = p > 0.0 ? std::abs(r) / p : std::nan("");
+        }
+        const auto fit_two = [&](const std::vector<double>& rr) {
+            // least squares of ln r on (tau, tau^2), no intercept
+            double s11 = 0, s12 = 0, s22 = 0, s1y = 0, s2y = 0;
+            for (int tau = 1; tau <= 40; ++tau) {
+                const double r = rr[static_cast<std::size_t>(tau)];
+                if (!(r >= 0.2 && r <= 0.999)) continue;
+                const double t = tau / rate, ly = std::log(r);
+                s11 += t * t; s12 += t * t * t; s22 += t * t * t * t; s1y += t * ly; s2y += t * t * ly;
+            }
+            const double det = s11 * s22 - s12 * s12;
+            const double a = -(s22 * s1y - s12 * s2y) / det, b = -(s11 * s2y - s12 * s1y) / det;
+            return std::pair<double, double>{a, b};
+        };
+        const auto [lin_all, quad_all] = fit_two(rho);
+        const auto [lin_guard, quad_guard] = fit_two(rho_guard);
+        const auto sd_of = [](double b) { return b > 0.0 ? 2.0 * std::sqrt(b / (2.0 * std::numbers::pi * std::numbers::pi)) : 0.0; };
         // Slow fading: the median key-down level per second.
         std::vector<double> levels;
         for (std::size_t s = 0; s + static_cast<std::size_t>(rate) <= n; s += static_cast<std::size_t>(rate)) {
@@ -204,6 +242,10 @@ int main(int argc, char** argv) {
                     rate, count, runs.size(), omega * rate / (2.0 * std::numbers::pi), 10.0 * std::log10(signal / noise), noise);
         std::printf("|rho| at 2.67, 6.67, 13.3, 26.7 ms: %.3f %.3f %.3f %.3f; Gaussian fit over %d lags: sigma_D %.2f Hz, f_D = 2 sigma_D %.2f Hz\n",
                     rho[4], rho[10], rho[20], rho[40], used, sigma, 2.0 * sigma);
+        std::printf("|rho| off the runs' last %.0f ms, at 2.67, 6.67, 13.3, 26.7 ms: %.3f %.3f %.3f %.3f\n", end_guard_ms, rho_guard[4],
+                    rho_guard[10], rho_guard[20], rho_guard[40]);
+        std::printf("ln |rho| = -a tau - b tau^2: all pairs a %.2f /s, f_D from b %.2f Hz; off the ends a %.2f /s, f_D from b %.2f Hz\n",
+                    lin_all, sd_of(quad_all), lin_guard, sd_of(quad_guard));
         std::printf("slow fading: %zu s; median key-down level per second %.1f dB re the noise, spread %.1f dB rms, range %.1f dB\n",
                     levels.size(), mean_level, std::sqrt(var_level),
                     levels.empty() ? 0.0 : *std::max_element(levels.begin(), levels.end()) - *std::min_element(levels.begin(), levels.end()));
@@ -215,6 +257,10 @@ int main(int argc, char** argv) {
         {
             std::vector<double> total(61, 0.0);
             std::vector<int> count_at(61, 0);
+            // And the echo's coherence with the mark (text-fast-1): |sum y[last + j] y*[last - 3]| over the runs, against the root of
+            // the product of their powers: near 1 for a ringing (a filter's, the same path's), near 1/sqrt(runs) for another path.
+            std::vector<C> cross(61, 0.0);
+            std::vector<double> self_after(61, 0.0), self_before(61, 0.0);
             for (std::size_t r = 0; r < runs.size(); ++r) {
                 const auto [b, e] = runs[r];
                 if (e - b < 12) continue;
@@ -227,7 +273,23 @@ int main(int argc, char** argv) {
                 for (std::size_t j = 0; j <= 60 && last + j < next; ++j) {
                     total[j] += std::norm(y[last + j]) / level;
                     ++count_at[j];
+                    if (last >= b + 3) {
+                        const C ref = y[last - 3] / std::sqrt(level);
+                        const C at = y[last + j] / std::sqrt(level);
+                        cross[j] += at * std::conj(ref);
+                        self_after[j] += std::norm(at);
+                        self_before[j] += std::norm(ref);
+                    }
                 }
+            }
+            if (!fall_csv.empty()) {
+                std::ofstream out(fall_csv);
+                out << "ms,db_re_mark,runs,coherence\n";
+                for (int j = 0; j <= 60; ++j)
+                    if (count_at[static_cast<std::size_t>(j)] > 0)
+                        out << 1000.0 * j / rate << "," << 10.0 * std::log10(total[static_cast<std::size_t>(j)] / count_at[static_cast<std::size_t>(j)]) << ","
+                            << count_at[static_cast<std::size_t>(j)] << ","
+                            << std::abs(cross[static_cast<std::size_t>(j)]) / std::sqrt(self_after[static_cast<std::size_t>(j)] * self_before[static_cast<std::size_t>(j)]) << "\n";
             }
             std::printf("fall after a mark, dB re its median level (runs counted), at 0, 2.7, 5.3, 8, 13.3, 20, 26.7, 40 ms:");
             for (const int j : {0, 4, 8, 12, 20, 30, 40, 60})
