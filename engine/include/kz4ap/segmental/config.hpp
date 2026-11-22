@@ -149,6 +149,13 @@ struct SegmentalConfig {
     // its last -6 dB sample at f_D 10 Hz (conjecture: 22% of marks, -10 dB for 10 to 20 ms), which must not read as a tail.
     double echo_on_db = -15.0;
     double echo_end_db = -25.0;
+    // 1: the tail's power is absolute, A_q M-bar, A_q the mean tail power after a fall re the mean mark power over the estimator's
+    // memory and M-bar the stream's recent mark power, the same at every level of the belief (text-tail-2); 0: g_q a^2, re the level
+    // the belief holds at the sample (text-fast-1's form). Why: on the owner's clips the tail's power hardly follows the mark before
+    // it (0.06 to 0.24 dB per dB, measured), so a fade of the direct path raises the gap re the mark.
+    double echo_absolute = 0.0;
+    // runs: the memory of M-bar, the mean of the strong runs' median power (FS^2), exponential in runs. Heuristic.
+    double echo_level_runs = 30.0;
 
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---
 

@@ -1610,7 +1610,8 @@ struct Channel35 {
     EchoShape echo;
 };
 
-Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tail, int tail_samples, unsigned seed) {
+Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tail, int tail_samples, unsigned seed,
+                        int cut_mark_samples = 0) {
     const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
     const double amplitude = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
     std::mt19937 rng(seed);
@@ -1619,7 +1620,9 @@ Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tai
     const std::string message = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789";
     out.text = message;
     while (static_cast<int>(out.text.size()) * 51 * 8 < 1500 * 70) out.text += " " + message;
-    const Keyed keyed = keyed_text(out.text, 51, 600, 1500);
+    Keyed keyed = keyed_text(out.text, 51, 600, 1500);
+    // a mark the stream's end cuts off (text-tail-2): key-down to the last sample
+    if (cut_mark_samples > 0) keyed.add(1, cut_mark_samples);
     const auto gain = f_d_hz > 0.0 ? fading_gain(f_d_hz, 1500.0, keyed.key.size(), seed + 1)
                                    : std::vector<std::complex<double>>(keyed.key.size(), 1.0);
     auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
@@ -1688,6 +1691,23 @@ TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
     // Its first 30 runs, about 10 s, are read without it.
     EXPECT_LT(cer_with, 0.25);
     EXPECT_GT(cer_without, 0.5);
+}
+
+TEST(SegmentalTail, AMarkCutOffByTheStreamsEndIsNotReadAsARowOfDots) {
+    // text-tail-2: the stream ends 200 ms into a mark (300 samples at 1 500 samples/s), with the tail learned. At the end every
+    // boundary still to be searched is searched after the flush's samples of no evidence; an over's end there used to wait the
+    // 6 samples of a channel with no tail (the last sample pushed, a flush sample, carried none), so a birth's rise window read the
+    // tail's samples again and the mark read as a row of one-sample E's (the owner's clip03 cut to 38 s: seven E's at its end).
+    // The wait is now the tail of the claim at the over's end: the mark adds at most one symbol to the text.
+    SegmentalConfig config;
+    const Channel35 whole = decode_35_wpm(config, 0.0, 0.1, 45, 51);
+    const Channel35 cut = decode_35_wpm(config, 0.0, 0.1, 45, 51, 300);
+    ASSERT_TRUE(cut.echo.on);
+    std::cout << "cut mark: ends \"" << cut.read.substr(cut.read.size() > 12 ? cut.read.size() - 12 : 0) << "\", whole \""
+              << whole.read.substr(whole.read.size() > 12 ? whole.read.size() - 12 : 0) << "\"\n";
+    ASSERT_GE(cut.read.size(), whole.read.size());
+    EXPECT_EQ(cut.read.substr(0, whole.read.size()), whole.read);
+    EXPECT_LE(cut.read.size(), whole.read.size() + 2);  // a word space and one symbol at most
 }
 
 TEST(SegmentalDoppler, AFastFadingCarrierSetsTheFastWalkAndReadsBetter) {
