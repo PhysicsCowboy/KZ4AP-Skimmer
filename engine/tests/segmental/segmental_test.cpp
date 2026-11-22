@@ -22,6 +22,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace kz4ap;
@@ -1453,6 +1454,49 @@ TEST(EchoEstimator, LearnsATailAfterTheFallAndNoneWhereThereIsNone) {
     EXPECT_FALSE(learn_tail(60.0, 0.1, 12, 23).on);
 }
 
+// Marks alternating 20 runs at +30 and 20 at +25 dB re the floor (1000 and 316 FS^2, the floor 1 FS^2), each followed by a tail of
+// 31.6 FS^2 for 12 samples, whatever the mark (-15 and -10 dB re the marks); the estimator's shape and M-bar at the end (text-tail-2).
+std::pair<EchoShape, double> learn_alternating_tail(double absolute) {
+    SegmentalConfig config;
+    config.echo_absolute = absolute;
+    const SegmentalShared shared(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    EchoEstimator estimator(config, shared.template_tables);
+    std::mt19937 rng(31);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    for (int run = 0; run < 400; ++run) {
+        const double level = (run / 20) % 2 == 0 ? 1000.0 : 316.0;
+        const int mark = run % 3 == 0 ? 39 : 13, gap = run % 5 == 0 ? 39 : 13;
+        for (int k = 0; k < mark; ++k) estimator.push(std::norm(std::complex<double>(std::sqrt(level) + unit(rng), unit(rng))), 1.0);
+        for (int k = 0; k < gap; ++k)
+            estimator.push(std::norm(std::complex<double>(unit(rng), unit(rng))) * (1.0 + (k < 12 ? 31.6 : 0.0)), 1.0);
+    }
+    return {estimator.shape(), estimator.level_fs2()};
+}
+
+TEST(EchoEstimator, AnAbsoluteTailIsReadReTheMeanMarkAndFollowsTheRecentMarkPower) {
+    // A tail that does not follow the mark: re the mean mark, (1000 + 316) / 2 = 658, it is 31.6 / 658 = -13.2 dB; the mean of the
+    // ratios (31.6 / 1000 and 31.6 / 316) is -11.8 dB re the mark (derived), so the absolute form's value is the lower by 1.4 dB,
+    // both read low (A.8e: the last -6 dB sample moves into the tail, more so behind the weaker marks). Whether there is a tail, and
+    // how long, is the mean of the ratios' in both forms (measured: -14.7 and -14.0 dB re the mark, 0.73 dB apart, seed 31). M-bar,
+    // with a memory of 30 runs, ends between the levels: 548 FS^2 by the exponential memory
+    // (derived), the last 20 runs having been at 316.
+    const auto [absolute, level] = learn_alternating_tail(1.0);
+    const auto [relative, unused] = learn_alternating_tail(0.0);
+    (void)unused;
+    ASSERT_TRUE(absolute.on);
+    ASSERT_TRUE(relative.on);
+    EXPECT_TRUE(absolute.absolute);
+    EXPECT_FALSE(relative.absolute);
+    EXPECT_EQ(absolute.tail.size(), relative.tail.size());
+    const double difference_db = 10.0 * std::log10(relative.tail[0] / absolute.tail[0]);
+    std::cout << "alternating marks: the tail " << 10.0 * std::log10(absolute.tail[0]) << " dB re the mean mark, "
+              << 10.0 * std::log10(relative.tail[0]) << " dB re the mark as a mean of ratios; M-bar " << level << " FS^2\n";
+    EXPECT_GT(difference_db, 0.3);
+    EXPECT_LT(difference_db, 2.5);
+    EXPECT_GT(level, 500.0);
+    EXPECT_LT(level, 600.0);
+}
+
 TEST(LevelEvidence, ShortFramesJoinedIntoBlocksScoreAsTheLongFrame) {
     // While the walk is slow the frames of 10.67 ms are joined two by two into the 21.33 ms frame: the evidence is the old one,
     // to the bit.
@@ -1688,7 +1732,7 @@ TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
     EXPECT_FALSE(without.echo.on);
     const double cer_with = cer(with.text, with.read), cer_without = cer(without.text, without.read);
     std::cout << "tail: CER " << cer_with << " with the tail learned, " << cer_without << " without\n";
-    // Its first 30 runs, about 10 s, are read without it.
+    // Its first 15 strong runs, about 4 s, are read without it.
     EXPECT_LT(cer_with, 0.25);
     EXPECT_GT(cer_without, 0.5);
 }

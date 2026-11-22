@@ -141,9 +141,10 @@ struct SegmentalConfig {
     double echo_min_db = 20.0;
     // s: the shortest run read. Heuristic: a dot at 37 WPM.
     double echo_min_run_s = 0.032;
-    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used. Heuristics.
+    // runs: the estimator's memory, an exponential one in runs; and how many it needs before it is used (15: the 16th strong run,
+    // about 3 to 4 s at 35 WPM; text-fast-1 had 30). Heuristics, 15 by measurement on the owner's clips cut to 38 s (text-tail-2).
     double echo_memory_runs = 200.0;
-    double echo_min_runs = 30.0;
+    double echo_min_runs = 15.0;
     // dB re the mark's key-down power: the tail is modeled when its first value stands at least this high, and it ends where it
     // falls under echo_end_db. Heuristics: a Rayleigh-faded mark that ends in a fade leaves about -17 dB re the mark behind
     // its last -6 dB sample at f_D 10 Hz (conjecture: 22% of marks, -10 dB for 10 to 20 ms), which must not read as a tail.
@@ -152,9 +153,10 @@ struct SegmentalConfig {
     // 1: the tail's power is absolute, A_q M-bar, A_q the mean tail power after a fall re the mean mark power over the estimator's
     // memory and M-bar the stream's recent mark power, the same at every level of the belief (text-tail-2); 0: g_q a^2, re the level
     // the belief holds at the sample (text-fast-1's form). Why: on the owner's clips the tail's power hardly follows the mark before
-    // it (0.06 to 0.24 dB per dB, measured), so a fade of the direct path raises the gap re the mark.
-    double echo_absolute = 0.0;
-    // runs: the memory of M-bar, the mean of the strong runs' median power (FS^2), exponential in runs. Heuristic.
+    // it (0.06 to 0.24 dB per dB, measured), so a fade of the direct path raises the gap re the mark. 1 by measurement (text-tail-2).
+    double echo_absolute = 1.0;
+    // runs: the memory of M-bar, the mean of the strong runs' median power (FS^2), exponential in runs. Heuristic (10, 30 and 200 read
+    // the clips about alike; 30 the best of them, text-tail-2).
     double echo_level_runs = 30.0;
 
     // --- The channel's own noise floor (ChannelFloor, evidence.hpp) ---

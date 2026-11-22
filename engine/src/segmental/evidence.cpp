@@ -314,20 +314,26 @@ void EchoEstimator::close_profile() {
     runs_ = runs_ * forget_ + 1.0;
     profile_.clear();
     if (runs_ < min_runs_) return;
-    // The first shape as soon as the memory holds min_runs_ (the 33rd strong run at 30 and 200), then every min_runs_ / 3.
+    // The first shape as soon as the memory holds min_runs_ (the 16th strong run at 15 and 200), then every min_runs_ / 3.
     if (!decided_ || ++since_update_ >= std::max(1, static_cast<int>(min_runs_ / 3.0))) since_update_ = 0;
     if (since_update_ == 0) update_shape();
 }
 
 void EchoEstimator::update_shape() {
+    // The mean of the ratios (e^2 - floor) / M, which decides whether there is a tail and how long it is, as in text-fast-1.
     const auto mean_at = [&](int m) {
         const int q = m - half_;
         if (q < 0 || q >= span_) return 0.0;
         const double c = count_[static_cast<std::size_t>(q)];
-        if (!(c >= min_runs_ / 3.0)) return 0.0;
-        // absolute: the mean tail power re the mean mark power (a ratio of means: a tail that does not follow the mark's level
-        // reads its power re the mean level, where a mean of ratios would weigh the faded marks' up; text-tail-2)
-        return absolute_ ? power_sum_[static_cast<std::size_t>(q)] / level_sum_[static_cast<std::size_t>(q)] : sum_[static_cast<std::size_t>(q)] / c;
+        return c >= min_runs_ / 3.0 ? sum_[static_cast<std::size_t>(q)] / c : 0.0;
+    };
+    // absolute (text-tail-2): the tail's value is the mean tail power re the mean mark power (a ratio of means: for a tail that does
+    // not follow the mark's level it is the power re the mean level, where a mean of ratios weighs the faded marks' tails up).
+    const auto value_at = [&](int m) {
+        if (!absolute_) return mean_at(m);
+        const int q = m - half_;
+        if (q < 0 || q >= span_ || !(level_sum_[static_cast<std::size_t>(q)] > 0.0)) return 0.0;
+        return power_sum_[static_cast<std::size_t>(q)] / level_sum_[static_cast<std::size_t>(q)];
     };
     EchoShape shape;
     shape.absolute = absolute_;
@@ -335,11 +341,10 @@ void EchoEstimator::update_shape() {
     if (first >= on_ratio_) {
         shape.on = true;
         for (int q = 0; q < positions_; ++q) {
-            const double g = mean_at(kEdgeDone + q);
-            if (g < end_ratio_) break;
-            shape.tail.push_back(g);
+            if (mean_at(kEdgeDone + q) < end_ratio_) break;
+            shape.tail.push_back(std::max(0.0, value_at(kEdgeDone + q)));
         }
-        shape.in_fall.fill(first);
+        shape.in_fall.fill(std::max(0.0, value_at(kEdgeDone)));
     }
     shape_ = shape;
     fresh_ = true;
