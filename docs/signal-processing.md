@@ -4682,7 +4682,7 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 - The tail's estimator (+10 dB re F, kz4ap-fading's run threshold; 32 ms; 200 and 30 runs), echo_on_db −15 dB re the mark, echo_end_db −25 dB re the mark,
   48 ms: heuristics. echo_min_db +20 dB re F by measurement: without it VE3NEA's clean stations at 12 to 15 dB re F read a tail of −7
   to −14 dB re the mark (a bias at the run threshold) and their CER rose (+1.78 dB S₅₀₀, f_D 3 Hz, hand: 0.705 to 0.739). On the
-  matched fast-fading set (f_D 0.7 to 42 Hz) no stream learned a tail.
+  matched fast-fading set (f_D 0.7 to 42 Hz requested, about 0.7 to 24 Hz realized: A.11, "Fading") no stream learned a tail.
 - The tail's state in the level filter (a third key state between key-down and key-up, the tail's power at the level, geometric length):
   tried and taken out. With it the clips read 0.659 and 0.584, against 0.352 and 0.247 without; conjecture: under fast fading the tail
   state, tolerant of amplitude, explains a mark's samples at levels 14 dB above the mark, and the belief splits.
@@ -5263,6 +5263,25 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   50 samples/s and linearly interpolated (at most 0.04 dB, Gaussian, or
   0.06 dB, Butterworth, of power lost relative to the mean between points
   at f_D = 3 Hz, derived).
+  **Defect (the review of `synth-tail-1`, 2026-11-22): 50 samples/s does
+  not realize a fast spread.** It cuts the Doppler spectrum at ±25 Hz, and
+  the interpolation's triangle narrows it further. By coherence time (the
+  lag where |ρ| first falls to 0.5, against the same synthesis at
+  10·f_D samples/s; 8 gains of 60 s; measured) the realized spread is the
+  request at 3 and 5 Hz and 0.97, 0.89, 0.80, 0.69 and 0.57 of it at 7, 14,
+  21, 30 and 42 Hz (Butterworth: 6.8, 12.4, 16.7, 20.8, 23.9 Hz; Gaussian
+  within 0.02 of these); the review's yardstick, the second moment of the
+  interpolated gain's spectrum, reads a Gaussian 20, 30, 42 Hz as 18.4,
+  22.8, 25.2 Hz. `fading_full_rate` (off by default, so every set made
+  before regenerates byte for byte; in the labels only when on)
+  synthesizes the direct path's gain at max(50, 10·f_D) samples/s
+  (heuristic, as the tail's taps), which realizes the request to 42 Hz
+  (`test_tail.py`, by |ρ| at the Gaussian's half-correlation lag). No
+  committed suite requests more than 5 Hz (B and VE3NEA's grid at most
+  3 Hz, B2 at most 5 Hz), so none is affected. The scratch matched
+  fast-fading set of 2026-11-21 (`build/tl-1/fast/`, git-ignored) was made
+  without it: its 7–14 Hz cell realizes about 6.8–12.4 Hz and its
+  21–42 Hz cell about 16.7–23.9 Hz.
 - **Diffuse tail** (synthetic recordings, `tail_db`, `tail_decay_s`,
   `tail_fading_hz`; `training/kz4ap_synth/tail.py`): off unless `tail_db`
   is set, and only then written to the labels, so every existing set is
@@ -5281,21 +5300,36 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   gain and is absorbed into g_k (derived). After a mark longer than the
   delays, the tail's mean power t after key-up is
   10^(`tail_db`/10)·e^(−t/τ) re the direct path (derived; a shorter mark
-  leaves less; `test_tail.py` checks it within 1 dB from 5 to 80 ms). The
+  leaves less; `test_tail.py` checks it within 1 dB from 5 to 80 ms), t
+  counted from the fall's half-amplitude point: key-up for "centered"
+  edges, key-up + E/2 for "start" edges (whose fall ends E after key-up),
+  key-up − E/2 for "inside" edges. Exactly, the profile is a staircase,
+  P(t) = Σ_{d_k > t} w_k, which follows
+  10^(`tail_db`/10)·(e^(−t/τ) − e^(−5))/(1 − e^(−5)) within a relative
+  ±Δ/(2τ), Δ = 1 ms the tap spacing (derived; ±3.3% at τ = 15 ms). It is
+  valid for τ ≫ 1 ms: a τ under about 1 ms leaves one tap or a few
+  (τ = 0.01 ms gives one tap, at 0.5 ms). A non-finite `tail_db` or
+  `tail_decay_s`, a τ at or below 0 s and a negative `tail_fading_hz` are
+  refused; `tail_fading_hz` 0 is a static tail (each tap one complex
+  Gaussian draw), as `fading_hz` 0 is no fading. The
   tail is built at 4 kHz as a complex baseband, each tap's gain synthesized
   at max(50, 10·f_D) samples/s and linearly interpolated, then linearly
   interpolated to the recording's rate (heuristic rates). The cut at 5τ
   leaves e^(−5) = 0.67% of the profile's power out (derived); the 1 ms tap
-  spacing is a heuristic (a quarter of a dit at 60 WPM). The direct path's
+  spacing is a heuristic (1/20 of a dit at 60 WPM, which is 20 ms, and τ/15
+  at the default τ). The direct path's
   samples are the same with the tail on or off: the tail draws from its own
   random stream ([seed, index, 4]) and the signal's span is extended by the
-  tail's reach only for the tail. A QSO's overs take no tail (refused). The
+  tail's reach only for the tail (`test_tail.py` checks that with the tail
+  made zero a recording is bitwise the one without, for every edge
+  placement and a signal keyed to the recording's end). A QSO's overs take
+  no tail (refused by `generate` and by `labels`). The
   defaults when `tail_db` is set, τ = 15 ms and f_D = 8 Hz, with `tail_db`
   −7 dB re the direct path, are **measured**: fitted to the owner's two W1AW
   clips (80 m, 2026-11-19, 35 WPM machine keying) by applying the same
   measurements to synthetic recordings of the clips' text (one station,
   120 s, 35 WPM machine keying, 2 ms centered edges, direct path Butterworth
-  f_D 4 Hz, S₅₀₀ +26.5 dB) over a grid of `tail_db` −12 to −6 dB, τ 10 to
+  f_D 4 Hz, S₅₀₀ +26.5 dB) over a grid of `tail_db` −12 to −6 dB re the direct path's mean key-down power, τ 10 to
   60 ms, f_D 3 to 40 Hz: `kz4ap-fading --fall`'s power after a mark's fall,
   dB re the mark, at 4 to 40 ms (0.52 dB rms from the clips' mean; the two
   clips differ from their mean by 0.63 dB rms), its coherence with the mark
@@ -5310,8 +5344,11 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
   clips' shape: the clips' fall is flatter from 4 to 10 ms (−10.2 to
   −10.8 dB re the mark against the model's −9.7 to −11.1). The fit assumed
   the direct path's fading (Butterworth, f_D 4 Hz); the clips' slow fading
-  per second (3.6 and 3.9 dB rms) is about twice that path's (1.9 dB rms),
-  a property of the direct path, not of the tail. The tail adds its power
+  (`kz4ap-fading`'s spread of the median key-down level per second, dB re
+  the noise: 3.9 and 3.6 dB rms for clip03 and clip11 over the 38 s cuts,
+  3.4 and 3.6 dB rms over the 31 s spans the owner copied, the values of
+  the decision log's 2026-11-21 entry) is about twice that path's (1.9 dB
+  rms over 120 s), a property of the direct path, not of the tail. The tail adds its power
   to the marks (+0.8 dB at −7 dB), and S₅₀₀ stays the direct path's.
 - **Interferers and tags:** a labeled signal with `score: false` is an
   interferer. The benchmark matches it to its track (so that track is not
@@ -6480,8 +6517,9 @@ of the fall after a mark with `--fall` (text-fast-1), and nothing else.
 
 ### Provenance
 
-- **Calibration.** On our port of VE3NEA's generator the tool reads f_D 3, 10 and 30 Hz as 3.6, 9.6 and 20.4 Hz (measured; |ρ| at
-  26.7 ms 0.956, 0.730, 0.237; decision log and backlog, 2026-11-21): close at 10 Hz, high at 3 Hz and low at 30 Hz, where |ρ| falls
+- **Calibration.** On our port of VE3NEA's generator the tool reads f_D 3, 10 and 30 Hz requested as 3.6, 9.6 and 20.4 Hz (measured; |ρ| at
+  26.7 ms 0.956, 0.730, 0.237; decision log and backlog, 2026-11-21). The generator realizes them as 3.0, 9.6 and about 20.8 Hz by
+  coherence time (A.11, "Fading": its 50 samples/s), so the tool is close at 10 and 30 Hz and high at 3 Hz; at 30 Hz |ρ| falls
   below 0.2 within a few lags and few lags enter the fit. A clean carrier falls to the noise within 2.7 ms after a mark (measured).
   The cutoff, the noise's fifth, the +10 dB re the noise, the trims and the fit's range are heuristics, so a reading is the
   instrument's, to be read against that calibration.
