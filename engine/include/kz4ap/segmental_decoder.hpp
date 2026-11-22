@@ -59,6 +59,12 @@ struct SegmentalParts {
     // SegmentalConfig::leak_own 0; and the blocks the own key-down power is held over.
     std::vector<double> leak_own_bound;
     std::size_t leak_own_hold_blocks = 0;
+    // The impulse blanker (impulse_blanker.hpp): how the input's power at channel sample n - d reaches an envelope sample at channel
+    // sample n, for d = 0 ... size() - 1, as shares of the whole (summing to 1): the channel filter's and the front filter's
+    // cascade g, input lags L = D i + l (front tap i, channel tap l), |g(L)|^2 summed over the lags of each channel sample (derived).
+    // impulse_lead: the least d read; those below it hold under 1e-4 of the whole (heuristic: negligible).
+    std::vector<double> impulse_response;
+    int impulse_lead = 0;
 };
 
 // The parts at the widest filter, and at the narrower ones in the order of config.filter_scales.
@@ -78,6 +84,10 @@ public:
     void reset() override;
     void set_noise_density_fs2_per_hz(double n0_fs2_per_hz) override;
     void set_band_spectrum(std::span<const float> power_fs2, int center_index) override;
+    void set_impulse_series(const ImpulseSeries* series) override { impulse_ = series; }
+    // The impulse blanker's work on the widest stream: envelope samples pushed, and those a pulse reached (ImpulseSeries::mode).
+    std::uint64_t impulse_pushed() const { return impulse_pushed_; }
+    std::uint64_t impulse_blanked() const { return impulse_blanked_; }
 
     std::optional<KeyingEvidence> keying_evidence() const override;
     std::span<const std::string> published_symbols() const override { return published_; }
@@ -159,7 +169,20 @@ private:
         double leak_floor = 0.0;        // FS^2: the noise that asks for, as sigma^2 at this stream's output
         std::vector<double> own_held;   // FS^2: the largest of the three center bins of the last leak_own_hold_blocks blocks, a ring
         std::size_t own_next = 0;
+        // With the impulse blanker: the envelope samples whose pulse power the series cannot yet give (SegmentalParts::impulse_lead),
+        // each with its own block's N0 and leak floor, so that a sample held reads what it would have read at once.
+        struct Held {
+            viterbi::EnvelopeSample sample;
+            double n0;
+            double leak_floor;
+        };
+        std::vector<Held> held;
     };
+    // One envelope sample into a stream's floor, tail, evidence and search, with its block's N0 (FS^2/Hz) and leak floor (FS^2);
+    // `pulse` the pulse's power there re the band's noise (impulse blanker), 0 for none.
+    void push_sample(Stream& stream, const viterbi::EnvelopeSample& sample, double pulse, double n0, double leak_floor);
+    // The pulse's power at a stream's envelope sample k re the band's noise (ImpulseSeries; 0 without one).
+    double pulse_at(const Stream& stream, std::int64_t k) const;
     // Chooses the leader from what stands, and at or after the drop time of the channel's age, if `may_drop`, drops what has fallen
     // behind it. True if the leader changed. stream_now_s: s of stream; a channel's age is that less the time of its first sample.
     bool choose_leader(double stream_now_s, bool may_drop);
@@ -187,6 +210,8 @@ private:
     double first_s_ = 0.0;  // s of stream: the channel's first sample, a replay's included
     double block_envelope_fs2_ = -1.0;  // FS^2: the last block's mean e^2 at the leader's filter (block_envelope_fs2)
     double block_noise_fs2_ = -1.0;     // FS^2: the hiss at the leader's filter output (block_noise_fs2)
+    const ImpulseSeries* impulse_ = nullptr;  // the engine's, set before every block (set_impulse_series)
+    std::uint64_t impulse_pushed_ = 0, impulse_blanked_ = 0;
 };
 
 }  // namespace kz4ap

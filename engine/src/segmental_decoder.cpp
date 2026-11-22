@@ -1,5 +1,6 @@
 #include "kz4ap/segmental_decoder.hpp"
 
+#include "kz4ap/impulse_blanker.hpp"
 #include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"
@@ -156,6 +157,29 @@ SegmentalParts::SegmentalParts(const segmental::SegmentalConfig& c, const Channe
             leak_own_bound = own_splatter_bound(tables.fft_size, leak_first_bin, last);
             leak_own_hold_blocks = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(c.leak_own_hold_s / block_s)));
         }
+    }
+    {
+        // The impulse blanker's response: y at channel sample n is sum over i of front[i] c[n - i], c[j] = sum over l of cut[l]
+        // x[D j - l], so input sample D n - L, L = D i + l, enters with g(L) = sum of front[i] cut[l]; it lies in channel sample
+        // n - ceil(L / D). A pulse white over the band gives E|y|^2 = sum over L of g(L)^2 E|x_pulse(D n - L)|^2 (derived; exact
+        // for one impulse). The same in s at the stand-in rate (segmental_tables_channel).
+        const ChannelizerConfig tables = segmental_tables_channel(channel);
+        const std::vector<double> cut = channel_filter_taps(tables);
+        const auto d = static_cast<std::size_t>(tables.fft_size / tables.channel_bins);
+        std::vector<double> g(cut.size() + d * (front_taps.size() - 1), 0.0);
+        for (std::size_t i = 0; i < front_taps.size(); ++i)
+            for (std::size_t l = 0; l < cut.size(); ++l) g[d * i + l] += front_taps[i] * cut[l];
+        impulse_response.assign((g.size() - 1 + d - 1) / d + 1, 0.0);
+        double total = 0.0;
+        for (std::size_t lag = 0; lag < g.size(); ++lag) {
+            impulse_response[(lag + d - 1) / d] += g[lag] * g[lag];
+            total += g[lag] * g[lag];
+        }
+        for (double& share : impulse_response) share /= total;
+        double below = 0.0;
+        while (impulse_lead + 1 < static_cast<int>(impulse_response.size()) &&
+               below + impulse_response[static_cast<std::size_t>(impulse_lead)] < 1e-4)
+            below += impulse_response[static_cast<std::size_t>(impulse_lead++)];
     }
 }
 
@@ -336,30 +360,27 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         require(std::fabs(t0_s - expected_s) <= 0.5 / rate_,
                 "SegmentalDecoder::process: a block must start where the previous one ended (to within half a sample)");
     }
+    const bool blanking = impulse_ != nullptr && impulse_->mode != 0;
     for (Stream& stream : streams_) {
         stream.envelope.clear();
         stream.sampler.push(samples, next_index_, stream.envelope);
-        const double spacing = static_cast<double>(stream.parts->channel_samples_per_sample);
-        const double hiss = n0_ * stream.parts->output_noise.sigma2_per_n0_hz;
-        for (const viterbi::EnvelopeSample& sample : stream.envelope) {
-            if (!(n0_ > 0.0)) continue;
-            // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
-            if (sample.k != stream.expected_k)
-                stream.search->note_sample_time(stream.pushed, spacing * static_cast<double>(sample.k) / rate_);
-            stream.expected_k = sample.k + 1;
-            // The channel's floor, max(hiss, the channel floor), is what the level's grid is relative to; a neighbor's leak above it
-            // is noise only (segmental/config.hpp, level_on_floor).
-            const double floor = stream.floor->sigma2(sample.e_fs, hiss);
-            const double sigma2 = std::max(floor, stream.leak_floor);
-            if (stream.scale == 1 && doppler_->push(sample.y_fs, floor)) update_walk();
-            if (stream.echo->push(sample.e_fs * sample.e_fs, floor)) {
-                stream.evidence->set_echo(stream.echo->shape());
-            }
-            stream.evidence->push(sample.e_fs, sigma2, floor);
-            stream.search->advance();  // at once: the short elements' context reaches back only so far
-            stream.advance_free_key();
-            ++stream.pushed;
+        if (!blanking && stream.held.empty()) {
+            for (const viterbi::EnvelopeSample& sample : stream.envelope) push_sample(stream, sample, 0.0, n0_, stream.leak_floor);
+            continue;
         }
+        // The impulse blanker: a sample waits until the series holds every channel sample whose pulse would reach it (its lead).
+        for (const viterbi::EnvelopeSample& sample : stream.envelope) stream.held.push_back({sample, n0_, stream.leak_floor});
+        const std::int64_t spacing = stream.parts->channel_samples_per_sample;
+        const std::int64_t lead = stream.parts->impulse_lead;
+        std::size_t ready = 0;
+        while (ready < stream.held.size() &&
+               (!blanking || stream.held[ready].sample.k * spacing - lead < static_cast<std::int64_t>(impulse_->end())))
+            ++ready;
+        for (std::size_t i = 0; i < ready; ++i) {
+            const Stream::Held& h = stream.held[i];
+            push_sample(stream, h.sample, blanking ? pulse_at(stream, h.sample.k) : 0.0, h.n0, h.leak_floor);
+        }
+        stream.held.erase(stream.held.begin(), stream.held.begin() + static_cast<std::ptrdiff_t>(ready));
     }
     next_index_ += samples.size();
     {
@@ -389,6 +410,56 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         story.length = story.tail.size();
     }
     return bring_up_to_date(story, now_s);
+}
+
+double SegmentalDecoder::pulse_at(const Stream& stream, std::int64_t k) const {
+    if (impulse_ == nullptr) return 0.0;
+    const std::vector<double>& response = stream.parts->impulse_response;
+    const std::int64_t n = k * stream.parts->channel_samples_per_sample;
+    // Most of the time nothing is held near n: test the span before summing it.
+    const std::int64_t oldest = n - static_cast<std::int64_t>(response.size()) + 1;
+    const std::int64_t newest = n - stream.parts->impulse_lead;
+    if (newest < static_cast<std::int64_t>(impulse_->first) || oldest >= static_cast<std::int64_t>(impulse_->end())) return 0.0;
+    double sum = 0.0;
+    for (std::size_t d = static_cast<std::size_t>(stream.parts->impulse_lead); d < response.size(); ++d)
+        sum += response[d] * impulse_->at(n - static_cast<std::int64_t>(d));
+    return sum;
+}
+
+void SegmentalDecoder::push_sample(Stream& stream, const viterbi::EnvelopeSample& sample, double pulse, double n0, double leak_floor) {
+    if (!(n0 > 0.0)) return;
+    const double spacing = static_cast<double>(stream.parts->channel_samples_per_sample);
+    const double hiss = n0 * stream.parts->output_noise.sigma2_per_n0_hz;
+    // Samples not searched (N0 = 0) leave the stream spliced; the time of the samples after them is noted.
+    if (sample.k != stream.expected_k) stream.search->note_sample_time(stream.pushed, spacing * static_cast<double>(sample.k) / rate_);
+    stream.expected_k = sample.k + 1;
+    // The channel's floor, max(hiss, the channel floor), is what the level's grid is relative to; a neighbor's leak above it
+    // is noise only (segmental/config.hpp, level_on_floor).
+    const double floor = stream.floor->sigma2(sample.e_fs, hiss);
+    double sigma2 = std::max(floor, leak_floor);
+    // The impulse blanker: the pulse's power here, its excess re the band's noise taken at the hiss, against the sample's noise. A
+    // sample it reaches is unknown (mode 1) or has that power as noise besides (mode 2); the tail and Doppler estimators read it as
+    // the floor.
+    bool hit = false;
+    if (pulse > 0.0 && impulse_ != nullptr) {
+        const double power = pulse * hiss;
+        if (power >= impulse_->threshold * sigma2) {
+            hit = true;
+            if (impulse_->mode == 2) sigma2 += power;
+        }
+    }
+    if (stream.scale == 1) {
+        ++impulse_pushed_;
+        if (hit) ++impulse_blanked_;
+    }
+    if (stream.scale == 1 && doppler_->push(hit ? std::complex<double>{} : sample.y_fs, floor)) update_walk();
+    if (stream.echo->push(hit ? floor : sample.e_fs * sample.e_fs, floor)) {
+        stream.evidence->set_echo(stream.echo->shape());
+    }
+    stream.evidence->push(sample.e_fs, sigma2, floor, hit && impulse_->mode == 1);
+    stream.search->advance();  // at once: the short elements' context reaches back only so far
+    stream.advance_free_key();
+    ++stream.pushed;
 }
 
 DecodeUpdate SegmentalDecoder::bring_up_to_date(const segmental::BestStory& story, double now_s) {
@@ -462,6 +533,11 @@ DecodeUpdate SegmentalDecoder::flush() {
     if (flushed_) return {};
     flushed_ = true;
     for (Stream& stream : streams_) {
+        // What the impulse blanker held back, with the series as it stands.
+        for (const Stream::Held& h : stream.held)
+            push_sample(stream, h.sample, impulse_ != nullptr && impulse_->mode != 0 ? pulse_at(stream, h.sample.k) : 0.0, h.n0,
+                        h.leak_floor);
+        stream.held.clear();
         stream.evidence->finish();
         stream.search->advance();
         stream.advance_free_key();

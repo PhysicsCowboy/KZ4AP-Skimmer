@@ -11,6 +11,8 @@
 
 namespace kz4ap {
 
+struct ImpulseSeries;  // impulse_blanker.hpp
+
 struct DecodedSymbol {
     std::string text;   // "A", "?", "<SK>"; " " marks a word space, "*" a pattern with no Morse code
     float probability;  // the decoder's belief that text is right, 0..1
@@ -80,6 +82,10 @@ public:
     // The band's latest spectrum (SpectrumFrame::power_fs2), and the index in it of the channel's center: what stands beside the channel. The
     // engine calls it before every block that is not a replay's, when the decoder is the segmental decoder.
     virtual void set_band_spectrum(std::span<const float> /*power_fs2*/, int /*center_index*/) {}
+    // The impulse blanker's series (impulse_blanker.hpp), or nullptr for none: the band's broadband pulses by channel sample. The
+    // engine calls it before every block, a replay's too, when the decoder is the segmental decoder and the blanker is on; the
+    // series stays valid and unchanged until the block's process() returns. Other decoders ignore it.
+    virtual void set_impulse_series(const ImpulseSeries* /*series*/) {}
     // The evidence above, if this decoder has any.
     virtual std::optional<KeyingEvidence> keying_evidence() const { return std::nullopt; }
     // The text as published so far (the consumer's list above), if this decoder keeps it.

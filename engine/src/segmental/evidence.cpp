@@ -529,6 +529,7 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     x_.assign(ring_samples * levels, 0.0f);
     z_.assign(ring_samples, 0.0);
     shift_.assign(ring_samples, 0);
+    unknown_.assign(ring_samples, 0);
     top_.assign(ring_samples, 0.0);
     beta_.assign(2 * levels, 1.0 / (2 * levels_));
     belief_.assign(ring * levels, 0.0);
@@ -574,7 +575,7 @@ void LevelEvidence::set_echo(const EchoShape& shape) {
         }
 }
 
-void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2) {
+void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2, bool unknown) {
     // The grid is relative to the floor; sigma^2 above it moves the tables' levels, not the carrier's (config.hpp,
     // level_on_floor): sigma^2 in whole grid steps above the floor, the nearest. Past below() steps sigma^2 is taken as it is and
     // the grid is relative to sigma^2 less below() steps: only the excess moves the carrier's level.
@@ -589,18 +590,20 @@ void LevelEvidence::push(double e_fs, double sigma2_fs2, double floor_fs2) {
             sigma2 = floor_fs2 * std::pow(10.0, shift * tables_.step_db() / 10.0);
         }
     }
-    const double z = e_fs / std::sqrt(sigma2);
+    // An unknown sample: z = 0 and x = 0, so that w z^2 + x_k(l) = 0 at every level, key-down's term 1 as key-up's.
+    const double z = unknown ? 0.0 : e_fs / std::sqrt(sigma2);
     const double z2 = z * z;
     const std::size_t ring_samples = static_cast<std::size_t>(ring_frames_) * static_cast<std::size_t>(frame_samples_);
     const std::size_t slot = static_cast<std::size_t>(samples_) % ring_samples;
     z_[slot] = z;
     shift_[slot] = static_cast<std::uint8_t>(shift);
+    unknown_[slot] = unknown ? 1 : 0;
     float* x = x_.data() + slot * static_cast<std::size_t>(levels_);
     const double w = tables_.w();
     const double common = w * z2;  // what x_k(l) holds apart from x[level]
     double top = 0.0;
     for (int level = 0; level < levels_; ++level) {
-        x[level] = static_cast<float>(term_value(tables_.plain(level, shift), z, z2, w));
+        x[level] = unknown ? 0.0f : static_cast<float>(term_value(tables_.plain(level, shift), z, z2, w));
         top = std::max(top, common + static_cast<double>(x[level]));
     }
     top_[slot] = top;
@@ -857,6 +860,14 @@ void LevelEvidence::commit_frame(std::int64_t frame, const double* belief) {
 
     for (std::int64_t k = first; k < end; ++k) {
         const std::size_t slot = static_cast<std::size_t>(k) % ring_samples;
+        if (unknown_[slot]) {
+            // The impulse blanker's unknown sample: 0 nats key-down, under every template and in the tail; no context, so that a
+            // short element reads nothing here either.
+            const std::array<double, kEdgeCount> none{};
+            for (int q = 0; q < echo_positions_; ++q) tail_scratch_[q] = 0.0;
+            sums_.push(0.0, none, none, SampleContext{}, tail_scratch_, echo_on_ && edge_count > 0 ? echo_positions_ : 0);
+            continue;
+        }
         const double z = z_[slot];
         const double z2 = z * z;
         const int shift = shift_[slot];

@@ -48,6 +48,7 @@ add_library(kz4ap_engine_core OBJECT
   src/audio_input.cpp
   src/listen.cpp
   src/spectrum.cpp
+  src/impulse_blanker.cpp
   src/channelizer.cpp
   src/channel_follower.cpp
   src/signal_detector.cpp
@@ -153,6 +154,7 @@ add_executable(kz4ap_engine_tests
   tests/frequency_tracker_test.cpp
   tests/listen_test.cpp
   tests/audio_input_test.cpp
+  tests/impulse_blanker_test.cpp
 )
 target_link_libraries(kz4ap_engine_tests PRIVATE kz4ap::engine GTest::gtest_main)
 # worker_pool_test.cpp tests the pool, which is private to the engine.

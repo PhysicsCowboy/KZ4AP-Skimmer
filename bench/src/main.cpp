@@ -58,6 +58,7 @@ struct Args {
     int threads = 1;  // --threads: EngineConfig::worker_threads
     AudioOptions audio;  // receiver audio (audio_options.hpp)
     double label_shift_hz = 0.0;  // --label-shift-hz: added to every label's frequency, Hz (audio made from a labeled I/Q recording)
+    std::optional<std::filesystem::path> impulse_csv;  // --impulse-csv: the impulse blanker's nonzero readings, a row each
 };
 
 const char* decoder_name(FrontEnd d) {
@@ -78,6 +79,7 @@ constexpr const char* kUsage =
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   [--detector NAME=VALUE ...] (a field of DetectorConfig or dc_block_s, over the path's defaults)\n"
+    "                   [--impulse-csv FILE] (with --detector impulse_mode=1 or 2: the impulse blanker's readings)\n"
     "                   [--omega-bar-default-table FILE]\n"
     "                   [--audio] [--audio-channel N] [--passband-hz LO,HI] [--sideband usb|lsb] [--label-shift-hz HZ]\n"
     "                   (receiver audio, as a one-channel WAV is read: docs/signal-processing.md, section 1;\n"
@@ -162,6 +164,7 @@ Args parse_args(int argc, char** argv) {
             if (used == 0 || used != v.size() || !std::isfinite(args.label_shift_hz))
                 throw std::runtime_error("--label-shift-hz wants a number of Hz: " + v);
         }
+        else if (a == "--impulse-csv") args.impulse_csv = value();
         else if (a == "--no-judge") args.judge_tracks = false;  // every track stays as the detector has it (track_evidence.hpp)
         else if (a == "--stats-detail") args.viterbi_options.stats_detail = true;  // the full form of that file
         else if (a == "--omega-bar-default-table") {  // the default Omega_bar table for other level bounds
@@ -406,6 +409,24 @@ int run_engine(const Args& args) {
         engine.set_channel_tap([&](const ChannelBlock& b) { recorder->write(b); });
     }
     std::vector<Sample> block(65536);
+    // --impulse-csv: each channel sample with a pulse, as the blanker read it (its series keeps a few s; a block here is 0.34 s).
+    std::optional<std::ofstream> impulse_csv;
+    std::uint64_t impulse_written = 0;
+    if (args.impulse_csv) {
+        if (!engine.impulse_blanker()) throw std::runtime_error("--impulse-csv needs the impulse blanker (--detector impulse_mode=1 or 2)");
+        impulse_csv.emplace(*args.impulse_csv);
+        if (!*impulse_csv) throw std::runtime_error("cannot write " + args.impulse_csv->string());
+        *impulse_csv << "channel_sample,time_s,excess\n";
+    }
+    const auto write_impulses = [&] {
+        if (!impulse_csv) return;
+        const ImpulseSeries& s = engine.impulse_blanker()->series();
+        for (std::uint64_t c = std::max(impulse_written, s.first); c < s.end(); ++c) {
+            const double u = s.at(static_cast<std::int64_t>(c));
+            if (u > 0.0) *impulse_csv << c << ',' << static_cast<double>(c) / engine.channel_rate() << ',' << u << '\n';
+        }
+        impulse_written = std::max(impulse_written, s.end());
+    };
     const double cpu_started = process_cpu_seconds();
     const auto started = std::chrono::steady_clock::now();
     double source_s = 0.0;  // CPU reading the recording
@@ -415,8 +436,10 @@ int run_engine(const Args& args) {
         source_s += thread_cpu_precise_seconds() - read_started;
         if (n == 0) break;
         engine.process(std::span<const Sample>(block).first(n));
+        write_impulses();
     }
     engine.finish();
+    write_impulses();
     if (recorder) {
         recorder->finish(args.recording->filename().string(),
                          args.labels ? args.labels->filename().string() : std::string());
@@ -526,6 +549,25 @@ int run_engine(const Args& args) {
         std::printf("per track %.3f ms per channel-second: filter %.3f, decoder %.3f; mean tracks %.1f; %d thread(s)\n",
                     per_channel_ms(per_track_s), per_channel_ms(st.filter_s), per_channel_ms(st.decoder_s),
                     duration_s > 0 ? stats.channel_seconds / duration_s : 0.0, args.threads);
+    }
+    if (engine.impulse_blanker()) {
+        // How often the impulse blanker fired, and what share of the decoders' samples it reached.
+        const double minutes = duration_s / 60.0;
+        const double fired = stats.impulse_slices > 0 ? 100.0 * static_cast<double>(stats.impulse_fired_slices) / static_cast<double>(stats.impulse_slices) : 0.0;
+        const double reached = stats.impulse_pushed_samples > 0
+                                   ? 100.0 * static_cast<double>(stats.impulse_blanked_samples) / static_cast<double>(stats.impulse_pushed_samples)
+                                   : 0.0;
+        out["impulse"] = {{"subbands", engine.impulse_blanker()->subbands()},
+                          {"slices", stats.impulse_slices},
+                          {"fired_slices", stats.impulse_fired_slices},
+                          {"firings", stats.impulse_firings},
+                          {"firings_per_minute", minutes > 0 ? static_cast<double>(stats.impulse_firings) / minutes : 0.0},
+                          {"pushed_samples", stats.impulse_pushed_samples},
+                          {"blanked_samples", stats.impulse_blanked_samples}};
+        std::printf("impulse blanker: %d subbands; %llu firings, %.2f per minute; pulses in %.3f%% of the band's channel samples; "
+                    "%.3f%% of the decoders' widest-filter samples reached\n",
+                    engine.impulse_blanker()->subbands(), static_cast<unsigned long long>(stats.impulse_firings),
+                    minutes > 0 ? static_cast<double>(stats.impulse_firings) / minutes : 0.0, fired, reached);
     }
     int exit_code = 0;
     if (labels) {

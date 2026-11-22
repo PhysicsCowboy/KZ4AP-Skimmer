@@ -3,8 +3,8 @@
 How KZ4AP Skimmer turns a radio's I/Q samples into Morse text. It covers the stages before the decoders (sections 1–7)
 and, in full, the chains under development or discussion: the segmental
 decoder (section 8e) with its live operation (section 10) and the callsign stage
-(section 11), and the viterbi decoder with the model the two share (section 8d). Every other chain gets a short summary that points to its
-appendix section. Every value carries its unit and its class: **derived**
+(section 11), and the viterbi decoder with the model the two share (section 8d). Every other chain gets a short summary pointing to its
+appendix. Every value carries its unit and its class: **derived**
 (it follows from the mathematics), **measured** (set by an experiment),
 **heuristic** (a judgment call; "chosen by measurement" where a test set
 picked among candidates), **placeholder** (kept until an experiment settles
@@ -64,9 +64,7 @@ The input is the radio's whole band, 192 kHz wide, or a receiver's audio made an
 its DC removed on segmental's path. The **spectrum analyzer and detector** look at it every 21.33 ms
 (segmental's detector: 85.3 ms) and make each station a *track* with a frequency; for each track the
 **channelizer** cuts a stream about ±150 Hz wide at 1500 samples/s, and a **decoder** per channel
-turns it into characters (five decoders, section 8). Matched
-and the bank are given the detector's frequency (the *anchor*); viterbi's and segmental's channels
-follow it (section 7) and get N₀ from a hiss estimator reading the spectrum.
+turns it into characters (five decoders, section 8).
 
 ## 1. Input
 
@@ -81,8 +79,7 @@ name) only labels them (A.1).
 
 **Receiver audio** (a sound card's: a one-channel WAV, or `--audio`). One channel, resampled to
 48 kHz (derived: the decoders' lowest rate) as above, is filtered to its analytic signal, h(t) = w(t)[sinc t + j(1 − cos πt)/(πt)]
-(1240 taps, Kaiser, 82 dB re the passband, 200 Hz transitions at 0 Hz and 24 kHz; heuristics), delays taken out exactly:
-a cos 2πft becomes a e^(j2πft). Frequencies are audio tones (Hz); a
+(Kaiser; A.1): a cos 2πft becomes a e^(j2πft). Frequencies are audio tones (Hz); a
 full-scale sine reads 0 dBFS. The receiver's **passband**, default **300–3000 Hz** (heuristic),
 bounds the detector's floor and peaks and the hiss estimator's bins: outside it lie near-silence and
 no station. With dial F and pitch p (600 Hz, heuristic), RF = F + (f − p) on the upper sideband;
@@ -91,33 +88,37 @@ on the lower, the signal conjugated and the passband negated, F − (f − p). S
 ## 2. The FFT size N and bin width Δf
 
 N is the largest power of two that keeps the bins at least 20 Hz wide:
-8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms. A
-heuristic: narrow enough to separate stations a few tens of Hz apart, wide
-enough that most of a keyed signal's energy falls within one to three bins
-up to about 40 WPM (derived).
+8192 at 192 kHz, so Δf = 23.44 Hz and each transform spans 42.7 ms.
+Heuristic: stations tens of Hz apart separate, and a keyed signal's energy
+falls in one to three bins up to about 40 WPM (derived).
 
 Appendix: A.2.
 
 ## 3. Hops and 50% overlap
 
-Input arrives in blocks of N/2 samples (the hop); each FFT covers the
-newest block and the one before it, so consecutive FFTs overlap by half. With
-the Hann window (section 4) the overlapping windows add up to a constant
+Input arrives in hops of N/2 samples; each FFT covers the newest two,
+overlapping by half, and the Hann windows (section 4) add up to a constant
 (derived).
 
 Appendix: A.3.
 
 ## 4. Spectrum analyzer
 
-Every hop the analyzer takes the last N samples, multiplies them by a Hann
-window and computes an FFT. The power in bin k, normalized so that a
-complex tone of amplitude A on a bin reads A² FS², is
+Every hop the analyzer takes the FFT of the last N samples under a Hann
+window; bin k's power, a complex tone of amplitude A on a bin reading A² FS², is
 
   P[k] = |X[k]|² / (Σw)²  (FS²),
 
 with Σw = N/2 the window's sum. White noise of σ² FS² per sample reads as
 the noise in one *equivalent noise bandwidth* (ENBW), 1.5 bins = 35.2 Hz
 (derived).
+
+**Impulse blanker** (segmental path): a noise blanker blind to carriers (as SM5BSZ's Linrad) testing across frequency. Bins whose
+1 s average stands **6 dB** over their 12 kHz subband's lower quartile, ±2 bins, are dropped; the rest of each subband (16 at
+192 kHz) is inverted to |y|², and per channel sample u_s = mean |y|²/ν_s − 1, ν_s the 1 s median of the frames' median |y|²/ln 2
+(derived). A pulse: the lower quartile of u_s **≥ 1**, the upper **≤ 4×** it (flat; clicks fall as 1/f²); u, their median, is its
+power re the noise (0 past **0.2 s** of a run). Segmental adds P = N₀B Σ_d G²[d] u(n − d) (G² the filters' |g|², derived) to
+σ² where P ≥ σ² (variant: unknown, 0 nats). Heuristics by measurement.
 
 Appendix: A.4.
 
@@ -134,14 +135,12 @@ Appendix: A.5.
 
 ## 6. Signal detector
 
-The detector's form on the segmental path,
-the app's, follows; the other decoders keep their own (A.6). Values are
-heuristics unless marked.
+The segmental path's (the app's) detector; the
+other decoders keep their own (A.6). Values heuristic unless marked.
 
-**DC blocker.** First a radio's DC offset leaves the input: each sample less
-a one-pole average of the samples, time constant 10 s, a notch at 0 Hz,
-−3 dB re the passband at ±0.016 Hz (derived). The channels read the
-blocked input too.
+**DC blocker.** Each sample less a one-pole average of the samples, τ = 10 s:
+a notch at 0 Hz, −3 dB re the passband at ±0.016 Hz (derived), which the
+channels read too.
 
 **Its own spectrum.** The detector reads a spectrum four times finer than
 the band's (section 4): Hann-windowed FFTs of 4N points, bins of
@@ -208,10 +207,8 @@ For each track, the channelizer produces the narrow stream its decoder
 reads: in effect it shifts the station to 0 Hz, low-pass filters, and keeps
 one sample in 128: **r = 1500 samples/s**.
 
-- **Center.** The channel is centered on the track's birth frequency
-  rounded to the nearest bin, so the station starts within ±11.7 Hz of
-  0 Hz. For Envelope, Matched and the bank the channel never moves; the
-  decoder sees no signal from before the track's birth.
+- **Center.** The track's birth frequency rounded to a bin (±11.7 Hz); for
+  Envelope, Matched and the bank it never moves, nor reads the time before.
 - **Filter.** A linear-phase low-pass of 4097 taps (21.3 ms; the longest
   the shared FFT allows, derived), cut off at **±150 Hz** (−6 dB relative to
   the passband; heuristic, sized for keying up to about 60 WPM). It is
@@ -226,17 +223,10 @@ one sample in 128: **r = 1500 samples/s**.
 **Re-centering (Matched only):** within ±12 Hz of the detector's frequency
 (A.8b).
 
-**Following the detector (viterbi and segmental only).** The channelizer
-follows the detector's frequency for the track,
-f_det (oracle channels: the label's, drifting or switching at a QSO's overs),
-so the decoder receives its station near 0 Hz (owner).
-Two steps, before each
-32-sample block: the block, cut at bin f_bin, is multiplied by a
-phase-continuous oscillator at −(f_det − f_bin), f_det held over the
-block (21.33 ms); then, if f_det lies more
-than half a bin (11.72 Hz) from f_bin, the channel moves to the bin
-nearest f_det from the next block on, the oscillator's phase adjusted so
-that the station's phase does not step (derived). A 1 Hz/s drift is followed
+**Following the detector (viterbi and segmental only).** The channel follows f_det, the detector's frequency for the track
+(oracle: the label's), so its station sits near 0 Hz (owner): each 32-sample block, cut at bin f_bin, is mixed by a
+phase-continuous oscillator at −(f_det − f_bin), f_det held over the block; when f_det is over half a bin (11.72 Hz) from f_bin,
+the channel moves to the nearest bin from the next block on, the phase kept continuous (derived). A 1 Hz/s drift is followed
 about 1.0 Hz behind (A.7).
 
 Appendix: A.7.
@@ -380,7 +370,7 @@ real floor (the hiss reads quiet bins ±2 kHz around), a story earns by bridging
 Q₀.₁₀ the 10th percentile of every 4th sample's e² (10.67 ms, ρ₄ = 0.14) over the
 last 5 s, retaken every 96 ms, first used 1.056 s in. On noise e² is exponential,
 so 0.10536 = −ln 0.9 is derived; the −3 dB margin (re the floor as estimated),
-quantile, window, stride, refresh and start are heuristics.
+quantile, window, stride, refresh and start are heuristics. A pulse adds its power P where P ≥ σ² (section 4).
 
 *A neighbor's leak* in the wanted station's gaps would score as keying, so σ² is also at least +3 dB re
 
@@ -977,6 +967,89 @@ here.
 so the detector averages linear power without undoing a logarithm; the
 segmental path's detector builds its own analyzer without decibels, so its
 frames carry `power_fs2` only (e766e64).
+
+### Impulse blanker (segmental path; `impulse_blanker.hpp`, `EngineConfig::impulse`)
+
+**Exact form.** On the segmental path, after the DC blocker, for the band's frame of every hop (window [E − N, E), E the input sample
+past it; N = 8 192 at 192 kHz):
+
+1. *Occupied bins.* A[k] ← A[k] + α(P[k] − A[k]), α = 1 − e^(−hop/1 s), A set to the first frame's P. The band's bins (receiver audio:
+   the passband's) are cut from the lowest into subbands of B bins, B the power of two nearest 12 kHz / Δf (512 at 192, 96 and 48 kHz:
+   16, 8 and 4 subbands; bins left over at the top are not read). In each, bin k is occupied when A[k] ≥ 10^(0.6) × the subband's
+   lower quartile of A, and so are the bins within ±2 of it.
+2. *The quiet signal.* Per subband, Y[q] = X[k₀ + q] for a quiet bin, 0 for an occupied one (X the analyzer's unnormalized FFT,
+   `SpectrumAnalyzer::last_bins`), y = IFFT_B(Y): y[m] is the subband's windowed quiet signal at input sample E − N + m N/B, up to a
+   phase. For m in [B/4, 3B/4), the window's central half (w ≥ 0.5), r[m] = |y[m]|²/w(mN/B)². A subband counts when a quarter of its
+   bins or more are quiet.
+3. *Its noise.* μ_s = median of r over the central half / ln 2; ν_s = the median of μ_s over the last 47 frames (1 s), this one's
+   included; nothing is read until 24 are held (0.5 s).
+4. *The excess.* For channel sample c (input [128c, 128c + 128) at 192 kHz; 8 values of r each), u_s(c) = mean r / ν_s − 1, over the
+   counted subbands (at least 4). With Q₁ and Q₃ the lower and upper quartiles of the u_s (sorted ascending, 0-based, the
+   ⌊(n − 1)/4⌋-th from either end): a pulse when Q₁ ≥ 1 and Q₃ ≤ 4 Q₁; then u(c) = their median, else 0. From the 301st channel
+   sample (0.2 s) of a run of pulses on, u = 0 until the run ends. The central half [E − 3N/4, E − N/4) is 32 channel samples; frames
+   tile the stream, so u is known through channel sample E/128 − 17 after the frame ending at E. The series is kept for
+   `replay_s` + 1 s.
+5. *The decoder* (`SegmentalDecoder::push_sample`). For a stream's envelope sample at channel sample n, X = Σ_(d ≥ 14) G²[d] u(n − d),
+   G²[d] = Σ g(L)² over the input lags L with ⌈L/D⌉ = d, normalized to sum 1, g(L) = Σ_i h_f[i] g_c[L − D i] the cascade of the
+   front filter h_f (at the channel rate) and the channel filter g_c (D = 128 input samples a channel sample); d < 14 holds under
+   10⁻⁴ of it and is not read. P = X × N₀ σ_y²/N₀ (FS²). Where P ≥ σ² (`threshold_db` 0 dB re σ²; σ² = max(floor, leak floor) as
+   stage 2): mode 2 (the default) takes σ² + P as the sample's noise, its floor unchanged; mode 1 scores it unknown (z = 0 and
+   x_k(l) = 0 at every level, so key-down's term is 1 in both messages, and 0 nats in L1, R, F and the tail; no context for the short
+   elements). Either way the tail's estimator reads e² as the floor and the Doppler estimator y as 0. A sample whose X needs
+   channel samples the series does not yet hold waits, with its own block's N₀ and leak floor, for the next block (at the widest
+   filter only in a channel's first block: from the second on its block's last sample, n = 32b + 28, needs n − 14 ≤ 32b + 15,
+   which the series holds). Mode 0: no blanker; the decoder is the one before.
+
+**Derivations.**
+- *Scale.* Complex white noise of σ_w² FS² per input sample gives E|y[m]|² = N Q σ_w² w² (Q the quiet bins): r/ν reads power re the
+  subband's noise whatever Q. A pulse white over the band adds the same share in every subband, so u(c) estimates its mean power per
+  input sample over the slice re σ_w².
+- *Through the filters.* A pulse white over the band, of power π(t) per input sample, gives at the front filter's output
+  E|y|² = Σ_L g(L)² π(t − L) (each input sample's contribution uncorrelated; exact for one impulse), and white noise gives
+  σ_y² = σ_w² Σ g² = N₀ × 74.50 Hz. Hence P/σ_y² = Σ_d G²[d] u(n − d) when the slice's π is constant over its 128 samples. The
+  shares are a flat top 21 to 36 channel samples back (the 12 ms dot with its edges), centered 28.5 channel samples back (10.67 ms
+  channel delay + 8 ms front delay = 18.67 ms; test `ResponseSharesSumToOneAndCarryTheFiltersNoise`).
+- *Mode 2* is the pulse taken as what it is in the channel, a zero-mean complex Gaussian of power P beside the noise: key-up's e² is
+  then exponential of mean σ² + P, and key-down's Rician about the carrier with that noise. Where P ≫ σ² a gap's sample says nothing
+  for a mark, and a mark of a² ≫ σ² + P still reads as one; mode 1 is the limit P → ∞.
+- *Noise alone* reads u_s of mean 0 and sd 1/√8 = 0.35 a slice, so Q₁ ≥ 1 needs 13 of 16 subbands each 2.8 sd up at once: never
+  (test `NoiseAloneNeverFires`, 12 s, 0 firings).
+- *Flatness.* For 16 subbands of 8 complex samples' mean each, Q₃/Q₁ is 1.7 at the median and 2.6 at its 99th percentile (4 samples, a
+  pulse filling half a slice: 2.2 and 3.9), by simulation of the Gamma's order statistics. A sampled step of amplitude A (hard keying) has
+  |X(f)|² = A²/(4 sin²(πf/fs)) per sample² (≈ A²fs²/(4π²f²) near the carrier, flattening to A²/4 half the band away): a +60 dB
+  S₅₀₀ carrier's edge puts u ≈ 1.9 × 10¹⁰ Hz² / f² in a subband f away near it (192 kHz, σ = 0.02 FS), about 4 at 72 kHz, so its
+  clicks stand at the gate over most of the band, but with Q₃/Q₁ about 5 to 7 (estimated from that profile for a carrier 30 kHz
+  from the center): not flat. At +70 dB S₅₀₀ they stand about +10 dB re the noise across the whole band, and an edge's slice now
+  and then reads flat enough to pass (1 of 98 edges in the test): a real broadband click then. Tests
+  `AStrongStationsHardKeyingAndRiseDoNotFire` (+60 dB S₅₀₀ 0 firings, +70 dB S₅₀₀ at most 3; the station's own text the same either
+  way), `ACrowdedBandOfAHundredCarriersNeverFires` (100 carriers +5 to +45 dB S₅₀₀, half keyed in step).
+
+**Provenance.** Standard practice: a receiver's noise blanker gates the IF where its amplitude exceeds a multiple of its average, with
+hang and delay times; on a wideband receiver strong carriers trigger it, and SM5BSZ's Linrad takes the strong signals out before its
+blanker looks for a pulse; impulsive atmospheric noise is characterized by its departure from Gaussian statistics over the band
+(ITU-R P.372's V_d). Here the test is across frequency instead of on amplitude, and the decoder is told the pulse's power instead of the
+IF being gated. The subband width, the 6 dB and ±2 bins (the latter Hann's main lobe, derived), the quarter of bins, the 1 s average and
+memory, the 0.5 s warm-up, the gate 1, the ratio 4, the 0.2 s and the 0 dB: heuristics, chosen on the owner's ear clips
+(`build/tb-1/ear/`, git-ignored): blanker off 56 edits in 517 characters; with the first detector (the median alone, no warm-up),
+mode 1 at 0, +3, +6, +10 dB re σ² 55, 55, 51, 50 edits, mode 2 at −10, 0, +3, +6 dB 46, 46, 49, 49, at gate 3 48. ν without the frame's
+own value: ear02-control's crash lasts about 30 ms, u 10 to 100 in all 16 subbands, and with the frame's own median in ν it read 1
+(the prediction 8.7 against the channel's 54 to 77 re σ²; without, 48). Q₁ and the ratio added for the strong station's clicks (+60 dB
+S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2, 0 dB, gate 1, Q₁ and ratio 4): 45 edits; mode 1 51
+(`docs/decision-log.md`, 2026-11-22).
+
+**Limitations.**
+- The pulse is taken as flat over the band: a crash stronger near the channel than across the band is under-read there (ear02's 48
+  re σ² against 54 to 77 measured). The subbands at the receiver's band edges read lower (their noise 15 dB down on the 192 kHz
+  recordings) but count as the others.
+- On a band of heavy atmospherics (80 m at night) it fires often: on the ear clips 0 to 1 845 firings a minute, reaching up to 8.6% of
+  a decoder's widest-filter samples (`docs/decision-log.md`, 2026-11-22). In mode 2 that is
+  noise taken as noise; in mode 1 it would be evidence lost.
+- A pulse is read from a slice's 8 subband samples per subband; one shorter than a slice is read at its mean over the slice, and the
+  median of 16 skewed values reads a 1 ms crash 0.6 to 0.9 of its power (test `FindsACrashWhereItIsAndAsStrongAsItIs`).
+- Receiver audio's 2.7 kHz passband holds no subband: no blanker there. At 48 kHz I/Q, 4 subbands: the quartiles are the 1st and 4th.
+- A run longer than 0.2 s is cut there: a long crash's rest, and the first 0.5 s of a lasting rise in the noise, are not blanked or
+  are blanked as a pulse respectively.
+- The first 0.5 s of a stream reads no pulse.
 
 ## A.5 What "SNR" means here
 
@@ -4934,6 +5007,12 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
+| Impulse blanker: mode | 2, a pulse's power P added to σ² where P ≥ σ² (`threshold_db` 0 dB re σ²); 1 the sample unknown (0 nats); 0 off; segmental path only | `ImpulseBlankerConfig::mode`, `threshold_db` | mode chosen by measurement; the 0 dB heuristic (no effect from −10 to 0 dB re σ² on the ear clips) |
+| Impulse blanker: occupied bins | 1 s average ≥ +6 dB re the subband's lower quartile of averages, ±2 bins | `occupied_db`, `occupied_guard_bins`, `average_s` | heuristic (±2 bins Hann's main lobe, derived) |
+| Impulse blanker: subbands | 12 kHz rounded to a power of two of bins (512: 16, 8, 4 subbands at 192, 96, 48 kHz); a subband counts with ≥ 25% of its bins quiet; at least 4 needed | `subband_hz`, `min_quiet_share`, `min_subbands` | heuristic |
+| Impulse blanker: noise | median over 1 s of the frames' median quiet power / ln 2; nothing read in the first 0.5 s | `noise_memory_s` | ln 2 derived; 1 s, 0.5 s heuristic |
+| Impulse blanker: a pulse | the subbands' lower quartile of excess ≥ 1 (re the noise) and the upper ≤ 4 × the lower; its power their median; a run cut at 0.2 s | `gate`, `flat_ratio`, `max_run_s` | heuristic, chosen by measurement (the ratio against simulated quartiles, 2.6 at the 99th percentile) |
+| Impulse blanker: response | G²[d], the channel and front filters' \|g\|² by channel sample, from d = 14 (below it under 10⁻⁴) | `SegmentalParts::impulse_response`, `impulse_lead` | derived; the 10⁻⁴ heuristic |
 | Power average τ | 1 s (≈ 94-frame boxcar on the band's 21.33 ms frames; ≈ 23 frames on segmental's path's 85.3 ms) | `DetectorConfig::average_s` | heuristic |
 | Detection threshold / hysteresis, band's spectrum (not segmental's path) | 6 dB / 3 dB SNR per bin (35.2 Hz) | `DetectorConfig` | heuristic |
 | Noise floor | median of all bins (receiver audio: of the passband's) | signal_detector.cpp | heuristic |

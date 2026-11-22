@@ -31,8 +31,12 @@ public:
     std::vector<SpectrumFrame> push(std::span<const Sample> in);
 
     double bin_to_hz(int index) const;
+    // The last frame push computed, as the FFT gives it (bin 0 at 0 Hz, unnormalized; its power is |X|^2 over (sum of the
+    // window)^2): the impulse blanker's input (impulse_blanker.hpp). Valid until the next push; empty before the first frame.
+    std::span<const Sample> last_bins() const { return have_bins_ ? std::span<const Sample>(fft_out_) : std::span<const Sample>(); }
 
 private:
+    bool have_bins_ = false;
     int sample_rate_;
     int fft_size_;
     int hop_;

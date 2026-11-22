@@ -5,6 +5,7 @@
 #include "kz4ap/channelizer.hpp"
 #include "kz4ap/classical_decoder.hpp"
 #include "kz4ap/event_bus.hpp"
+#include "kz4ap/impulse_blanker.hpp"
 #include "kz4ap/keying_coherence.hpp"
 #include "kz4ap/segmental/config.hpp"
 #include "kz4ap/signal_detector.hpp"
@@ -186,6 +187,10 @@ struct EngineConfig {
     // true: only a neighbor whose track is proven (TrackJudge::proven) owns a symbol. false (the default): any, since the list leaves a
     // symbol out only where the neighbor's listed row holds it, and the callsign stage only where the neighbor's track holds it.
     bool attribute_source_proven = false;
+
+    // The impulse blanker (impulse_blanker.hpp; docs/signal-processing.md, section 4): FrontEnd::Segmental only, the other decoders
+    // ignore it; off with mode 0.
+    ImpulseBlankerConfig impulse;
 };
 
 // The detector's settings and the DC blocker for the decoder's path (decoder.front_end), in place: on every path the
@@ -228,6 +233,14 @@ struct EngineStats {
     double longest_replay_wait_s = 0;   // the longest any replay has waited for its turn (EngineConfig::replay_tracks_per_s), s
     double decoder_seconds = 0;         // CPU inside decoders, s (stages.decoder_s)
     EngineStageTimes stages;
+    // The impulse blanker (EngineConfig::impulse): channel samples of the band it read, those with a pulse and the runs of them
+    // (its firings); and over the segmental decoders' widest streams, the envelope samples pushed and those a pulse reached
+    // (scored as unknown, or with its power as noise), a replay's included.
+    std::uint64_t impulse_slices = 0;
+    std::uint64_t impulse_fired_slices = 0;
+    std::uint64_t impulse_firings = 0;
+    std::uint64_t impulse_pushed_samples = 0;
+    std::uint64_t impulse_blanked_samples = 0;
 };
 
 // Runs the decoding pipeline synchronously on the caller's thread. Output is
@@ -276,6 +289,8 @@ public:
     // id (a channel of the detector path is gone once its track dies) or its decoder is not the new decoder. Read only;
     // the pointer stays valid until the channel closes or the engine is destroyed.
     const viterbi::SearchStats* viterbi_stats(std::uint32_t track_id) const;
+    // Benchmark tooling: the impulse blanker (EngineConfig::impulse), or nullptr if it is off. Its series holds the last few s.
+    const ImpulseBlanker* impulse_blanker() const { return blanker_.get(); }
 
 private:
     struct Channel {
@@ -365,6 +380,8 @@ private:
     std::vector<float> band_power_fs2_;  // FrontEnd::Segmental only: the latest spectrum frame's power, FS^2 per bin (Decoder::set_band_spectrum)
     std::shared_ptr<const ViterbiShared> viterbi_shared_;
     std::shared_ptr<const SegmentalShared> segmental_shared_;  // FrontEnd::Segmental only
+    std::unique_ptr<ImpulseBlanker> blanker_;  // EngineConfig::impulse, FrontEnd::Segmental only
+    std::uint64_t closed_pushed_ = 0, closed_blanked_ = 0;  // the impulse counts of channels closed (EngineStats)
 };
 
 }  // namespace kz4ap
