@@ -16,7 +16,8 @@
 // over's end, the no-signal story's ln(1 - P) per sample and a birth's ln P. A birth starts a mark of open speed: its end
 // offers every speed with ln(1 / speed_count). A rescue is the same mark from the best story that starts a letter at this
 // boundary, paying ln epsilon for ln(1 - epsilon). An over's end reaches the no-signal story 6 samples later, so that a
-// birth's rise window cannot overlap the fall's window that ended the over.
+// birth's rise window cannot overlap the fall's window that ended the over; with the channel's tail of n positions n + 6 samples
+// later, taking the tail's score (text-fast-1).
 //
 // Pruning compares, at boundary j, every story on what it can reach through the horizon H = j + 16: an element already
 // open cannot be charged for an edge it has not claimed yet, whose evidence already stands inside the horizon (this is
@@ -25,7 +26,9 @@
 //     max(0, max over d = 1 ... 6 of rise(j + d) + C[H + 1] - C[j + d + 11]),
 // and one in a mark
 //     max(C[H + 1], max over d = 1 ... 6 of C[j + d + 5] + fall(j + d)),
-// the same for every story, so computed once per boundary. Both add the element's survival so far.
+// the same for every story, so computed once per boundary. Both add the element's survival so far. With the channel's tail a gap's
+// reach takes the tail along each way it can go: ending at j + d with its first length + d - 6 positions, or going on through H
+// (text-fast-1; evidence.hpp, RunningSums::tail).
 //
 // A story's fist. Farnsworth spacing and any sender with a separate time base for his gaps: letter and word gaps have
 // medians 3 g T_s and 7 g T_s where marks and element gaps have T_s, 3 T_s and T_s, g the fist's gap stretch. (ARRL's

@@ -14,13 +14,14 @@
 //
 // 2. The shared level (LevelEvidence). The per-story Kalman amplitude is replaced by one belief per channel over
 //    (key state x level): a two-state key with a switch probability tau per sample (no timing: the key's timing is left
-//    to the search), a grid of levels every 1.5 dB relative to the noise with ln a held constant over frames of 8 samples, a
-//    random walk of ln a from frame to frame and a small jump to anywhere. Key-up scores 1 and key-down exp(x_k(l)),
+//    to the search), a grid of levels every 1.5 dB relative to the noise with ln a held constant over blocks of 8 samples (two
+//    frames of 4 joined; one frame each while the walk is fast, text-fast-1), a random walk of ln a from block to block and a
+//    small jump to anywhere. Key-up scores 1 and key-down exp(x_k(l)),
 //    x_k(l) = w Lambda(a_l; e_k). The key's memory matters: with a key independent from sample to sample, a low level
 //    gains ln(1 / (1 - pi)) nats per sample of a gap over the true level, and the belief leaves the true level in every long
 //    gap (measured in stage 1: CER above 1 at +20 dB S500). The forward message runs on every sample; the backward
 //    message runs every commit block over the look-ahead. The belief a sample's evidence uses is extrinsic: the forward
-//    message into its frame times the backward message into its frame, key summed out on each side, so that the frame's
+//    message into its block times the backward message into its block's end, key summed out on each side, so that the block's
 //    own samples are not counted twice. Then
 //        L1_k = ln sum over l of P_t(l) exp(x_k(l)),
 //    and R and F likewise with V = sigma^2 + a^2 (f^2 s^2 + v_m). Lambda is the Rician log-likelihood ratio against noise

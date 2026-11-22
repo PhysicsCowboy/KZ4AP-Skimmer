@@ -88,9 +88,10 @@ struct SegmentalConfig {
     double level_fast_frame_s = 4.0 * 4.0 / 1500.0;
     // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and under which it must fall
     // again to be slow; 0 leaves the walk as configured everywhere. dB re the floor: the runs' median key-down level the spread must
-    // be read at, at least (18.3 dB re the floor is +10 dB S500 at the widest filter). Heuristics: the estimator reads a steady or
-    // 0.1 Hz carrier at up to 2.5 Hz at +57.78 dB S500 (amplitude left in the mark's edges), the matched set's 2.2 to 2.9 Hz at 2.8 to
-    // 4.6 Hz; below +10 dB S500 the fast walk costs DEV2's B2 (text-level-1: 10 nepers per square root of a second, the short frame).
+    // be read at, at least (18.3 dB re the floor is +10 dB S500 at the widest filter). Heuristics: the estimator reads a Gaussian spread
+    // of 3, 5, 10, 20, 30 Hz at 2.9, 4.6, 8.8, 17.7, 24.9 Hz and a steady carrier at 0.07 Hz (the test's runs of 100 ms at +30 dB re
+    // the floor; measured); below +10 dB S500 the fast walk costs DEV2's B2 (text-level-1: 10 nepers per square root of a second, the
+    // short frame).
     double doppler_fast_hz = 3.0;
     double doppler_slow_hz = 2.5;
     double doppler_min_db = 18.3;
@@ -100,17 +101,17 @@ struct SegmentalConfig {
     // 1: the shape's band: the walk is fast only where ln |rho(21.33 ms)| / ln |rho(tau)| lies within [lo, hi] times its Gaussian value
     // (21.33 ms / tau)^2 at every lag tau = 8, 10.67, 13.33, 16 and 18.67 ms. A neighbor's beat inside the filter, ln |rho| ~ r (cos 2 pi df
     // tau - 1), stays inside it at all five only within about 28 Hz of the wanted station (derived, computed over 20 to 300 Hz and r =
-    // 1e-4 to 1); a Gaussian spread of 2 to 30 Hz reads [shape here, measured]. Heuristic: the band [0.4, 1.6].
+    // 1e-4 to 1); a Gaussian spread of 3 to 30 Hz reads 0.83 to 1.00 at every lag (measured, the test's runs). Heuristic: the band
+    // [0.4, 1.6]; review of text-fast-1: a single ratio, at 10.67 ms, aliased every 93.75 Hz.
     double doppler_shape_lo = 0.4;
     double doppler_shape_hi = 1.6;
     // 1: the least spread read from each run's own magnitude, as a share of the spread read from the runs' vector sum, the walk is
-    // fast at: a Gaussian spread of 2 to 30 Hz reads 0.62 to 0.76 (measured, the test's runs of 100 ms), stations a few Hz apart taking
-    // turns about 0. Heuristic, by measurement: without it a run station's channel on the 2026-11-18 CWT, his callers a few Hz from him,
-    // took the fast walk and lost KE3TW (20 m), as WA2SCB on 40 m 2026-11-17.
+    // fast at: a Gaussian spread of 3 to 30 Hz reads 0.62 to 0.79 (measured, the test's runs of 100 ms), stations a few Hz apart taking
+    // turns about 0. Heuristic: without it the fast walk was taken on run stations' channels, the run station and his callers a few Hz
+    // apart, and lost WA2SCB (40 m 2026-11-17), KE3TW (20 m) and WB4OSS (40 m 2026-11-18), each back with the walk off (traced).
     double doppler_min_runs_ratio = 0.5;
     double doppler_walk_max = 20.0;
-    // s: the pairs read for the spread lie between a run's first and last samples at or above -6 dB re its median power, this far
-    // inside them, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its
+    // s: the pairs read for the spread lie in each stretch of a run at or above -10 dB re its median power, this far inside its ends, so that neither the front filter's edges nor the channel's tail is read: pairs across the end of a mark and its
     // tail, another path's, take |rho| down in proportion to tau (the clips' straight line in ln |rho|; kz4ap-fading). Heuristic: 3
     // samples at the widest filter, its edge's half.
     double doppler_end_guard_s = 0.008;
