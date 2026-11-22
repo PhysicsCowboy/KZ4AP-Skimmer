@@ -392,7 +392,7 @@ analyzer, reads as such a leak (noise only, stage 3); a variant subtracts it (A.
 *The channel's tail.* Scattered power follows a mark's fall (the owner's 80 m clips: −10 to
 −15 dB re the mark for 40 ms, incoherent, 0.06 to 0.24 dB per dB of the mark's power). Per stream, runs above +10 dB re F
 with median M ≥ +20 dB re F give e² − F from their last sample ≥ M/4 (h = 7, the template's half point; derived) to the next run,
-at m − h, memory 200 runs: the tail is g_m min(M̄, 4a²), g_m = Σ(e² − F)/ΣM, M̄ every run's M over 10 runs, 4a² 6 dB above
+at m − h, memory 200 runs: the tail is g_m min(M̄, 4a²), g_m = Σ(e² − F)/ΣM, M̄ every run's M over 20 runs, 4a² 6 dB above
 the belief's level (the station's own tail). On if the mean of (e² − F)/M at m = 11 is ≥ −15 dB re the mark, to −25 dB re the mark
 or 48 ms, from the 33rd run (heuristics; the two statistics' split chosen on one clip). A variant, off: g_m a².
 
@@ -4589,7 +4589,7 @@ These are the model's and, except where said, the viterbi decoder's too. The whi
 F (`ChannelFloor`, not the leak floor) go to the estimator before `LevelEvidence::push`. A run is the samples with e² > 10^(1.0) F
 (`echo_run_db`), kept to 4 096 samples. At its end, if it holds at least ⌈32 ms / Δ⌉ samples (`echo_min_run_s`; 12 at m = 1) and
 its median M is at least 10^(1.0) × the floor at its middle sample (`echo_level_min_db`), M̄ ← μM̄ + (1 − μ)M (FS², the first such
-run's M to start; μ = e^(−1/10), `echo_level_runs`); if M is at least 10^(2.0) × that floor (`echo_min_db`), the profile starts at the run's last sample with e² ≥ M/4 and takes (e² − F)/M at that
+run's M to start; μ = e^(−1/20), `echo_level_runs`); if M is at least 10^(2.0) × that floor (`echo_min_db`), the profile starts at the run's last sample with e² ≥ M/4 and takes (e² − F)/M at that
 sample and each later one until a sample starts the next run or span = 11 + P − h samples are taken, P = min(18, ⌊48 ms / Δ⌋)
 positions (`echo_max_s`; 18 at m = 1, 6 at m = 3), h the last m with 1 − s_m ≥ 0.5 (7 at m = 1, 6 at m = 3; derived from the
 template). Each closed profile enters, with memory λ = e^(−1/200) per run (`echo_memory_runs`) and for the positions it reached, the
@@ -4669,7 +4669,7 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   alone (+20 dB re F, 30 runs), a weaker station after a strong one, or callers between a run station's turns, took the strong
   station's tail, 10 to 24 dB above their own marks, and their marks read as a dit and a tail: rows of E's (the review's channels,
   CER 0.62 to 4.96 and 0 to 2 of 4 calls; the proportional form 0 and 4 of 4). So M̄ follows every run from the run threshold, +10 dB
-  re F, with a memory of 10 runs, and each level hypothesis takes the tail at most κ above its own a²: a fade of up to κ keeps the
+  re F, with a memory of 20 runs, and each level hypothesis takes the tail at most κ above its own a²: a fade of up to κ keeps the
   station's tail, a new station's first runs take at most κ g a² (heuristic; κ = 6 dB the largest that reads the review's channels as
   the proportional form does, 8 dB does not, by measurement).
 - *Why the over's end takes the fall's tail* (text-tail-2). The wait n + 6 keeps the birth's rise window past the tail of the fall
@@ -4706,10 +4706,10 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 
 **Provenance.** All in `docs/decision-log.md`, 2026-11-21 (`text-fast-1`) and 2026-11-22 (`text-tail-2`).
 - `echo_absolute` 1 by measurement (text-tail-2, with the review's bound), no-space CER, the over's end fixed in both: the owner's clips
-  scored on their span, cut to 38 s 0.261 and 0.156 to 0.159 and 0.117, whole tracks 0.239 and 0.156 to 0.148 and 0.091 (DeepCW 0.398
+  scored on their span, cut to 38 s 0.261 and 0.156 to 0.159 and 0.104, whole tracks 0.239 and 0.156 to 0.148 and 0.078 (DeepCW 0.398
   and 0.338); the same recording's held-out 35 WPM passage (833 to 873 s and 911 to 1 043 s, 483 characters, the review's reference,
-  typed with decodes in view) 0.199 to 0.112, its 12 WPM preamble (372 to 790 s) 0.048 to 0.050; the matched set with a tail
-  (synth-tail-1's generator: −7 dB re the mark, τ 15 ms, f_D 8 Hz) 0.386, 0.374, 0.686, 1.462 to 0.305, 0.269, 0.349, 0.403 by f_D
+  typed with decodes in view) 0.199 to 0.108, its 12 WPM preamble (372 to 790 s) 0.048 to 0.050; the matched set with a tail
+  (synth-tail-1's generator: −7 dB re the mark, τ 15 ms, f_D 8 Hz) 0.386, 0.374, 0.686, 1.462 to 0.302, 0.266, 0.350, 0.411 by f_D
   cell (0.7 to 1.4, 2.1 to 4.2, 7 to 14 Hz, and 21 to 42 Hz asked, which the generator's direct path realizes as about 18 to 25 Hz);
   the matched set without a tail the same to the symbol, VE3NEA's conditions the same in 39 of 40 cells (hand, f_D 3 Hz, +13.78 dB
   S₅₀₀: 947 to 952 edits of 13 054). Without the bound (M̄ of the strong runs over 30 runs) the clips read 0.102, 0.078, 0.080 and
@@ -4718,10 +4718,12 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   f_D 0.3 and 1 Hz, four seeds) the unbounded and proportional forms read alike: 0.300 against 0.332 at 0.3 Hz, 0.332 against 0.315
   at 1 Hz (mean no-space CER, measured). The tail's presence and length are decided by the mean of the ratios in both forms, a
   heuristic chosen on one clip: with the ratio of means deciding, clip03's tail, about −15 dB re the mark, stood under `echo_on_db`
-  until 18.9 s and clip03 read 0.511. `echo_level_runs` 10, `echo_level_min_db` +10 dB re F and `echo_level_margin_db` 6 dB: chosen on
-  the review's channels (the largest margin that reads them as the proportional form does: 8 dB at 10 runs and 6 dB at 30 runs of
-  strong runs do not), then measured on the clips and the held-out passage together (5 runs read them alike: cuts 0.170 and 0.117,
-  held out 0.120; a 3 dB margin 0.227 and 0.130, held out 0.168). `echo_min_runs` 30 kept (by measurement, unbounded): fewer runs read a
+  until 18.9 s and clip03 read 0.511. `echo_level_runs` 20, `echo_level_min_db` +10 dB re F and `echo_level_margin_db` 6 dB: the margin the largest
+  that reads the review's channels as the proportional form does (8 dB at 10 runs does not, nor 6 dB at 30 runs), the memory between
+  10 runs, which lost WD2E (a window-confirmed call at the 2-point bar on the 2026-11-17 20 m replay; traced: kept at 20 and 30, and with
+  the proportional form), and 30 runs, which reads one of the review's channels as E's; then measured on the clips and the held-out
+  passage together (10 runs: cuts 0.159 and 0.117, whole 0.148 and 0.091, held out 0.112; 5 runs 0.170, 0.117, held out 0.120; a 3 dB
+  margin 0.227, 0.130, held out 0.168; 20 runs at +20 dB re F 0.170, 0.104, held out 0.104). `echo_min_runs` 30 kept (by measurement, unbounded): fewer runs read a
   fresh track's first seconds better, the clips cut to 38 s 0.102 and 0.078 at 30, 0.080 and 0.065 at 20, 0.068 and 0.065 at 15 and
   10; but at 20 the 2026-11-17 20 m replay lost WD2E, a window-confirmed call at the 2-point bar, and at 15 DEV2's E2 (seed 1, oracle)
   read +0.0010 (+0.0001 to +0.0021, 95% bootstrap interval) re main.
@@ -4747,11 +4749,11 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 **Limitations.**
 - The tail is one shape per stream, for every fall: a channel whose tail changes faster than about 200 runs (40 s at 35 WPM) is read
     with the shape before; a track's first 32 strong runs are read without one (about 6 to 8 s at 35 WPM). Its absolute power follows
-  M̄ over 10 runs (about 2 s at 35 WPM), bounded 6 dB above the belief's level: a fade of the direct path deeper than 6 dB takes the
+  M̄ over 20 runs (about 4 s at 35 WPM), bounded 6 dB above the belief's level: a fade of the direct path deeper than 6 dB takes the
   bounded tail, so the gain in deep fades is cut (the owner's clips: about half the unbounded form's; decision log); a tail that does
   follow the mark's fades (one delayed path fading with the direct one) is read up to 6 dB too strong in a fade. M̄ is the runs' median
   e², noise included. The residual of the review's case: a weaker station's first runs after a strong one take a tail up to 6 dB
-  above their own level until M̄ follows them (about 10 runs), and one within 6 dB of the strong station takes up to the strong one's
+  above their own level until M̄ follows them (about 20 runs), and one within 6 dB of the strong station takes up to the strong one's
   tail (the review's channels, 10 to 24 dB below, read as the proportional form).
 - An absolute tail's power in the fall's window is taken in whole 1.5 dB steps (±0.75 dB). A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
 - The tail's mean is read low by about 2 dB re the true tail's power: a Rayleigh tail's samples above −6 dB re the mark move the last −6 dB sample into it
@@ -5124,7 +5126,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more, ln \|ρ(21.33 ms)\| / ln \|ρ(τ)\| within 0.4 to 1.6 of (21.33 ms / τ)² at τ = 8 … 18.67 ms (`doppler_shape_lo`, `doppler_shape_hi`), and each run's own \|C\| reading at least 0.5 of f_D (`doppler_min_runs_ratio`); W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
 | Segmental: the Doppler estimator (text-fast-1) | the widest stream's runs above +10 dB re F; pairs 8 to 21.33 ms apart within each stretch at or above −10 dB re the run's median, 8 ms inside its ends, the front filter's noise correlation taken out; memory 100 runs, used from 20; f_D = 2σ_D at 21.33 ms, Gaussian spectrum | `doppler_end_guard_s`, `doppler_memory_runs`, `doppler_min_runs` | form derived; values heuristic |
 | Segmental: the channel's tail (text-fast-1, text-tail-2) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 33rd strong run (weight 30), then every 10th; on at the mean of (e² − F)/M at m = 11 ≥ −15 dB re the mark, kept while ≥ −25 dB re the mark, to 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` and `echo_min_runs` by measurement |
-| Segmental: the tail's power (text-tail-2) | absolute, g_m min(M̄, κa²): g_m = Σ(e² − F)/ΣM, M̄ the median e² of every run at +10 dB re F or more over 10 runs (exponential memory), κ 6 dB above each level of the belief; 0: g_m a² at the belief's level, g_m the mean of (e² − F)/M (text-fast-1's); the fall window's noise in whole 1.5 dB steps (none for ρ₀ < 0.1885) | `echo_absolute` 1, `echo_level_runs` 10, `echo_level_min_db` 10, `echo_level_margin_db` 6 | form derived; 1 by measurement; 10 runs, +10 dB re F and 6 dB heuristics by measurement (the review's channels); the steps an approximation |
+| Segmental: the tail's power (text-tail-2) | absolute, g_m min(M̄, κa²): g_m = Σ(e² − F)/ΣM, M̄ the median e² of every run at +10 dB re F or more over 20 runs (exponential memory), κ 6 dB above each level of the belief; 0: g_m a² at the belief's level, g_m the mean of (e² − F)/M (text-fast-1's); the fall window's noise in whole 1.5 dB steps (none for ρ₀ < 0.1885) | `echo_absolute` 1, `echo_level_runs` 20, `echo_level_min_db` 10, `echo_level_margin_db` 6 | form derived; 1 by measurement; 20 runs, +10 dB re F and 6 dB heuristics by measurement (the review's channels, a replay's call); the steps an approximation |
 | Segmental: look-ahead, commit | 8 frames each, 170.7 ms; a sample committed 64 to 127 samples after it arrives | `level_lookahead_s`, `level_commit_s` | heuristic; no measured effect from 0.085 to 1.5 s |
 | Segmental: belief threshold, edge groups | P̂ ≥ 10⁻⁴; at most 8 groups of levels for the edges | evidence.cpp, `kEdgeLevels` | heuristic |
 | Segmental: template's window | m = 5 … 10 (0 below, 1 from 11); elements below 6 samples by the pair's template | `kEdgeFirst`, `kEdgeCount`; `short_score` | derived approximation |
