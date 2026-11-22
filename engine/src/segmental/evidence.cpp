@@ -515,8 +515,9 @@ LevelEvidence::LevelEvidence(const SegmentalConfig& config, const LevelTables& t
     for (std::size_t level = 0; level < levels; ++level) entering_[level] += alpha_[levels + level];
 }
 
-void LevelEvidence::set_walk(bool fast, double walk_nepers_per_sqrt_s) {
+void LevelEvidence::set_walk(bool fast, double walk_nepers_per_sqrt_s, bool short_frames) {
     fast_next_ = fast;
+    short_next_ = short_frames;
     fast_walk_next_ = walk_nepers_per_sqrt_s;
 }
 
@@ -705,6 +706,7 @@ void LevelEvidence::end_frame() {
         step_kind(alpha_.data(), kind);
         step_kind(alpha_.data() + levels, kind);
         fast_ = fast_next_;
+        short_ = short_next_;
         if (fast_ && fast_walk_next_ != fast_walk_) {
             // The walk's variance over a frame is W^2 T nepers^2, its sd W sqrt(T) / step in grid steps; over a block of
             // level_frame_s, sqrt(slow_block_) times that. A matrix, not the three-tap passes, whose count goes as W^2.
@@ -716,7 +718,7 @@ void LevelEvidence::end_frame() {
         }
         // Fast: a frame to a block, unless the channel's tail is modeled, where a short frame lets the level follow the tail into
         // the gaps (the clips: 0.352 and 0.247 with the long frame, 0.841 and 0.766 with the short; heuristic by measurement).
-        block_frames_ = fast_ && !echo_on_ ? 1 : slow_block_;
+        block_frames_ = fast_ && short_ && !echo_on_ ? 1 : slow_block_;
         block_fill_ = 0;
         block_first_ = frames_;
     }

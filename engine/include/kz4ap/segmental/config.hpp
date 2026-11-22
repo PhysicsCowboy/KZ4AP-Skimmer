@@ -86,6 +86,8 @@ struct SegmentalConfig {
     // Heuristic, by measurement on the matched fast-fading set (text-level-1: a walk of 10 nepers per square root of a second reads
     // 7 to 14 Hz 0.062 with the 21.33 ms frame and 0.010 with this one).
     double level_fast_frame_s = 4.0 * 4.0 / 1500.0;
+    // Hz: the spread from which the fast walk's frames are level_fast_frame_s; under it the fast walk steps over level_frame_s.
+    double doppler_short_frame_hz = 0.0;
     // Hz (f_D = 2 sigma_D, Watterson's and DeepCW's width): the spread from which the walk is fast, and under which it must fall
     // again to be slow; 0 leaves the walk as configured everywhere. dB re the floor: the runs' median key-down level the spread must
     // be read at, at least (18.3 dB re the floor is +10 dB S500 at the widest filter). Heuristics: the estimator reads a steady or

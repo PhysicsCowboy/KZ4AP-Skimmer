@@ -791,6 +791,10 @@ length, learned per track from the falls the search reads), so that a gap's firs
 mark rather than against noise; standard practice for a dispersive channel (a channel impulse response estimated from decided
 symbols, as in decision-directed equalization). The generator would need a two-path option to make a matched test set.
 
+### A test that differs by compiler: EngineCopies.TwoCallersKeyingAtOnceKeepTheirTracks (noted 2026-11-21, `text-fast-1`)
+
+It fails on Linux with GCC at main 5eac08d (3 of the 4 calls it asks for) and passes on MSVC; not investigated.
+
 ### Strong fading in the development set: cells above +20 dB S500 (proposed 2026-11-21, `text-level-1`)
 
 DEV2's fading group B2 stops at +20 dB S500 (two S500 cells, 0-10 and 10-20 dB), so it never showed the rise of CER with the

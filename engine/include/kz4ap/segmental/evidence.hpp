@@ -361,7 +361,7 @@ class LevelEvidence {public:
     void set_echo(const EchoShape& shape);
     // The level's walk from the next block on (text-fast-1; DopplerEstimator): fast, frames of level_fast_frame_s each a block and
     // a walk of walk_nepers_per_sqrt_s; or not, frames joined into blocks of level_frame_s and the configured walk, as before.
-    void set_walk(bool fast, double walk_nepers_per_sqrt_s);
+    void set_walk(bool fast, double walk_nepers_per_sqrt_s, bool short_frames = true);
     bool fast() const { return fast_; }
 
     // The level's step between frames, on a vector over the grid's levels: forward x' = J K x, backward its transpose
@@ -408,6 +408,7 @@ private:
     int block_fill_ = 0;
     int block_frames_ = 1;
     bool fast_ = false, fast_next_ = false;
+    bool short_ = true, short_next_ = true;  // the fast walk's frames short (a spread past doppler_short_frame_hz)
     double fast_walk_ = 0.0, fast_walk_next_ = 0.0;
     double fast_jump_ = 0.0;
     double fast_block_jump_ = 0.0;

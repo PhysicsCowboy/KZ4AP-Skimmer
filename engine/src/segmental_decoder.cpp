@@ -210,6 +210,7 @@ void SegmentalDecoder::start() {
     choice_started_ = false;
     doppler_ = std::make_unique<segmental::DopplerEstimator>(shared_->config);
     walk_fast_ = false;
+    walk_short_ = true;
     walk_now_ = 0.0;
 }
 
@@ -219,10 +220,12 @@ void SegmentalDecoder::update_walk() {
     const bool loud = doppler_->level_db() >= c.doppler_min_db && doppler_->shape() >= c.doppler_min_shape;
     const bool fast = loud && (walk_fast_ ? spread >= c.doppler_slow_hz : spread >= c.doppler_fast_hz);
     const double walk = std::clamp(c.doppler_walk_per_hz * spread, c.level_walk_nepers_per_sqrt_s, c.doppler_walk_max);
-    if (fast == walk_fast_ && (!fast || std::fabs(walk - walk_now_) < 0.5)) return;
+    const bool short_frames = spread >= c.doppler_short_frame_hz;
+    if (fast == walk_fast_ && (!fast || (std::fabs(walk - walk_now_) < 0.5 && short_frames == walk_short_))) return;
     walk_fast_ = fast;
+    walk_short_ = short_frames;
     walk_now_ = fast ? walk : 0.0;
-    for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk);
+    for (Stream& stream : streams_) stream.evidence->set_walk(fast, walk, short_frames);
 }
 
 int SegmentalDecoder::leading_scale() const { return streams_[leader_].scale; }
