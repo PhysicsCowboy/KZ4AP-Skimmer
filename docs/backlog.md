@@ -485,6 +485,13 @@ for the new decoder only.
 
 ### The amplitude model inside marks under fast fading (owner, 2026-10-22: a known limitation)
 
+**Status 2026-11-21 (`text-fast-1`), segmental decoder:** the walk and the frame now follow the Doppler spread the decoder measures
+(from 3 Hz, at +10 dB S500 or more): VE3NEA's conditions at f_D 3 Hz read 0.073, 0.033, 0.023, 0.025, 0.024 (hand) and 0.055, 0.028,
+0.020, 0.019, 0.022 (paddle) at +13.78, +17.78, +27.78, +37.78, +57.78 dB S500, against 0.103 to 0.083 and 0.071 to 0.052 before
+(DeepCW 0.04 and 0.02 at the top); the matched fast-fading set's 7 to 14 Hz and 21 to 42 Hz cells (requested; about 6.8 to 12.4 and 16.7 to 23.9 Hz realized, signal-processing.md A.11, "Fading") 0.032 to 0.008 and 0.026 to 0.017
+from 0.17 and 0.31. Open: under +10 dB S500 the walk stays slow (the fast one cost B2 there); DEV2 has no fast-fading cell above
++10 dB S500 (the item "Strong fading in the development set" below); the short-fade limit at strong levels is smaller, not gone.
+
 **Status 2026-11-21 (`text-level-1`), segmental decoder:** on VE3NEA's conditions at f_D 3 Hz, after the level grid moved
 onto the channel's floor, CER stays at about 0.07 to 0.08 (hand) and 0.045 to 0.052 (paddle) from +17.78 to
 +57.78 dB S500, where DeepCW falls to 0.04 and 0.02. Traced: a fade to 20 to 30 dB below the mark's level (dB re its key-down
@@ -748,16 +755,32 @@ section 4.3.1.
 
 ### Fast fading with an echo: the owner's "auroral" clips (found 2026-11-21, `text-level-1`; the owner's top plain-text priority)
 
+**Status 2026-11-21 (`text-fast-1`):** both causes modeled, by default. The clips' decorrelation is mostly the tail: kz4ap-fading's
+ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mark's end into another path's tail give, and the decoder's
+estimator, inside the marks only, reads f_D about 4.6 Hz, not 9 to 10 Hz; the tail itself is incoherent with the mark (coherence 0.94
+at the fall, 0.24 at 10 ms) and lasts past 40 ms (−15 dB re the mark there). The decoder now learns the tail per stream and scores a
+gap's first samples against noise plus that power, and sets the level's walk and frame from the spread it measures (decision log,
+2026-11-21; signal-processing.md A.8e, "The channel's tail and the walk set by the Doppler spread"). Against the owner's copy, cut to
+38 s so that the track starts fresh as DeepCW's does (the fair comparison), the clips read 0.386 and 0.325 (DeepCW 0.398 and 0.338;
+`text-level-1` 0.693 and 0.766); as whole tracks 0.341 and 0.234 (`text-level-1` 0.443 and 0.766). Open: the tail in the level filter (a third key
+state was tried and cost the clips: 0.659 and 0.584), in the next rise's window, and a tail that changes within a track; the
+generator's two-path option, so that a matched set with a tail exists (the tests' channel is the only synthetic one); more clips of
+the owner's (aurora, long path) to see whether the shape holds; where the remaining errors on the clips are.
+Resolved (review of `text-fast-1`, decision log 2026-11-22): the three window-confirmed calls once lost (WA2SCB 40 m 2026-11-17,
+KE3TW 20 m and WB4OSS 40 m 2026-11-18) were lost by the fast walk on run stations' channels, their callers a few Hz apart read as a
+spread; with the run-by-run check all three are back. The one window call lost against main, N8K (40 m 2026-11-18), is judged false:
+a misreading of N8EA ("CQ N8EA CQ N8K CQ N8EA") that one RBN skimmer shares.
+
 Two clips of W1AW's 35 WPM practice text on 80 m (the 2026-11-19 recording, 3581.504 kHz, 1049 to 1080 s and 879 to 910 s, about 26
 to 28 dB re the noise key-down; the owner copied both nearly completely, and hears an auroral feel and fading) read at no-space CER
 0.44 to 0.77 against his copy, with main and with `text-level-1` alike; DeepCW reads 0.398 and 0.338, nn-morse 0.295 and 0.351.
 Measured with `kz4ap-fading` (bench/src/fading_main.cpp; `build/tl-1/clips/`, git-ignored):
 - **Doppler spread.** The complex gain's correlation inside marks, |ρ| at 2.67, 6.67, 13.3, 26.7 ms: 0.983, 0.944, 0.882, 0.785
   (clip03) and 0.985, 0.944, 0.875, 0.749 (clip11); a Gaussian fit gives f_D = 2σ_D = 9.3 and 10.0 Hz. The same tool on our port of
-  VE3NEA's generator reads f_D 3, 10, 30 Hz as 3.6, 9.6, 20.4 Hz (|ρ| at 26.7 ms 0.956, 0.730, 0.237), so the clips' core is about
+  VE3NEA's generator reads f_D 3, 10, 30 Hz requested (3.0, 9.6, about 20.8 Hz realized; A.11, "Fading") as 3.6, 9.6, 20.4 Hz (|ρ| at 26.7 ms 0.956, 0.730, 0.237), so the clips' core is about
   f_D 10 Hz; their faster drop at the shortest lag (0.983 against 0.996) says a few % of the power is spread wider.
 - **Slow fading.** The median key-down level per second, dB re the noise: a spread of 3.4 and 3.6 dB rms and ranges (largest less
-  smallest) of 13.4 and 14.8 dB over 30 s.
+  smallest) of 13.4 and 14.8 dB over 30 s (the 31 s spans the owner copied; over the 38 s cuts 3.9 and 3.6 dB rms).
 - **An echo.** After a mark falls 6 dB, the power stays at −9 to −13 dB re the mark for 20 to 30 ms before reaching the noise
   (−26 to −28 dB re the mark): a delayed copy or a scattered tail, about 10 dB below the mark. A clean synthetic carrier falls to
   the noise within 2.7 ms; at f_D 10 Hz it falls to −16 to −25 dB re the mark. That is what stretches the marks (median 58 to 62 ms against 40.7 ms for a 32 WPM
@@ -770,6 +793,10 @@ length, learned per track from the falls the search reads), so that a gap's firs
 mark rather than against noise; standard practice for a dispersive channel (a channel impulse response estimated from decided
 symbols, as in decision-directed equalization). The generator would need a two-path option to make a matched test set.
 
+### A test that differs by compiler: EngineCopies.TwoCallersKeyingAtOnceKeepTheirTracks (noted 2026-11-21, `text-fast-1`)
+
+It fails on Linux with GCC at main 5eac08d (3 of the 4 calls it asks for) and passes on MSVC; not investigated.
+
 ### Strong fading in the development set: cells above +20 dB S500 (proposed 2026-11-21, `text-level-1`)
 
 DEV2's fading group B2 stops at +20 dB S500 (two S500 cells, 0-10 and 10-20 dB), so it never showed the rise of CER with the
@@ -781,6 +808,14 @@ speed (120 a seed), and an edge cell for half of them, hard edges (0.8 ms 10-90%
 station's own keying splatter is in the set. Its own signal-seed code (not B2's 2), so that its noise is independent, and its
 own builder entry in `DEV2_BUILDERS` as B3, scored with B2's rules; about a tenth more time per seed. What it would have caught:
 the level grid's defect (a strong station's own keying read as a leak floor moved its level inside marks; hand, f_D 0.1 Hz, +57.78 dB S500), and it holds the fast-fading cases of the item above.
+`text-fast-1` adds a need: f_D cells above 5 Hz (to 40 Hz, as the matched set's request, which realized only about 24 Hz: such a cell needs `fading_full_rate`, A.11) at +10 dB S500 and up, where the Doppler walk acts, and
+a two-path cell with a diffuse tail 10 to 15 dB under the mark for 20 to 50 ms, where the tail model acts; neither is in DEV2, so its
+whole-set runs show only that both leave the other groups alone.
+The generator's fading rate (review of `synth-tail-1`, 2026-11-22): at its default 50 samples/s a requested f_D above about 5 Hz is
+realized lower (21, 30, 42 Hz as about 16.7, 20.8, 23.9 Hz by coherence time; signal-processing.md A.11, "Fading"), and
+`fading_full_rate` realizes it. No committed set requests more than 5 Hz (DEV2's B2 at most 5 Hz, B and VE3NEA's grid at most 3 Hz),
+so none needs regenerating; a fast-fading cell made for this item, and the scratch matched set (`build/tl-1/fast/`) if it is used
+again for its 7 to 14 Hz and 21 to 42 Hz cells, should be made with `fading_full_rate` on.
 
 ### σ² in steps finer than the level grid's (found 2026-11-21, review of `text-level-1`)
 
@@ -1811,6 +1846,7 @@ Deferred from the first stage (`docs/signal-processing.md`, section 11):
 - **Left open by `call-form-2`:** without a list the 5NN calls (18 active US licenses) and the CW-word licenses are lost; a pattern table, or the RBN's own rate of busts by form, might let the common ones through. The RBN spots calls of an unallocated U and a digit (U1TN, U5IN, U5PJ, U5YG on both 2026-11 days), which `allocated_pair` refuses: not checked against Russia's or Ukraine's allocations. **Since `calls-list-1`** these forms pass unlisted on a points bar (4, 3 signed; the item below).
 - **Left open by `call-short-1`** (A.12, limitations): CWT is not a keyword of the Role rule, so "CQ CWT call" reads bare and a 1x1 running in the CWT needs three readings; adding it would change every call's signed flag, so it was not done here. **Done in the review of `calls-list-1`:** CQ and one event word (CQ CWT) sign the call after them (`cq_event_signed`). Fragments of a longer call of four characters or more (MO0M, OQ0MM held out on 2026-11-19) and CWT numbers run onto names in other shapes (A78JIM) are untouched; the pattern table above, or a rule against a longer call read nearby, would be the next step. Since the review the cut-number rule is a points bar (5 bare, 2 signed: the owner's ruling, several repeats and no signature required), so a CWT runner's own number (2T7A, 3N7N, 4T2A; 12 on the 2026-11-18 CWT, read 7 to 71 times) passes as a call would; a rule reading the exchange's context (a name before the number) would tell them apart. **The RBN judge's `us_license` for a 1x1** (review): the FCC's HD.dat holds no US 1x1 (0 of 1 607 236 distinct US-form calls), so every US 1x1 read `never`, real or not; done in the review, the judge (`training/kz4ap_proto/rbn_judge.py`) reports `-` for one, with its test.
 - **Left open by `calls-list-1`** (A.12, limitations): the four forms once from a list only (special, unusual, prefix-digit, words of CW) now pass unlisted on a flat bar (4 points, 3 signed), whole and glued words only, holding no rival back until reported. The data give no recall evidence for any bare bar (every call gained on it was junk or an exchange number); a recording with real calls of these forms heard bare (a DXpedition of a prefix-digit series, a special-event station calling others) would. Junk read often still passes (D4Y, 44 whole words on 20 m, 2026-11-17; A2EW), and a CWT runner's number starting with a 1, sent A, has the prefix-digit form (A7TA, 1701, read 71 times), as the cut-shaped numbers do (a rule reading the exchange's context would cover both). A pattern table per series, as CW Skimmer's Patt3Ch.lst (C6@, D4@, E7@, J6@ typical; E5 only E51@@), would let the series that issue prefix-digit calls through at a lower bar and hold the others to a higher one; MASTER.SCP's 92 prefix-digit calls and the RBN's spotted ones would seed it. A keyword before 5NN (24 strings, K5NN and GM5NN among them) needs a signed reading, so such a station calling bare is lost unlisted. **The generated sets' scorer** (`training/kz4ap_proto/calls_score.py`) refuses a prefix-digit call by its own call pattern and skips its row, so a false call of that form is not counted (L3I, found by hand in the review of `calls-list-1`). **Done in that review:** the prefix-digit form is taken, and a CSV row outside the reader's grammar is scored as it stands and counted. **CQ and an event word** sign the call after them (20 words, exact); other event words, or a rule for any one word between CQ and a call, are untried. **BK as a sign-off:** <BK> now reads as the keyword BK, but BK has no role, so "call BK" reads bare where "call K" signs; whether BK after a call should sign it, as K and KN do, is untried. **BK in the app's text:** the plain text keeps <BK> (one symbol for CER, as the scorers and the outside-decoder comparison count it); the owner "would normally write just bk", so a display option could print BK in the app without changing the scored text.
+- **Committed score tables of outside programs, rescored** (review of `calls-list-1`): tables scored before `calls_score.base_call` took the prefix-digit form (C6AGU, L3I) may count such calls differently if rescored now (a call refused then is a call now, and a CSV row outside the grammar is scored, not skipped); check them at the next rescoring.
 - A posterior on a call in place of points. `call-2` built per-symbol margins in the segmental decoder (A.8e, "Margins"), off by default since review 10, and the stage's `known_margin_nats`, off too: on the held-out 2017 recordings it added more misreadings than confirmed calls. **Margins, next:** compare several runners-up per slot (with the best four, 6 sure readings of W3OA's 1 347 instead of 651; skip a runner-up whose parent holds the winner's text entry, to keep the CPU near +5%); fix the two word-space defects of the walk (a birth's zero-length space not matched to the same space; a substitution of the next letter stepping only the winner); send new characters as characters, not inside confidence corrections (the bench's immediate text misses them); have the stage read a word's margin at its least, after later falls; then re-measure on the 2017 recordings with a held-out check, and on the generated ones.
 - **A known-call list by default** (call-2, 2026-11-04): with the calls of CW Skimmer's own MASTER.DTA of 2018 (taken out of the binary file as text) our misreadings on the 2017 recordings fall by about half against no list, 45 to 26 tuned and 51 to 25 held out, and the confirmed calls rise, 97 to 102 and 108 to 117 (decision log). No list ships: MASTER.SCP is published by supercheckpartial.com and the terms of redistributing it, or of fetching it at first start, are the owner's to decide. Until then `--known-calls PATH`.
 - **Sure misreadings of a word named once:** K8VC for K8VJ and W6UM for W1UM on W3OA read with no rival within 16 nats, so a margin cannot hold them back; whether the running station sent them so (its own bust) or the decoder misread them surely is not known (conjecture: some are busts, which CW Skimmer avoids by not spotting a call on one word). Since `rob-1` named words do not pass alone (`points_named` 2), so these are off the list without one; the cost is the callers whose own signal is never read (on the four 2017 recordings 18 confirmed calls and 36 spotted elsewhere that day; the contest 11 of 221 true calls). A test that told a caller's named word from a garble would win them back: none found (margins, a pattern table, 1.5 points all tried or judged not to separate).

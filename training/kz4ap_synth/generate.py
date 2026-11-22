@@ -15,10 +15,11 @@ from pathlib import Path
 
 import numpy as np
 
-from .fading import gain_at, rayleigh_gain, slow_gain
+from .fading import FADING_RATE_HZ, full_rate_hz, gain_at, rayleigh_gain, slow_gain
 from .keying import timed_intervals
 from .messages import Over
 from .morse import keying_intervals
+from .tail import reach_s as tail_reach_s, tail_baseband
 
 SNR_BANDWIDTH_HZ = 500.0
 DEFAULT_NOISE_SIGMA = 0.02
@@ -75,6 +76,15 @@ class SignalSpec:
     edge_placement: str = "inside"
     fading_hz: float = 0.0           # Rayleigh fading frequency spread f_D (2 sigma), Hz; 0 = none
     fading_shape: str = "gaussian"   # Doppler spectrum: "gaussian" or "butterworth" (VE3NEA's)
+    # True: the fading gain is synthesized at fading.full_rate_hz(fading_hz), max(50, 10 f_D) samples/s, so a spread above about
+    # 5 Hz is realized; False (the default, which every existing set was made with): 50 samples/s, which realizes less (A.11)
+    fading_full_rate: bool = False
+    # A diffuse tail (tail.py): scattered, delayed copies of the keyed carrier through their own Rayleigh taps, total power
+    # tail_db re the direct path's mean key-down power (dB); None = none. Its exponential power-delay profile's decay time
+    # tail_decay_s (s) and its taps' Gaussian Doppler spread tail_fading_hz (f_D = 2 sigma, Hz; 0 = a static tail). Single-sender only.
+    tail_db: float | None = None
+    tail_decay_s: float = 0.015
+    tail_fading_hz: float = 8.0
     score: bool = True               # False: an interferer, left out of the score
     tag: str = ""                    # the condition this signal represents, for summaries
     senders: list[Sender] = field(default_factory=list)  # a QSO's stations (empty: one sender)
@@ -228,6 +238,11 @@ def plan_intervals(signals, seed: int) -> list[SignalPlan]:
     return [plan_signal(s, np.random.default_rng([seed, i, 2])) for i, s in enumerate(signals)]
 
 
+def _fading_rate(spec: SignalSpec) -> float:
+    """The rate the signal's fading gain is synthesized at, samples/s (fading.full_rate_hz with fading_full_rate)."""
+    return full_rate_hz(spec.fading_hz) if spec.fading_full_rate and spec.fading_hz > 0 else FADING_RATE_HZ
+
+
 def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise: bool = True) -> np.ndarray:
     """Complex I/Q samples containing the given signals plus white noise."""
     rng = np.random.default_rng(seed)
@@ -257,8 +272,20 @@ def generate(signals, sample_rate: int, duration_s: float, seed: int, add_noise:
         signal = amplitude_for_snr(s.snr_db, sample_rate) * env * np.exp(1j * angle)
         if s.fading_hz > 0:
             signal = signal * rayleigh_gain(i1 - i0, sample_rate, s.fading_hz,
-                                            np.random.default_rng([seed, index, 1]), s.fading_shape)
+                                            np.random.default_rng([seed, index, 1]), s.fading_shape, _fading_rate(s))
         iq[i0:i1] += signal
+        if s.tail_db is not None:
+            # the direct path above is the same samples with the tail on or off; the tail reaches past its last key-up
+            i2 = min(n, i1 + int(np.ceil(tail_reach_s(s.tail_decay_s) * sample_rate)) + 1)
+            offset = s.start_s - i0 / sample_rate
+            u = tail_baseband(lambda m, rate: keying_envelope(intervals, offset, m, rate, s.edge_s, placement=s.edge_placement),
+                              i2 - i0, sample_rate, s.tail_db, s.tail_decay_s, s.tail_fading_hz,
+                              np.random.default_rng([seed, index, 4]))
+            t2 = np.arange(i0, i2) / sample_rate
+            angle2 = 2 * np.pi * s.freq_offset_hz * t2 + phase
+            if s.drift_hz_per_s:
+                angle2 = angle2 + np.pi * s.drift_hz_per_s * (t2 - s.start_s) ** 2
+            iq[i0:i2] += amplitude_for_snr(s.snr_db, sample_rate) * u * np.exp(1j * angle2)
     return iq
 
 
@@ -268,13 +295,16 @@ def add_overs(iq: np.ndarray, spec: SignalSpec, plan: SignalPlan, sample_rate: i
     level (snr_db + relative_db) and phase, faded by that sender's own fading path."""
     if not plan.intervals:
         return
+    if spec.tail_db is not None:
+        raise ValueError("a diffuse tail (tail_db) is for single-sender signals only, not a QSO's overs")
     n = len(iq)
     phases = np.random.default_rng([seed, index, 3]).uniform(0, 2 * np.pi, size=len(spec.senders))
     paths = {}
+    rate = _fading_rate(spec)
     if spec.fading_hz > 0:
         for k in sorted(set(plan.senders)):
             paths[k] = slow_gain(plan.intervals[-1][1] + 1.0, spec.fading_hz,
-                                 np.random.default_rng([seed, index, 1, k]), spec.fading_shape)
+                                 np.random.default_rng([seed, index, 1, k]), spec.fading_shape, rate)
     for (on, off), k in zip(plan.transmissions, plan.senders):
         who = spec.senders[k]
         before, after = edge_reach_s(spec.edge_placement, spec.edge_s)
@@ -291,7 +321,7 @@ def add_overs(iq: np.ndarray, spec: SignalSpec, plan: SignalPlan, sample_rate: i
             angle = angle + np.pi * spec.drift_hz_per_s * (t - spec.start_s) ** 2
         signal = amplitude_for_snr(spec.snr_db + who.relative_db, sample_rate) * env * np.exp(1j * angle)
         if k in paths:
-            signal = signal * gain_at(paths[k], t - spec.start_s)
+            signal = signal * gain_at(paths[k], t - spec.start_s, rate)
         iq[i0:i1] += signal
 
 
@@ -330,6 +360,13 @@ def labels(signals, sample_rate: int, duration_s: float, seed: int) -> dict:
             del fields["farnsworth_wpm"]  # standard spacing: the labels stay exactly as before
         if not fields["design"]:
             del fields["design"]  # not a jittered-grid signal: the labels stay exactly as before
+        if fields["tail_db"] is None:
+            for key in ("tail_db", "tail_decay_s", "tail_fading_hz"):
+                del fields[key]  # no diffuse tail: the labels stay exactly as before
+        elif s.overs:
+            raise ValueError("a diffuse tail (tail_db) is for single-sender signals only, not a QSO's overs")
+        if not fields["fading_full_rate"]:
+            del fields["fading_full_rate"]  # the default rate: the labels stay exactly as before
         if s.overs:
             texts = [o.text for o in s.overs]
             extra = [{"sender": s.senders[k].call, "sender_index": k, "wpm": s.senders[k].wpm,
@@ -385,6 +422,7 @@ def station_labels(signals, sample_rate: int, duration_s: float, seed: int) -> d
                 # each station fades through its own path of the QSO's spread (add_overs); the bench's fading genie
                 # reads it (a label without fading_hz does not say whether its station fades)
                 "fading_hz": s.fading_hz,
+                **({"fading_full_rate": True} if s.fading_full_rate else {}),
                 "score": s.score, "tag": s.tag, "qso_index": i, "sender": who.call, "transmissions": mine,
                 **({"design": s.design} if s.design else {}),
             })
