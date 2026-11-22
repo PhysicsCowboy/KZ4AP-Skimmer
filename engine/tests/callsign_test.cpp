@@ -66,6 +66,13 @@ public:
         e.chars = symbols(t, t_s, probability);
         search.apply(e);
     }
+    void symbols_text(std::uint32_t id, double freq_hz, std::vector<DecodedSymbol> chars) {
+        DecodedTextEvent e{};
+        e.track_id = id;
+        e.freq_hz = freq_hz;
+        e.chars = std::move(chars);
+        search.apply(e);
+    }
     void died(std::uint32_t id) {
         TrackEvent e{};
         e.kind = TrackEvent::Kind::Died;
@@ -95,17 +102,18 @@ TEST(CallGrammar, NotCalls) {
 }
 
 TEST(CallGrammar, WordsOfCwWithACallsFormAreMarked) {
-    // Rigs, antennas and software (exact), and one or two letters glued to 5NN: calls' forms, some of them issued (K9AY, N1MM,
-    // K5NN, DJ5NN, W5NN), so marked to be spotted from a list only, not refused.
-    for (const char* word : {"G5RV", "K3S", "N1MM", "K9AY", "K1EL", "W2DU", "W8JK", "W3DZZ", "R5NN", "UR5NN", "TU5NN", "K5NN", "N5NN",
-                             "DJ5NN", "FN5NN", "NN5NN", "W5NN", "E5NN"}) {
+    // One or two letters glued to 5NN: calls' forms, some of them issued (K5NN, DJ5NN, W5NN), so marked for their own bar, not
+    // refused.
+    for (const char* word : {"R5NN", "UR5NN", "TU5NN", "K5NN", "N5NN", "DJ5NN", "FN5NN", "NN5NN", "W5NN", "E5NN"}) {
         const auto p = parse_call(word);
         ASSERT_TRUE(p.has_value()) << word;
         EXPECT_TRUE(p->cw_word) << word;
         EXPECT_TRUE(is_cw_word(word)) << word;
     }
-    // Exact matches and the 5NN form only: manta's lesson. A longer suffix, another digit or three letters before it are calls.
-    for (const char* call : {"K9AYA", "N1MMX", "DJ5NNA", "DJ5NA", "K5NA", "W5NNX", "KC5NNA", "K1ABC"}) {
+    // The 5NN form only. A longer suffix, another digit or three letters before it are calls; and since the owner's ruling
+    // (2026-11-22, the review of calls-form-3) so are the rigs', antennas' and loggers' names once listed (G5RV, N1MM, K9AY).
+    for (const char* call : {"DJ5NNA", "DJ5NA", "K5NA", "W5NNX", "KC5NNA", "K1ABC", "G5RV", "K3S", "N1MM", "K9AY", "K1EL", "W2DU",
+                             "W8JK", "W3DZZ", "HF6V", "TH7DX", "FT8DX"}) {
         const auto p = parse_call(call);
         ASSERT_TRUE(p.has_value()) << call;
         EXPECT_FALSE(p->cw_word) << call;
@@ -709,13 +717,15 @@ TEST(CallSearch, TwoNearCallsFarApartAreTwoStations) {
     EXPECT_NE(s.row("ZL3YV"), nullptr);
 }
 
-// Words of CW with a call's form (G5RV, K3S, N1MM) and the report glued to a keyword (TU5NN): from a list only (cw_word_form 1)
-// never; on their bar (the default since calls-list-1) not below it, bare, and the words read that often are listed, the ruling's
-// cost (a station signing N1MM must be reportable); TU5NN, a keyword before 5NN, never without a signed reading.
+// Words with a call's form in conversation (G5RV, K3S, N1MM) are calls of their own shapes since the owner's ruling (2026-11-22:
+// "No on keeping the list of calls for now"): read twice, G5RV and N1MM (1x2 calls' shapes) are reported at the bar of any
+// call, K3S (a 1x1) at three readings: the ruling's cost, with the setting of the 5NN words (cw_word_form) whatever it is. The
+// report glued to a keyword (TU5NN) is never reported without a signed reading, and from a list only (1) never.
 TEST(CallSearch, CommonWordsAreNoCalls) {
-    const auto rows = [](double form, int times) {
+    const auto rows = [](double form, int times, double evidence = 1.0) {
         CallSearchConfig config;
         config.cw_word_form = form;
+        config.cw_word_evidence = evidence;
         Stage s(config);
         s.born(1, 1000.0);
         for (int i = 0; i < times; ++i) s.text(1, 1000.0, "UR 5NN ANT G5RV RIG K3S LOG N1MM TU5NN ", 10.0 * i);
@@ -725,10 +735,14 @@ TEST(CallSearch, CommonWordsAreNoCalls) {
         std::sort(out.begin(), out.end());
         return out;
     };
-    const int bar = static_cast<int>(std::max(CallSearchConfig{}.cw_word_points, CallSearchConfig{}.short_points));
-    EXPECT_TRUE(rows(1.0, 6).empty());
-    EXPECT_TRUE(rows(2.0, bar - 1).empty());
-    EXPECT_EQ(rows(2.0, bar), (std::vector<std::string>{"G5RV", "K3S", "N1MM"}));
+    for (const double form : {1.0, 2.0}) {
+        for (const double evidence : {1.0, 0.0}) {
+            EXPECT_TRUE(rows(form, 1, evidence).empty()) << form << evidence;
+            EXPECT_EQ(rows(form, 2, evidence), (std::vector<std::string>{"G5RV", "N1MM"})) << form << evidence;
+            EXPECT_EQ(rows(form, 3, evidence), (std::vector<std::string>{"G5RV", "K3S", "N1MM"})) << form << evidence;
+            EXPECT_EQ(rows(form, 8, evidence), (std::vector<std::string>{"G5RV", "K3S", "N1MM"})) << form << evidence;
+        }
+    }
 }
 
 TEST(CallSearch, ACorrectionIsReadAsItStands) {
@@ -1079,9 +1093,10 @@ TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnlyAtOne) {
 }
 
 TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnlyAtOne) {
-    // K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), DJ5NN (listed): with cw_word_form 1 (always, before
-    // calls-list-1) from a list only. FN5NN, a prefix glued to 5NN that no list holds, is never reported, and with no list neither
-    // is any of them. On the bar, the default, each sent three times and signed is reported, FN5NN too (TU FN5NN K signs it).
+    // DJ5NN (listed): with cw_word_form 1 (always, before calls-list-1) from a list only. FN5NN, a prefix glued to 5NN that no list
+    // holds, is never reported, and with no list neither is DJ5NN. On the bar, the default, each sent three times and signed is
+    // reported, FN5NN too (TU FN5NN K signs it). K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), words of CW
+    // until the owner's ruling of 2026-11-22, are calls of their own shapes, reported as any call whatever the setting.
     const auto run = [](std::shared_ptr<const KnownCalls> known, double form = 1.0) {
         CallSearchConfig config;
         config.cw_word_form = form;
@@ -1094,13 +1109,13 @@ TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnlyAtOne) {
         std::sort(out.begin(), out.end());
         return out;
     };
-    EXPECT_TRUE(run(nullptr).empty());
+    EXPECT_EQ(run(nullptr), (std::vector<std::string>{"K9AY", "N1MM"}));
     auto known = std::make_shared<KnownCalls>();
     for (const char* call : {"K9AY", "N1MM", "DJ5NN"}) known->add(call);
     EXPECT_EQ(run(known), (std::vector<std::string>{"DJ5NN", "K9AY", "N1MM"}));
     EXPECT_EQ(run(nullptr, 2.0), (std::vector<std::string>{"DJ5NN", "FN5NN", "K9AY", "N1MM"}));
-    const auto r = readings("DE K9AY K");
-    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "K9AY"; });
+    const auto r = readings("DE DJ5NN K");
+    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "DJ5NN"; });
     ASSERT_NE(it, r.end());
     EXPECT_TRUE(it->cw_word);
 }
@@ -2259,22 +2274,32 @@ struct FormCase {
     double CallSearchConfig::*form;
     double CallSearchConfig::*points;
     double CallSearchConfig::*points_signed;
+    double CallSearchConfig::*evidence;  // the form's evidence rule (calls-form-3), at 0 in the tests of calls-list-1's bars; or none
 };
 
 const FormCase kFormCases[] = {
-    {"VK3FABC", &CallSearchConfig::unusual_form, &CallSearchConfig::unusual_points, &CallSearchConfig::unusual_points_signed},
-    {"C6AGU", &CallSearchConfig::prefix_digit_form, &CallSearchConfig::prefix_digit_points, &CallSearchConfig::prefix_digit_points_signed},
-    {"N1MM", &CallSearchConfig::cw_word_form, &CallSearchConfig::cw_word_points, &CallSearchConfig::cw_word_points_signed},
-    {"TM100TF", &CallSearchConfig::special_form, &CallSearchConfig::special_points, &CallSearchConfig::special_points_signed},
+    {"VK3FABC", &CallSearchConfig::unusual_form, &CallSearchConfig::unusual_points, &CallSearchConfig::unusual_points_signed, nullptr},
+    {"C6AGU", &CallSearchConfig::prefix_digit_form, &CallSearchConfig::prefix_digit_points, &CallSearchConfig::prefix_digit_points_signed,
+     &CallSearchConfig::truncation_evidence},
+    {"DJ5NN", &CallSearchConfig::cw_word_form, &CallSearchConfig::cw_word_points, &CallSearchConfig::cw_word_points_signed,
+     &CallSearchConfig::cw_word_evidence},
+    {"TM100TF", &CallSearchConfig::special_form, &CallSearchConfig::special_points, &CallSearchConfig::special_points_signed, nullptr},
 };
+
+// The defaults with the form's evidence rule at 0: every occurrence counts, against the bars of calls-list-1.
+CallSearchConfig every_occurrence(const FormCase& f) {
+    CallSearchConfig c;
+    if (f.evidence) c.*f.evidence = 0.0;
+    return c;
+}
 
 }  // namespace
 
 // Unlisted and bare, each form needs its *_points: one reading fewer is not enough, that many are (the owner's ruling, 2026-11-21:
-// several repeats, no signature required).
+// several repeats, no signature required). Every occurrence counted (the form's evidence rule at 0; the rules' own tests below).
 TEST(FormBars, UnsignedBelowTheBarIsNotReportedAtTheBarItIs) {
     for (const FormCase& f : kFormCases) {
-        const CallSearchConfig defaults;
+        const CallSearchConfig defaults = every_occurrence(f);
         ASSERT_EQ(defaults.*f.form, 2.0) << f.call;
         const int bar = static_cast<int>(defaults.*f.points);
         ASSERT_GT(bar, 2) << f.call;
@@ -2284,16 +2309,16 @@ TEST(FormBars, UnsignedBelowTheBarIsNotReportedAtTheBarItIs) {
 }
 
 // One counted signed reading lowers the bar to *_points_signed (3): a CQ and two bare repeats are enough, a CQ and one are not; and
-// the bar is the setting: at 2, a CQ and one repeat are enough.
+// the bar is the setting: at 2, a CQ and one repeat are enough. Every occurrence counted, as above.
 TEST(FormBars, ASignedReadingLowersTheBar) {
     for (const FormCase& f : kFormCases) {
-        const CallSearchConfig defaults;
+        const CallSearchConfig defaults = every_occurrence(f);
         const int signed_bar = static_cast<int>(defaults.*f.points_signed);
         ASSERT_EQ(signed_bar, 3) << f.call;
         ASSERT_LT(signed_bar, static_cast<int>(defaults.*f.points)) << f.call;
         EXPECT_FALSE(form_reported(defaults, nullptr, f.call, signed_bar - 2, true)) << f.call;
         EXPECT_TRUE(form_reported(defaults, nullptr, f.call, signed_bar - 1, true)) << f.call;
-        CallSearchConfig lower;
+        CallSearchConfig lower = every_occurrence(f);
         lower.*f.points_signed = 2.0;
         EXPECT_FALSE(form_reported(lower, nullptr, f.call, 0, true)) << f.call;
         EXPECT_TRUE(form_reported(lower, nullptr, f.call, 1, true)) << f.call;
@@ -2474,11 +2499,16 @@ TEST(FormBarsReview, AReportedFormCallIsNotWithdrawnByAWeakerFragment) {
     EXPECT_EQ(s.row("N1M"), nullptr);
 }
 
-// A call of two forms takes the higher bar: E7R (1x1 and prefix-digit), 5N55N (a cut number's shape and a special form), K3S (1x1 and
-// a word of CW); signed, the higher signed bar too: one signed reading and two bare are enough for each, and K3S's one and one not.
+// A call of two forms takes the higher bar: E7R (1x1 and prefix-digit), 5N55N (a cut number's shape and a special form), E5NN (a
+// prefix-digit form and a word of CW); signed, the higher signed bar too: one signed reading and two bare are enough for each, and
+// E5NN's one and one not. K3S, once a word of CW too, is a 1x1 only since the owner's ruling of 2026-11-22: three bare.
+// Every occurrence counted (the evidence rules at 0).
 TEST(FormBarsReview, TwoFormsTakeTheHigherBar) {
     const auto reported = [](const std::string& call, int bare, bool signed_first) {
-        Stage s;
+        CallSearchConfig config;
+        config.truncation_evidence = 0.0;
+        config.cw_word_evidence = 0.0;
+        Stage s(config);
         s.born(1, 1000.0);
         double t = 0.0;
         if (signed_first) {
@@ -2492,17 +2522,19 @@ TEST(FormBarsReview, TwoFormsTakeTheHigherBar) {
     const CallSearchConfig d;
     const int prefix_digit = static_cast<int>(std::max(d.prefix_digit_points, d.short_points));
     const int special = static_cast<int>(std::max(d.special_points, d.cut_number_points));
-    const int cw_word = static_cast<int>(std::max(d.cw_word_points, d.short_points));
+    const int cw_word = static_cast<int>(std::max(d.cw_word_points, d.prefix_digit_points));
     EXPECT_FALSE(reported("E7R", prefix_digit - 1, false));
     EXPECT_TRUE(reported("E7R", prefix_digit, false));
     EXPECT_TRUE(reported("E7R", 2, true));
     EXPECT_FALSE(reported("5N55N", special - 1, false));
     EXPECT_TRUE(reported("5N55N", special, false));
     EXPECT_TRUE(reported("5N55N", 2, true));
-    EXPECT_FALSE(reported("K3S", cw_word - 1, false));
-    EXPECT_TRUE(reported("K3S", cw_word, false));
-    EXPECT_TRUE(reported("K3S", 2, true));
-    EXPECT_FALSE(reported("K3S", 1, true));
+    EXPECT_FALSE(reported("E5NN", cw_word - 1, false));
+    EXPECT_TRUE(reported("E5NN", cw_word, false));
+    EXPECT_TRUE(reported("E5NN", 2, true));
+    EXPECT_FALSE(reported("E5NN", 1, true));
+    EXPECT_FALSE(reported("K3S", static_cast<int>(d.short_points) - 1, false));
+    EXPECT_TRUE(reported("K3S", static_cast<int>(d.short_points), false));
 }
 
 // A keyword before 5NN (K5NN, an issued US call; GM5NN, ES5NN, OM5NN, UR5NN, calls' forms of Scotland, Estonia, Slovakia, Ukraine)
@@ -2626,7 +2658,8 @@ TEST(BkAsAKeyword, TheProsignBkIsTheWordBk) {
     EXPECT_TRUE(has(readings("N1MM <BK>"), "N1MM", Role::Unknown));
 }
 
-// The stage: N1MM signed and sent with <BK> three times is reported exactly as with BK (the cw_word bar, signed: 3 points).
+// The stage: N1MM signed and sent with <BK> three times is reported exactly as with BK (any call's bar; a word of CW's, signed 3
+// points, before the owner's ruling of 2026-11-22).
 TEST(BkAsAKeyword, TheStageReadsBkAndItsProsignAlike) {
     const auto rows = [](const std::string& bk) {
         Stage s;
@@ -2651,4 +2684,427 @@ TEST(CallSearch, TheShortCallDefaults) {
     EXPECT_EQ(CallSearchConfig{}.cut_number_form, 2.0);
     EXPECT_EQ(CallSearchConfig{}.cut_number_points, 5.0);
     EXPECT_EQ(CallSearchConfig{}.cut_number_points_signed, 2.0);
+}
+
+// ---- The evidence each form's bar weighs (branch calls-form-3): evidence adjusts a bar, and no reading is excluded outright
+
+namespace {
+
+// Symbols with Morse-like gaps, from t_s on: each character 0.08 s, a letter gap 0.06 s, a space a word space (a " " symbol over a
+// gap of 0.14 s), and a '|' a gap of 0.12 s between two characters with no word space: a word space the decoder read as a letter gap.
+std::vector<DecodedSymbol> spaced(const std::string& text, double t_s) {
+    std::vector<DecodedSymbol> out;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == ' ') {
+            out.push_back({" ", 1.0f, t_s, t_s + 0.14});
+            t_s += 0.14;
+            continue;
+        }
+        if (text[i] == '|') {
+            t_s += 0.06;  // with the letter gap below, 0.12 s
+            continue;
+        }
+        if (!out.empty() && out.back().text != " ") t_s += 0.06;
+        out.push_back({std::string(1, text[i]), 1.0f, t_s, t_s + 0.08});
+        t_s += 0.08;
+    }
+    return out;
+}
+
+}  // namespace
+
+// The owner's DL3I-like case: a station signing DL3I, read five times, and read sometimes without its D as L3I (signed once, read
+// four times in all) on the same carrier. DL3I is reported; L3I's readings there, inside a reported call that contains it (within
+// truncation_hz and truncation_s), count at contained_weight (0.5) and do not lower the bar as signed, so four of them are not
+// enough, while eight are: a fragment is weighed down, never excluded. A real L3I elsewhere in the band, read four times, is
+// reported beside DL3I's fragments. Read six times there, L3I weighs 3 and is not reported; counting every occurrence in full
+// (truncation_evidence 0), its six readings pass and, more than DL3I's five, take DL3I's place.
+TEST(FormEvidence, AFragmentOfAReportedCallOnItsCarrierIsWeighedDown) {
+    const auto run = [](double evidence, int fragments, int elsewhere) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, 5000.0);
+        s->text(1, 1000.0, "CQ DE DL3I DL3I K ", 0.0);
+        for (int i = 0; i < fragments; ++i) s->text(1, 1000.0, i == 1 ? "DE L3I K " : "TU L3I ", 10.0 + 10.0 * i);
+        for (int i = 0; i < 3; ++i) s->text(1, 1000.0, "TU DL3I ", 10.0 + 10.0 * (fragments + i));
+        for (int i = 0; i < elsewhere; ++i) s->text(2, 5000.0, "TU L3I ", 15.0 + 10.0 * i);
+        s->search.advance(200.0);
+        return std::make_pair(s->row("DL3I") != nullptr, s->row("L3I") != nullptr);
+    };
+    const CallSearchConfig d;
+    ASSERT_EQ(d.truncation_evidence, 1.0);
+    ASSERT_EQ(d.contained_weight, 0.5);
+    EXPECT_EQ(run(1.0, 4, 0), std::make_pair(true, false));
+    EXPECT_TRUE(run(1.0, 8, 0).second);
+    EXPECT_EQ(run(1.0, 4, 4), std::make_pair(true, true));
+    EXPECT_FALSE(run(1.0, 6, 0).second);
+    EXPECT_TRUE(run(0.0, 6, 0).second);
+}
+
+// A 1x1 fragment reported before its longer call (KN4KX read as N4K four times bare) leaves when the longer call is reported on
+// its carrier within truncation_s, its four readings then weighing 2 points against its bar of 3: the containment alone makes it
+// fail. Another N4K, 4 kHz away, read as often, stays.
+TEST(FormEvidence, AFragmentReportedFirstLeavesWhenItsLongerCallIsReported) {
+    const auto run = [](double evidence, double fragment_hz) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        auto s = std::make_unique<Stage>(config);
+        s->born(1, 1000.0);
+        s->born(2, fragment_hz);
+        for (int i = 0; i < 4; ++i) s->text(2, fragment_hz, "TU N4K ", 20.0 * i);
+        s->search.advance(100.0);
+        EXPECT_NE(s->row("N4K"), nullptr) << evidence << " " << fragment_hz;
+        s->text(1, 1000.0, "CQ DE KN4KX KN4KX K ", 110.0);
+        s->search.advance(160.0);
+        EXPECT_NE(s->row("KN4KX"), nullptr) << evidence << " " << fragment_hz;
+        return s->row("N4K") != nullptr;
+    };
+    EXPECT_FALSE(run(1.0, 1000.0));
+    EXPECT_TRUE(run(1.0, 5000.0));
+    EXPECT_TRUE(run(0.0, 1000.0));
+}
+
+// A C6AGU-like caller (prefix-digit) with no call containing it: every reading counts in full against the bar of calls-list-1 (4,
+// 3 with a signed reading), which a lower bar would have changed for the worse (calls-form-3: a generated false call, measured):
+// heard twice, bare or once signed, it is not reported; four times bare, or three with one signed, it is.
+TEST(FormEvidence, ACallerWithNoContainingCallNeedsItsBar) {
+    const auto run = [](int bare, bool signed_first) {
+        Stage s;
+        s.born(1, 1000.0);
+        double t = 0.0;
+        if (signed_first) {
+            s.text(1, 1000.0, "DE C6AGU K ", t);
+            t += 20.0;
+        }
+        for (int i = 0; i < bare; ++i, t += 20.0) s.text(1, 1000.0, "TU C6AGU 5NN ", t);
+        s.search.advance(t + 30.0);
+        return s.row("C6AGU") != nullptr;
+    };
+    EXPECT_FALSE(run(2, false));
+    EXPECT_FALSE(run(1, true));
+    EXPECT_FALSE(run(3, false));
+    EXPECT_TRUE(run(4, false));
+    EXPECT_TRUE(run(2, true));
+}
+
+// K1ABC followed by K never gives K1ABCK: a US call has at most three letters after its digit (no call's form). The join form has no
+// rule of its own (calls-form-3 measured one, weighing a reading with a long gap before a last K, R, E, I or T, and dropped it:
+// it changed no call on any replay or generated set): a real call ending in K whose gap before the K the decoder stretched (the
+// review's VK3FAB|K) is reported on its bar, four bare readings or a signed one and two more, as any call of the form.
+TEST(FormEvidence, ACallEndingInKWithALongGapNeedsOnlyItsBar) {
+    EXPECT_FALSE(is_call("K1ABCK"));
+    const auto first_reported = [](bool signed_first) {
+        for (int n = 1; n <= 10; ++n) {
+            Stage s;
+            s.born(1, 1000.0);
+            double t = 0.0;
+            if (signed_first) {
+                s.symbols_text(1, 1000.0, spaced("CQ DE VK3FAB|K ", t));
+                t += 20.0;
+            }
+            for (int i = 0; i < n; ++i, t += 20.0) s.symbols_text(1, 1000.0, spaced("TU VK3FAB|K 5NN ", t));
+            s.search.advance(t + 30.0);
+            if (s.row("VK3FABK")) return n;
+        }
+        return 0;
+    };
+    EXPECT_EQ(first_reported(false), static_cast<int>(CallSearchConfig{}.unusual_points));
+    EXPECT_EQ(first_reported(true), static_cast<int>(CallSearchConfig{}.unusual_points_signed) - 1);
+    Stage s;
+    s.born(1, 1000.0);
+    for (int i = 0; i < 4; ++i) s.symbols_text(1, 1000.0, spaced("CQ DE K1ABC|K ", 20.0 * i));
+    s.search.advance(120.0);
+    EXPECT_EQ(s.row("K1ABCK"), nullptr);
+    EXPECT_NE(s.row("K1ABC"), nullptr);
+}
+
+// Running text that names a logger and an antenna with a call's form: since the owner's ruling (2026-11-22, "No on keeping the list
+// of calls for now") they are calls of their own shapes, so read twice (any call's bar) they are reported, once not, with the frame
+// rule or without: the ruling's cost, which the false-call checks on casual-QSO recordings measure.
+TEST(FormEvidence, RunningTextCountsAsBefore) {
+    const auto run = [](double evidence, int times) {
+        CallSearchConfig config;
+        config.cw_word_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        for (int i = 0; i < times; ++i) s.text(1, 1000.0, "RIG HR IS K3 ES ANT IS K9AY LOOP ES LOG IS N1MM LOGGER HW ", 20.0 * i);
+        s.search.advance(20.0 * times + 40.0);
+        std::vector<std::string> out;
+        for (const CallRow& r : s.search.calls()) out.push_back(r.base);
+        std::sort(out.begin(), out.end());
+        return out;
+    };
+    for (const double evidence : {1.0, 0.0}) {
+        EXPECT_TRUE(run(evidence, 1).empty()) << evidence;
+        EXPECT_EQ(run(evidence, 2), (std::vector<std::string>{"K9AY", "N1MM"})) << evidence;
+    }
+}
+
+// A 5NN word that is a call (DJ5NN, a German call's shape and in MASTER.SCP), in the frames of an ordinary QSO
+// (CallReading::qso_frame: DE before or after, or sent twice): framed occurrences from two overs (cw_word_frame_overs) are enough,
+// W1AW DE DJ5NN K and then DJ5NN DE W1AW on W1AW's carrier; one over is not, however framed (K1ABC DE DJ5NN DJ5NN K). Calling CQ it
+// passes on the signed bar (3): one CQ CQ DE DJ5NN DJ5NN K is 2 signed points, two are 4. Named with a report (DJ5NN 5NN) it needs
+// the bar of every reading: four, not two. Without the rule (cw_word_evidence 0) the two overs are not enough.
+TEST(FormEvidence, A5nnCallInTwoOversOfAQsoIsReportedSooner) {
+    const auto run = [](double evidence, const std::vector<std::pair<double, std::string>>& texts) {
+        CallSearchConfig config;
+        config.cw_word_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 1100.0);
+        double end = 0.0;
+        for (const auto& [hz, text] : texts) {
+            s.text(hz == 1000.0 ? 1 : 2, hz, text, end);
+            end += 20.0;
+        }
+        s.search.advance(end + 40.0);
+        return s.row("DJ5NN") != nullptr;
+    };
+    const CallSearchConfig d;
+    ASSERT_EQ(d.cw_word_frame_overs, 2.0);
+    ASSERT_EQ(d.over_gap_s, 10.0);
+    EXPECT_TRUE(run(1.0, {{1000.0, "W1AW DE DJ5NN K "}, {1100.0, "DJ5NN DE W1AW R TNX "}}));
+    EXPECT_FALSE(run(0.0, {{1000.0, "W1AW DE DJ5NN K "}, {1100.0, "DJ5NN DE W1AW R TNX "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "K1ABC DE DJ5NN DJ5NN K "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "CQ CQ DE DJ5NN DJ5NN K "}}));
+    EXPECT_TRUE(run(1.0, {{1000.0, "CQ CQ DE DJ5NN DJ5NN K "}, {1000.0, "CQ CQ DE DJ5NN DJ5NN K "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}}));
+    EXPECT_TRUE(run(1.0, {{1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}}));
+    // The frames, reading by reading: DE either side, or sent twice; a sign-off after the word alone is none.
+    const auto frame = [](const std::string& text) {
+        for (const CallReading& r : readings(text))
+            if (r.base == "DJ5NN") return r.qso_frame;
+        return false;
+    };
+    EXPECT_TRUE(frame("DE DJ5NN"));
+    EXPECT_TRUE(frame("DJ5NN DE K1ABC"));
+    EXPECT_TRUE(frame("DJ5NN DJ5NN"));
+    EXPECT_FALSE(frame("DJ5NN BK"));
+    EXPECT_FALSE(frame("DJ5NN K"));
+    EXPECT_FALSE(frame("DJ5NN <SK>"));
+    EXPECT_FALSE(frame("IS DJ5NN LOGGER"));
+    EXPECT_FALSE(frame("DJ5NN 5NN"));
+}
+
+// The review's conversation probes (calls-form-3). The 5NN words, sent twice in one over or before a sign-off, are not reported,
+// with the frame rule or without: a word sent twice in one over is one over, a sign-off after it no frame. The rigs', antennas'
+// and loggers' names are calls of their own shapes since the owner's ruling (2026-11-22), so these are measurements, the ruling's
+// cost: sent twice in one over (G5RV G5RV, N1MM N1MM, W2DU W2DU: two readings, framed by the repeat), each is reported at any
+// call's bar of 2, and G5RV, K9AY and HF6V (a Polish call's shape) read once in each of two overs too; once only (ANT HR IS G5RV K,
+// DE N1MM) none is.
+TEST(FormEvidence, TheReviewsConversationProbes) {
+    const std::vector<std::tuple<std::string, std::vector<std::string>, bool>> cases = {
+        {"NN5NN", {"UR NN5NN NN5NN "}, false},
+        {"RR5NN", {"RR5NN K ", "RR5NN K "}, false},
+        {"E5NN", {"UR E5NN E5NN "}, false},
+        {"G5RV", {"UR RST 579 579 ES ANT G5RV G5RV HW "}, true},
+        {"G5RV", {"ANT HR IS G5RV K "}, false},
+        {"G5RV", {"ANT HR IS G5RV K ", "ANT HR ALSO G5RV BK "}, true},
+        {"K9AY", {"RX ANT K9AY BK ", "TNX FER INFO ON K9AY KN "}, true},
+        {"N1MM", {"LOG IS N1MM N1MM "}, true},
+        {"N1MM", {"QSL VIA LOTW DE N1MM "}, false},
+        {"HF6V", {"ANT IS HF6V AR ", "ANT HF6V SK "}, true},
+        {"W2DU", {"BALUN IS W2DU W2DU "}, true},
+    };
+    for (const double evidence : {1.0, 0.0}) {
+        for (const auto& [call, overs, reported] : cases) {
+            CallSearchConfig config;
+            config.cw_word_evidence = evidence;
+            Stage s(config);
+            double t = 0.0;
+            std::uint32_t id = 1;
+            for (const std::string& over : overs) {
+                s.born(id, 1000.0 + 700.0 * id);
+                s.text(id, 1000.0 + 700.0 * id, over, t);
+                ++id;
+                t += 60.0;
+            }
+            s.search.advance(t + 30.0);
+            EXPECT_EQ(s.row(call) != nullptr, reported) << call << " " << overs.front() << " " << evidence;
+        }
+    }
+}
+
+// The review's pileup probes: a 1x1 running a pileup (N4A, K4N) whose caller's call contains it (KN4ABC 60 Hz away, K4NXX 80 Hz
+// away) stays reported through the QSO and the ones after: a caller's carrier is no fragment's (truncation_hz, 10 Hz); and a 1x1
+// beside such a caller needs as many readings as without the rule.
+TEST(FormEvidence, APileupsCallerContainingTheRunnerDoesNotWeighItDown) {
+    for (const double evidence : {1.0, 0.0}) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 1060.0);
+        s.born(3, 950.0);
+        s.text(1, 1000.0, "CQ N4A N4A K ", 0.0);
+        s.search.advance(14.0);
+        ASSERT_NE(s.row("N4A"), nullptr) << evidence;
+        s.text(2, 1060.0, "KN4ABC KN4ABC ", 8.0);
+        s.text(1, 1000.0, "KN4ABC 5NN ", 14.0);
+        s.text(2, 1060.0, "TU 5NN ", 20.0);
+        s.text(1, 1000.0, "TU N4A ", 26.0);
+        double t = 30.0;
+        for (int q = 0; q < 6; ++q) {
+            s.text(3, 950.0, "W1AB W1AB ", t);
+            s.text(1, 1000.0, "W1AB 5NN ", t + 6);
+            s.text(1, 1000.0, "TU N4A ", t + 18);
+            t += 25.0;
+            s.search.advance(t + 12.0);
+            EXPECT_NE(s.row("N4A"), nullptr) << evidence << " " << q;
+        }
+        EXPECT_EQ(s.search.withdrawn(), 0u) << evidence;
+    }
+    const auto needed = [](double evidence) {
+        for (int n = 1; n <= 8; ++n) {
+            CallSearchConfig config;
+            config.truncation_evidence = evidence;
+            Stage s(config);
+            s.born(1, 1000.0);
+            s.born(2, 1080.0);
+            s.text(2, 1080.0, "DE K4NXX K4NXX K ", 0.0);
+            for (int i = 0; i < n; ++i) s.text(1, 1000.0, "TU K4N ", 10.0 + 12.0 * i);
+            s.search.advance(200.0);
+            if (s.row("K4N")) return n;
+        }
+        return 0;
+    };
+    EXPECT_EQ(needed(1.0), needed(0.0));
+    EXPECT_EQ(needed(1.0), static_cast<int>(CallSearchConfig{}.short_points));
+}
+
+// The review's probe of a container withdrawn later: K4N read four times beside AK4NB (reported) on its carrier weighs 2 and is not
+// reported; when AK4MB, read more, takes AK4NB's place and AK4NB leaves, K4N is judged again and reported. Without the rule it is
+// reported on its own readings.
+TEST(FormEvidence, AFragmentIsJudgedAgainWhenItsContainerLeaves) {
+    for (const double evidence : {1.0, 0.0}) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 1005.0);
+        s.born(3, 1005.0);
+        s.text(2, 1005.0, "DE AK4NB AK4NB K ", 0.0);
+        for (int i = 0; i < 4; ++i) s.text(1, 1000.0, "TU K4N ", 10.0 + 15.0 * i);
+        s.search.advance(90.0);
+        EXPECT_NE(s.row("AK4NB"), nullptr) << evidence;
+        EXPECT_EQ(s.row("K4N") != nullptr, evidence == 0.0);
+        for (int i = 0; i < 4; ++i) s.text(3, 1005.0, "DE AK4MB AK4MB K ", 100.0 + 15.0 * i);
+        s.search.advance(200.0);
+        EXPECT_NE(s.row("AK4MB"), nullptr) << evidence;
+        EXPECT_EQ(s.row("AK4NB"), nullptr) << evidence;
+        EXPECT_NE(s.row("K4N"), nullptr) << evidence;
+    }
+}
+
+TEST(FormEvidence, TheDefaults) {
+    const CallSearchConfig d;
+    EXPECT_EQ(d.truncation_evidence, 1.0);
+    EXPECT_EQ(d.truncation_hz, 10.0);
+    EXPECT_EQ(d.truncation_s, 120.0);
+    EXPECT_EQ(d.contained_weight, 0.5);
+    EXPECT_EQ(d.cw_word_evidence, 1.0);
+    EXPECT_EQ(d.cw_word_frame_overs, 2.0);
+    EXPECT_EQ(d.over_gap_s, 10.0);
+}
+
+// The review's probe of a real 1x1 whose sign-off K is sometimes glued to it (CQ DE K4N K4NK): K4N is reported, with the rule or
+// without.
+TEST(FormEvidence, AOneByOneWithItsSignOffGluedIsReported) {
+    for (const double evidence : {1.0, 0.0}) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        double t = 0.0;
+        for (int i = 0; i < 4; ++i, t += 30.0) s.text(1, 1000.0, "CQ DE K4N K4NK ", t);
+        s.text(1, 1000.0, "TU K4N ", t);
+        s.search.advance(t + 30.0);
+        EXPECT_NE(s.row("K4N"), nullptr) << evidence;
+    }
+}
+
+// The re-review's probe of a runner and a zero-beat caller: N4A, reported on its signed CQ, works KN4ABC 5 Hz off (a caller tuned to
+// zero beat, whose call contains it) and then other callers. Reported on a signed reading, N4A is not weighed by containment again
+// while it stays reported (Candidate::reported_signed), so it stays on the list throughout, as on `main`.
+TEST(FormEvidence, ASignedRunnerIsNotWithdrawnByAZeroBeatCaller) {
+    for (const double evidence : {1.0, 0.0}) {
+        CallSearchConfig config;
+        config.truncation_evidence = evidence;
+        Stage s(config);
+        s.born(1, 1000.0);
+        s.born(2, 1005.0);
+        s.born(3, 950.0);
+        s.text(1, 1000.0, "CQ N4A N4A K ", 0.0);
+        s.search.advance(14.0);
+        ASSERT_NE(s.row("N4A"), nullptr) << evidence;
+        s.text(2, 1005.0, "KN4ABC KN4ABC ", 8.0);
+        s.text(1, 1000.0, "KN4ABC 5NN ", 14.0);
+        s.text(2, 1005.0, "TU 5NN ", 20.0);
+        s.text(1, 1000.0, "TU N4A ", 26.0);
+        s.search.advance(40.0);
+        EXPECT_NE(s.row("N4A"), nullptr) << evidence;
+        double t = 30.0;
+        for (int q = 0; q < 6; ++q) {
+            s.text(3, 950.0, "W1AB W1AB ", t);
+            s.text(1, 1000.0, "W1AB 5NN ", t + 6);
+            s.text(1, 1000.0, "TU N4A ", t + 18);
+            t += 25.0;
+            s.search.advance(t + 12.0);
+            EXPECT_NE(s.row("N4A"), nullptr) << evidence << " " << q;
+        }
+        EXPECT_EQ(s.search.withdrawn(), 0u) << evidence;
+    }
+}
+
+// The re-review's flicker probe: K4N reported on its signed CQ; AK4NB, containing it, reported on its carrier 3 Hz off; then AK4MB,
+// read more, takes AK4NB's place. K4N stays reported throughout, whatever the tracks' ids; only AK4NB leaves.
+TEST(FormEvidence, ASignedOneByOneStaysThroughAContainersRiseAndFall) {
+    for (const bool swap : {false, true}) {
+        Stage s;
+        const std::uint32_t a = swap ? 3 : 1, b = 2, m = swap ? 1 : 3;
+        s.born(a, 1000.0);
+        s.born(b, 1003.0);
+        s.born(m, 1003.0);
+        s.text(a, 1000.0, "CQ K4N K4N K ", 0.0);
+        s.search.advance(14.0);
+        ASSERT_NE(s.row("K4N"), nullptr) << swap;
+        s.text(b, 1003.0, "DE AK4NB AK4NB K ", 20.0);
+        s.search.advance(35.0);
+        EXPECT_NE(s.row("K4N"), nullptr) << swap;
+        EXPECT_NE(s.row("AK4NB"), nullptr) << swap;
+        for (int i = 0; i < 4; ++i) s.text(m, 1003.0, "DE AK4MB AK4MB K ", 40.0 + 15.0 * i);
+        s.search.advance(120.0);
+        EXPECT_NE(s.row("K4N"), nullptr) << swap;
+        EXPECT_EQ(s.row("AK4NB"), nullptr) << swap;
+        EXPECT_NE(s.row("AK4MB"), nullptr) << swap;
+        EXPECT_EQ(s.search.withdrawn(), 1u) << swap;
+    }
+}
+
+// The re-review's over probes. Two framed DJ5NN readings 15 s apart on two tracks are two overs in either track order. One long over
+// with DE DJ5NN at both ends counts as two overs when its two readings lie more than over_gap_s (10 s) apart, here 10.5 s at the
+// test's 0.1 s a character, and is reported (a limitation: the overs are told by the pause, not by the sign-off); the same over with
+// its readings 7 s apart is one over and not reported.
+TEST(FormEvidence, OversAreToldByTheirPauseInEitherTrackOrder) {
+    for (const bool swap : {false, true}) {
+        Stage s;
+        const std::uint32_t a = swap ? 2 : 1, b = swap ? 1 : 2;
+        s.born(a, 1000.0);
+        s.born(b, 1100.0);
+        s.text(a, 1000.0, "W1AW DE DJ5NN K ", 15.0);
+        s.text(b, 1100.0, "DJ5NN DE W1AW ", 0.0);
+        s.search.advance(60.0);
+        EXPECT_NE(s.row("DJ5NN"), nullptr) << swap;
+    }
+    const auto one_over = [](const std::string& text) {
+        Stage s;
+        s.born(1, 1000.0);
+        s.text(1, 1000.0, text, 0.0);
+        s.search.advance(60.0);
+        return s.row("DJ5NN") != nullptr;
+    };
+    EXPECT_TRUE(one_over("DE DJ5NN UR RST 599 599 NAME HANS HANS QTH BONN BONN RIG IC7300 ES ANT DIPOLE UP 10M WX CLOUDY TEMP 5C HW CPY DE DJ5NN K "));
+    EXPECT_FALSE(one_over("DE DJ5NN UR RST 599 599 NAME HANS QTH BONN RIG IC7300 ES ANT DIPOLE HW CPY DE DJ5NN K "));
 }

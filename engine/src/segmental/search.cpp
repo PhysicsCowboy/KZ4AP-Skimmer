@@ -929,8 +929,10 @@ void Search::Impl::boundary(std::int64_t j) {
             if (other.space) note_rival(entry, other.text, {Pending{" ", t, t}, letter_end}, 2, silent_end - second_end);
             else note_rival(entry, other.text, {letter_end, Pending{}}, 1, silent_end - second_end);
         }
-        // A birth's rise window starts 5 samples after it, so the tail's last position, 10 + n after the fall, must stand before it.
-        const int tail_delay = std::max(kEdgeCount, sums.tail_positions() + kEdgeCount);
+        // A birth's rise window starts 5 samples after it, so the tail's last position, 10 + n after the fall, must stand before it:
+        // n the tail of the fall claimed at j, not of the last sample pushed, which at the stream's end is a flush sample with no tail
+        // (text-tail-2: a mark the end cut off read as a row of one-sample E's).
+        const int tail_delay = std::max(kEdgeCount, sums.tail_length(j) + kEdgeCount);
         Tail& tail = tails[static_cast<std::size_t>((j + tail_delay) % static_cast<std::int64_t>(tails.size()))];
         const double score = silent_end + tail_delay * model.log_silence();
         // An over's end due at the same boundary from a shorter tail: the better stays.

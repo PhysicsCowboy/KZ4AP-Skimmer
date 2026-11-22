@@ -354,13 +354,11 @@ to offer its ends. For a sample of a claimed mark or edge,
   score_k(story) = ln Σ_l P̂_t(k)(l) exp(wΛ(a_l; e_k, s_k(story))),
 
 0 for key-up; P̂ is a belief per frame t, not per story. Prior and Λ are section
-8d's, with f = 0.1 (chosen by measurement). `--decoder segmental`,
-`FrontEnd::Segmental`; code in `engine/src/segmental/`.
+8d's, with f = 0.1 (chosen by measurement). `--decoder segmental`; code in `engine/src/segmental/`.
 
 **Two streams.** A channel runs stages 1 to 6 at *filter scales* m = 1, 3
 (heuristic by measurement), one *stream* each; no story crosses between streams,
-and stage 7 chooses whose text goes out. A front filter matched to 12 ms leaves a
-neighbor within about 60 Hz in the wanted station's gaps. Scale m multiplies by m
+and stage 7 chooses whose text goes out (why: A.8e). Scale m multiplies by m
 the filter's dot, Δ and the fastest dot; the slowest stays within a step:
 
 | m | Filter dot | Taps | σ_y²/N₀ | Δ | Speeds |
@@ -391,11 +389,12 @@ its peak over 0.2 s (9 blocks), per stream; P_k the spectrum's bins |k| = 3 to 1
 derived; +3 dB re the leak and 0.2 s by measurement; 60 Hz, 320 Hz heuristics. A strong station's own keying, spread by the
 analyzer, reads as such a leak (noise only, stage 3); a variant subtracts it (A.8e).
 
-*The channel's tail* (text-fast-1). A delayed or scattered path delivers power after a mark's fall (the owner's 80 m clips:
-−10 to −15 dB re the mark for 40 ms, incoherent). Each stream learns g_m, the power m samples after a claimed fall
-re the mark's: for each run above +10 dB re F with median M ≥ +20 dB re F, the mean of (e² − F)/M after its last sample ≥ M/4 (the
-template's half point, h = 7; derived) until the next run, read at m − h, memory 200 runs. On if g₁₁ ≥ −15 dB re the mark;
-kept to −25 dB re the mark or 48 ms (heuristics).
+*The channel's tail.* Scattered power follows a mark's fall (the owner's 80 m clips: −10 to
+−15 dB re the mark for 40 ms, incoherent, 0.06 to 0.24 dB per dB of the mark's power). Per stream, runs above +10 dB re F
+with median M ≥ +20 dB re F give e² − F from their last sample ≥ M/4 (h = 7, the template's half point; derived) to the next run,
+at m − h, memory 200 runs: the tail is g_m min(M̄, 4a²), g_m = Σ(e² − F)/ΣM, M̄ every run's M over 20 runs, 4a² 6 dB above
+the belief's level (the station's own tail). On if the mean of (e² − F)/M at m = 11 is ≥ −15 dB re the mark, to −25 dB re the mark
+or 48 ms, from the 33rd run (heuristics; the two statistics' split chosen on one clip). A variant, off: g_m a².
 
 **Stage 3: the level filter.** A hidden Markov model over key (up, down) × level:
 
@@ -408,15 +407,14 @@ kept to −25 dB re the mark or 48 ms (heuristics).
   frames ln a walks with variance 4.8² nepers²/s × 21.33 ms = (0.70 nepers)²
   (chosen by measurement), as 25 passes of (p, 1 − 2p,
   p), p = 0.3296, ends reflecting; and jumps anywhere with probability 0.05 s⁻¹ ×
-  21.33 ms = 1.07 × 10⁻³ (heuristic). A variant, off, widens the walk linearly in dB from +20 to
-  +40 dB S₅₀₀ re F, to a set value (A.8e).
+  21.33 ms = 1.07 × 10⁻³ (heuristic). A variant, off, widens the walk with the level (A.8e).
 - *Emission:* key-up 1; key-down exp(x_k(l)), x_k(l) = wΛ(a_l; e_k, 1), with f′² =
   f² + (0.1727 nepers)²/12, f′ = 0.1117: the second term is the grid's own variance
   (derived).
 - *Belief:* the forward message runs every sample; the backward message, from flat,
   over the last 16 frames every 8. P̂_t(l) ∝ (forward into frame t) × (backward
   into t's end), key summed out of each: extrinsic of the frame's own 8 samples. Commit lag 170.7 to 338.7 ms.
-- *Walk set by the Doppler spread* (text-fast-1): on the widest stream's complex y inside each mark (runs split at −10 dB re
+- *Walk set by the Doppler spread:* on the widest stream's complex y inside each mark (runs split at −10 dB re
   their median, 8 ms in), |ρ(τ)| = |Σ y_(k+τ)y*_k − F ρ_n(τ)| / √(Σ(|y_k|² − F) Σ(|y_(k+τ)|² − F)), memory 100 runs;
   f_D = 2σ_D from |ρ(21.33 ms)| = exp(−2π²σ_D²τ²) (Gaussian spectrum; derived). From 3 Hz (back under 2.5 Hz), runs at +10 dB S₅₀₀
   or more, a spread's shape (ln |ρ| ∝ τ² within 0.4 to 1.6 at 8 to 18.67 ms) and each run's own |Σ| reading ≥ f_D/2,
@@ -432,11 +430,9 @@ to j scores
 
   rise(i) + C[j+5] − C[i+11] + fall(j) (nats).
 
-The template is taken as 0 below m = 5 and 1 from m = 11 (derived approximation:
-|s₄| = 8 × 10⁻⁴, s₁₁ = 1.0023). It holds for elements of at least 6 samples (16 ms,
-a dot at 75 WPM), whose windows do not overlap. With a tail, F_k[m] adds g₁₁ to v_m, and each sample yields, for a fall claimed at
-k − 11 − q, T_k[q] = ln Σ P̂ exp(w(z²ρ/(1 + ρ) − ln(1 + ρ))), ρ = g_(11+q)a²/σ²: noise plus a zero-mean Gaussian of the tail's power
-(derived).
+The template is taken as 0 below m = 5 and 1 from m = 11 (derived approximation; A.8e). It holds for elements of at least 6 samples (16 ms,
+a dot at 75 WPM), whose windows do not overlap. With a tail, ρ_q = g_(11+q) min(M̄, 4a²)/σ²: the fall's window takes noise σ²(1 + ρ₀) in whole grid steps (an approximation), and each sample yields, for a fall claimed at k − 11 − q, T_k[q] = w(z²ρ_q/(1 + ρ_q) − ln(1 + ρ_q)): noise
+plus a zero-mean Gaussian of the tail's power (derived).
 
 **Stage 5: the search.** Boundary j is searched once evidence through j + 16
 exists. An open element holds a *base*:
@@ -448,12 +444,12 @@ exists. An open element holds a *base*:
   same node), a letter gap and a word gap (a mark at the root, paying the
   letter's end, the next one's start and the gap's cost). With a tail of n positions a gap from i to j adds Σ T[q], q < min(n,
   j − i − 6), before the next rise's window; its reach likewise.
-- Offers merge by (j, speed, node, kind), the best kept: exact given the shared evidence, the next element depending on nothing else.
+- Offers merge by (j, speed, node, kind), the best kept (exact: the next element depends on nothing else).
 - Lengths end within e^(±4σ) of the median (heuristic).
 - *Fist:* `s` above is (speed, weight w, gap stretch g), taken at an over's first mark. A mark lasts wT_s longer and the
   gap after it wT_s shorter (a keyer's weight; variant: medians moved): w = 0, 0.2, 0.4 dots, ln 0.99 for 0,
-  −5.3 nats else, at g = 1 only. Letter and word gaps: medians 3gT_s, 7gT_s (Farnsworth), g = 1.61ⁿ, n ≤ 6,
-  gT_s ≤ 0.7 s, ln 0.998 for g = 1, −8.0 nats else. Heuristics by measurement (A.8e).
+  −5.3 nats else, at g = 1 only. Letter and word gaps: medians 3gT_s, 7gT_s (Farnsworth; ARRL's rule stretches both alike),
+  g = 1.61ⁿ, n ≤ 6, gT_s ≤ 0.7 s, ln 0.998 for g = 1, −8.0 nats else. Heuristics by measurement (A.8e).
 
 *Short elements.* Below 6 samples two edges overlap. The whole element is then scored with its pair's template, s_m − s_(m−L)
 (a gap: 1 minus that), variance v_m + v_(m−L) − 2c[m][m−L] (derived), only when a story can end one.
@@ -465,7 +461,7 @@ computed once per boundary. Beam 15 nats; ceiling 1 500 elements, a stretched fi
 (kind, fist, node) where one opened within T_s/8 stands as high. All heuristics by measurement (A.8e).
 
 **Stage 6: over's tail, births, rescue.** An over's end at j costs the letter's
-end and 4.296 nats and reaches the no-signal story at j + 6 (j + n + 6 with a tail of n positions, adding all n), paying ln(1 − P)
+end and 4.296 nats and reaches the no-signal story at j + 6 (j + n + 6, n the fall's tail positions, adding all n), paying ln(1 − P)
 a sample, so that a birth's rise window cannot overlap the fall's or the tail's. A birth opens a mark of
 open speed; its end offers every speed at ln(1/32). A rescue opens the same from
 the best story starting a letter there, at ln ε for ln(1 − ε), text kept. If nothing stands, the no-signal story restarts at the best score and text.
@@ -473,17 +469,13 @@ the best story starting a letter there, at ln ε for ln(1 − ε), text kept. If
 **Stage 7: text.** Every 0.25 s of stream the best story's last 64 symbols are
 compared with what has gone out (heuristics): new symbols, or a correction; a letter
 still open waits. At the channel's end the whole text is compared. Probability 1 per character (a
-placeholder). A variant, not the default,
-keeps a margin per symbol from the merges' runners-up (A.8e, "Margins").
+placeholder). A variant, off, keeps a margin per symbol from the merges' runners-up (A.8e, "Margins").
 
 *Speed* (the list's): the median character speed of the last 16 letters (A.9b).
 
-*Which stream.* The stream with the largest S − F since 1.5 s of age leads (S its best story's score, F a free on-off key's, 5
-switches/s); a narrower one needs half the widest's symbols or 100 nats, and 120 nats above the leader, and from 10 s is dropped if
-ineligible or 30 nats behind. The widest stays; the judge reads it (heuristics; A.8e).
+*Which stream.* The stream with the largest S − F since 1.5 s of age leads (S its best story's score, F a free on-off key's, 5 switches/s), a narrower one only with half the widest's symbols or 100 nats and 120 nats above the leader; from 10 s one ineligible or 30 nats behind is dropped. The widest stays, read by the judge (heuristics; A.8e).
 
-Scores are not probabilities: a MAP search under a real prior, the likelihood approximated
-(A.8e, "What a score is").
+Scores are a MAP search's, not probabilities (A.8e, "What a score is").
 
 ## 9. Timing and latency
 
@@ -541,36 +533,37 @@ with the least evidence closing first (A.9b). A radio silent 5 s is flagged.
 
 `CallSearch` reads any decoder's text; values heuristic unless marked (A.12).
 
-**Words.** Each stream-second it reads text 10 s old and rereads changes up to 200 s back, keeping old
-readings. Words end at a word space, prosign (<BK> reads BK) or punctuation; neighbors' symbols count.
+**Words.** Each second it reads text 10 s old (changes: 200 s back, keeping old readings). Words end at a
+space, prosign (<BK> reads BK) or punctuation; neighbors' symbols count.
 
-**Readings.** A call's form (RR 19.68; sourced): an allocated prefix of one or two
-characters (three: 3DA0), one digit, one to four letters (US: one to three), or a letter-digit prefix
-and letters (C6AGU). 1 point: a whole word, or glued to a keyword or
-itself. 0.75: short words joined (N 5 JJ), unless periodic. 0.5: a stray E, T, I
+**Readings.** Form (RR 19.68; sourced): an allocated prefix of 1–2 characters (3DA0: 3), a
+digit, 1–4 letters (US: 1–3), or a letter-digit prefix and letters (C6AGU). 1 point: a word alone or glued to a
+keyword or itself. 0.75: short words joined (N 5 JJ), unless periodic. 0.5: a stray E, T, I
 before or E, T, K after, or an X before (TU run on: XW3RJ). A Viterbi cuts unsplit words
-(DEK8DXK8DXK8DXK): a call there (1 point) needs a repeat, DE before, or DE after and K; an
-unplaceable last E, I or K gives both, 0.5 each.
+(DEK8DXK8DXK8DXK); a call there (1 point) needs a repeat, DE before, or DE after and K; an
+unplaceable last E, I, K: both (0.5).
 
-**Role.** Before DE or 5NN: *named*. After DE, CQ, CQ and an event word (A.12) or TEST, or before K: *signed*. Else *bare*.
+**Role.** Before DE or 5NN: *named*. After DE, CQ, CQ and an event word (A.12), TEST, or before K: *signed*. Else *bare*.
 
-**Evidence.** A reading overlapping another within 300 Hz only betters it. *Counted* points add
-over the band within 30 min, a transmission once, none where a variant holds it. Reported at 2 points, named
-too; listed, 1 if framed (signed, named or sent twice), else 2
-(variant: 1, a high-margin word). ETISHANMU5 alone: 2 whole words, listed or not.
-Unlisted, bare (signed): a 1x1 (N4A) 3 (2); a cut number (2T7A) 5 (2); four letters after the
-digit, a lone prefix digit, two digits (W100AW), a CW word (N1MM) 4 (3; variant: list only), whole or glued only;
-a keyword+5NN (UR5NN) signed. Listed calls skip these bars.
+**Evidence.** Readings overlapping within 300 Hz are one. *Counted* points add
+band-wide over 30 min, a transmission once, none where a variant holds it. Reported at 2 points, named
+too; listed, 1 framed (signed, named, doubled), else 2
+(variant: 1, a high-margin word). ETISHANMU5 alone: 2 words.
+Unlisted, bare (signed): 1x1 (N4A) 3 (2); cut number (2T7A) 5 (2); four letters after the
+digit, lone prefix digit, two digits (W100AW), 5NN word (DJ5NN) 4 (3; variant: list only), whole or glued only;
+keyword+5NN (UR5NN) signed. Half toward these bars (heuristic), unsigned: 1x1s and lone prefix digits within 10 Hz
+(measured), 120 s (heuristic) of a reported call's own reading containing them (DL3I), unless already reported signed. A 5NN word also passes framed (DE either
+side; doubled) in two overs (heuristic). Listed calls skip bars.
 
-**Variants.** A call within edit distance 1 of, or a prefix or extension of, a better-supported
-call within 150 Hz is held there; distance 2 (4 characters or more; K1T and K1BX) needs over twice the points. Ties at
-distance 1: the earlier, or within 1 s the later. Listed calls weigh triple
-(not an X stripped); those four forms, unlisted, hold nothing unreported. A whole word joined to letters after it (K4VR T) counts
-for the longer if that has 1.5 points besides (variants: always, neither). A row
-leaves when its points fail.
+**Variants.** A call one edit from, prefix of or extension of a better-supported
+call within 150 Hz is held there; two edits (4+ characters, or K1T and K1BX) need over twice the points. One-edit
+ties: the earlier, or within 1 s the later. Listed calls weigh triple
+(not X-stripped); unlisted, the four forms hold nothing unreported. A word joined to letters after it (K4VR T) counts
+for the longer given 1.5 points besides (variants: always, neither). Rows
+leave when points fail.
 
-**List.** One row per base call, placed where last signed, else bare, else named.
-*Signed*: any reading signed; listable alone.
+**List.** A row per base call, placed where last signed, else bare, else named;
+*signed* if any reading was (listable alone).
 
 # A. Appendix: derivations, provenance, limitations, parameters, definitions
 
@@ -4450,6 +4443,9 @@ mark.
 
 ### Filter scales and fists (segmental)
 
+**Why two** (moved from the body, 2026-11-22). A front filter matched to 12 ms leaves a neighbor within about 60 Hz in the wanted
+station's gaps.
+
 **The scale** (`at_filter_scale(config, m)`, m ≥ 1 and whole; m = 1 returns the configuration as is). Sample interval, the filter's dot `front_dot_s` and the fastest dot `dot_min_ms` × m; `speed_count` − round(ln m / ln 1.1): 25 and 20 speeds at m = 2 and 3, so the slowest dot is 236 and 220 ms against 230 ms (derived). Frame = ⌈21.33 ms / (Δm)⌉ samples: 4 samples (21.33 ms) at m = 2, 3 samples (24 ms) at m = 3. Look-ahead and commit: the nearest whole frames to 170.67 ms: 8 frames (170.67 ms), 7 frames (168 ms). The floor's stride and refresh × m (21.33 ms and 192 ms; 32 ms and 288 ms). Ceiling `filter_scale_ceiling`, 300. Everything else as configured: beam 15 nats, f, the walk in nepers per √s, the key's 30 s⁻¹ (0.16 and 0.24 per sample). A sample is committed 32 to 63 samples after it arrives at m = 2 (170.7 to 336 ms), 21 to 41 at m = 3 (168 to 328 ms); with the search's 17 samples the evidence lags at most 0.43 s and 0.46 s (derived).
 
 **The tables' channel** (`segmental_tables_channel`). `output_noise` and `make_template_tables` are computed on the channel filter at 48 kHz, whatever the input rate, when the rate is a whole multiple k of 48 kHz and `fft_size` is a multiple of 64 k: rate / k, `fft_size` / k. The filter's length in s, its cutoff and the channel's rate do not depend on the input rate (derived: N goes with the rate), so only the positions averaged over differ. At the full rate the template's work goes as m × rate², 80 rises × 16 × 4m × decimation positions × a length proportional to the rate (derived): 16.0 s to 18.0 s for {1, 2, 3} at 768 kHz on the desktop, on the pipeline's thread, with the radio running, against a ring of 5.46 s (measured). On the stand-in 0.08 to 0.10 s at every rate (measured). Agreement with the full rate, by test: s_j within 1e-3 (at most 7.6e-4 measured), half point within 10 µs, σ_y²/N₀ and w within 1e-4 of themselves. A 48 kHz input is unchanged.
@@ -4590,31 +4586,42 @@ These are the model's and, except where said, the viterbi decoder's too. The whi
 
 **Fixed at this commit** (findings of the independent review of commit 5aeb081, numbered F1 to F10; `docs/decision-log.md`, 2026-10-31): F1 (the channel's floor), F5 (f = 0.1), F6 (one extreme sample deafening a channel), F8 (false letters above +80 dB S₅₀₀, the float fix).
 
-### The channel's tail and the walk set by the Doppler spread (segmental; text-fast-1)
+### The channel's tail and the walk set by the Doppler spread (segmental; text-fast-1, text-tail-2)
 
 **Exact form: the tail** (`EchoEstimator`, `LevelEvidence::set_echo`, `RunningSums::tail`). Per stream, each sample's e² and the floor
 F (`ChannelFloor`, not the leak floor) go to the estimator before `LevelEvidence::push`. A run is the samples with e² > 10^(1.0) F
 (`echo_run_db`), kept to 4 096 samples. At its end, if it holds at least ⌈32 ms / Δ⌉ samples (`echo_min_run_s`; 12 at m = 1) and
-its median M is at least 10^(2.0) × the floor at its middle sample (`echo_min_db`), the profile starts at its last sample with e² ≥
-M/4 and takes (e² − F)/M at that sample and each later one until a sample starts the next run or span = 11 + P − h samples are
-taken, P = min(18, ⌊48 ms / Δ⌋) positions (`echo_max_s`; 18 at m = 1, 6 at m = 3), h the last m with 1 − s_m ≥ 0.5 (7 at m = 1, 6 at
-m = 3; derived from the template). Each closed profile enters sums S[q] and counts N[q] with memory λ = e^(−1/200) per run
-(`echo_memory_runs`): S ← λS + value, N ← λN + 1, for the positions it reached. Once the memory's weight Σλⁱ reaches 30 runs
-(`echo_min_runs`; at the 33rd strong run) the shape is made, and again at every 10th run after: A[q] = S[q]/N[q] where N[q] ≥ 10, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), the tail g_(11+q) =
-A[11 + q − h] for q = 0, 1, … while ≥ 10^(−2.5) (`echo_end_db`), at most P; g at the fall window's six positions all A[11 − h]. A
-new shape goes to `set_echo` at once. There, per table level i (r_i² = a_i²/σ², the grid's index with the tables' shift): the fall's
-terms `LevelTables::make_term`(r_i², 1 − s_m, f′², v_m + g₁₁) in place of the tables' fall terms; and for each tail position q,
-ρ = g_(11+q) r_i², floats ρ/(1 + ρ) and ln(1 + ρ). `commit_frame` then computes, per sample k and position q, T_k[q] = ln Σ_groups
-p_g exp(w(z² ρ_g/(1 + ρ_g) − ln(1 + ρ_g))) over the same 8 groups of levels as the edges, and `RunningSums::push` adds it to the
-prefix of the fall claimed at k − 11 − q at its q-th position (a claim whose earlier position was not pushed, after a shape changed its
-length, takes no more). `tail(i, n)` reads the prefix (the last 1 024 claims) or, past the positions pushed, their whole (the last
-8 192). With the tail off nothing is pushed and every tail reads 0.
+its median M is at least 10^(1.0) × the floor at its middle sample (`echo_level_min_db`), M̄ ← μM̄ + (1 − μ)M (FS², the first such
+run's M to start; μ = e^(−1/20), `echo_level_runs`); if M is at least 10^(2.0) × that floor (`echo_min_db`), the profile starts at the run's last sample with e² ≥ M/4 and takes (e² − F)/M at that
+sample and each later one until a sample starts the next run or span = 11 + P − h samples are taken, P = min(18, ⌊48 ms / Δ⌋)
+positions (`echo_max_s`; 18 at m = 1, 6 at m = 3), h the last m with 1 − s_m ≥ 0.5 (7 at m = 1, 6 at m = 3; derived from the
+template). Each closed profile enters, with memory λ = e^(−1/200) per run (`echo_memory_runs`) and for the positions it reached, the
+sums S[q] ← λS + (e² − F)/M, N[q] ← λN + 1, and (text-tail-2) P[q] ← λP + (e² − F), Σ_M[q] ← λΣ_M + M. Once the memory's weight Σλⁱ
+reaches 30 runs (`echo_min_runs`; at the 33rd strong run) the shape is made, and again at every 10th run after (echo_min_runs / 3):
+A[q] = S[q]/N[q] where N[q] ≥ 10, else 0; on if A[11 − h] ≥ 10^(−1.5) (`echo_on_db`), for q = 0, 1, … while A[11 + q − h] ≥ 10^(−2.5)
+(`echo_end_db`), at most P, the tail g_(11+q) = P[11 + q − h] / Σ_M[11 + q − h] (`echo_absolute` 1, the default), or A[11 + q − h]
+(`echo_absolute` 0, text-fast-1's form); the fall window's six positions take g at 11 − h. A new shape goes to `set_echo` at once,
+and M̄ to `LevelEvidence::set_echo_level` before every sample; `push` keeps M̄/σ² per sample, σ² as the sample's z is taken.
+*Absolute* (the default): per sample k and group of levels i (the edges' 8 groups), the tail's level re σ² is L_i = min(M̄/σ²,
+κ r_i²), r_i² = a_i²/σ² the group's own and κ = 10^(0.6) (`echo_level_margin_db` 6; 1 000 or more leaves the bound out), and ρ_q,i =
+g_(11+q) L_i; in the fall's window d_i = the nearest whole number to 10 log₁₀(1 + ρ_0,i) / 1.5 dB (none for ρ₀ < 10^(0.075) − 1 =
+0.1885), the plain fall table read at level l − shift − d_i (at most down to the table's first index, the grid's bottom re σ² with
+`level_noise_bottom`) with z' = z 10^(−0.075 d_i), less w ln 10^(0.15 d_i); and T_k[q] = ln Σ_i p_i exp(w(z²ρ_q,i/(1 + ρ_q,i) − ln(1 +
+ρ_q,i))) (without the bound one value, w(z²ρ_q/(1 + ρ_q) − ln(1 + ρ_q)), ρ_q = g_(11+q) M̄/σ²). *Proportional* (`echo_absolute` 0): per table level i (r_i² = a_i²/σ², the grid's index with the
+tables' shift), the fall's terms `LevelTables::make_term`(r_i², 1 − s_m, f′², v_m + g₁₁) in place of the tables' fall terms, and
+for each tail position q, ρ = g_(11+q) r_i², floats ρ/(1 + ρ) and ln(1 + ρ); `commit_frame` computes T_k[q] = ln Σ_groups
+p_g exp(w(z² ρ_g/(1 + ρ_g) − ln(1 + ρ_g))) over the same 8 groups of levels as the edges. Either way `RunningSums::push` adds T_k[q]
+to the prefix of the fall claimed at k − 11 − q at its q-th position (a claim whose earlier position was not pushed, after a shape
+changed its length, takes no more) and keeps, per sample, the positions pushed with it. `tail(i, n)` reads the prefix (the last
+1 024 claims) or, past the positions pushed, their whole (the last 8 192); `tail_length(i)` the positions pushed with sample i + 11
+(text-tail-2). With the tail off nothing is pushed and every tail reads 0.
 
 **Exact form: the tail in the search** (`search.cpp`). A gap that started at i, at boundary j, length L = j − i: ended (L ≥ 6) at
 base + tail(i, L − 6); partial at base + survival + reach, the reach max(tail(i, L + 6), max over d of [gap_reach_at(d) + tail(i, L
 + d − 6)]), d from max(1, 6 − L) to 6 (going on through the horizon, or ending at j + d), or gap_reach_from + tail(i, filled) once L −
 5 ≥ the positions filled; a gap that starts at j: gap_reach_new + (that reach at L = 0 less gap_reach_new). An over's end at j goes to
-the no-signal story at j + D, D = max(6, n + 6), n the tail positions of the last sample pushed, paying D ln(1 − P), and there adds
+the no-signal story at j + D, D = max(6, n + 6), n = `tail_length(j)`, the tail positions of the fall claimed at j (text-tail-2;
+before, those of the last sample pushed), paying D ln(1 − P), and there adds
 tail(j, 18); two ends due at one boundary keep the better (both with their tails so far). The ring of over's ends has 25 places.
 
 **Exact form: the walk** (`DopplerEstimator`, `SegmentalDecoder::update_walk`, `LevelEvidence::set_walk`). On the widest
@@ -4650,6 +4657,29 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   coherence of y after the fall with y 2 ms before it is 0.94 at the fall, 0.24 at 10 ms), adds a zero-mean complex Gaussian of power
   g a² to the noise: the sample's density ratio against noise alone is (1/(1 + ρ)) e^(−z²/(1+ρ)) / e^(−z²), whose log is z²ρ/(1 + ρ) −
   ln(1 + ρ), tempered by w as every sample's (derived). In the fall's window the same power is noise added to the Rician term's variance.
+- *An absolute tail* (text-tail-2). On the owner's clips the tail's power hardly follows the mark before it: gap power against the
+  mark's level, 0.06 to 0.24 dB per dB (measured, `build/st-1/ana/tailfade.txt`, git-ignored), as a diffuse scatter whose paths fade
+  apart from the direct one gives. So its power is taken as g M̄, M̄ a slow mark level, the same at every level of the belief within its
+  bound (next item); the
+  likelihood is the one above with ρ = g M̄/σ². For g, a tail of constant power T behind marks of varying M gives a mean of the ratios
+  T·mean(1/M) ≥ T/mean(M) (Jensen), the faded marks' tails weighed up; the ratio of the means, ΣT/ΣM, is T re the mean mark, which
+  M̄ ≈ mean(M) turns back into T (derived). In the fall's window the noise σ²(1 + ρ) is taken in whole grid steps as a σ² above the
+  floor is: the Rician term at r'² = r²/(1 + ρ') and z' = z/√(1 + ρ'), less ln(1 + ρ'), is the density at noise σ²(1 + ρ') in z's
+    units (derived); taking ρ' = 10^(0.15 d) − 1, within ±0.75 dB of 1 + ρ, for ρ is an approximation (heuristic), which leaves the
+  fall's window without a tail for ρ₀ < 0.1885.
+- *The tail is its station's* (review of text-tail-2). A scattered tail does not follow the direct path's fast fading, but it scales
+  with the transmitter's power and path: the level it follows is the station's now keying, not the stream's. With M̄ the strong runs'
+  alone (+20 dB re F, 30 runs), a weaker station after a strong one, or callers between a run station's turns, took the strong
+  station's tail, 10 to 24 dB above their own marks, and their marks read as a dit and a tail: rows of E's (the review's channels,
+  CER 0.62 to 4.96 and 0 to 2 of 4 calls; the proportional form 0 and 4 of 4). So M̄ follows every run from the run threshold, +10 dB
+  re F, with a memory of 20 runs, and each level hypothesis takes the tail at most κ above its own a²: a fade of up to κ keeps the
+  station's tail, a new station's first runs take at most κ g a² (heuristic; κ = 6 dB the largest that reads the review's channels as
+  the proportional form does, 8 dB does not, by measurement).
+- *Why the over's end takes the fall's tail* (text-tail-2). The wait n + 6 keeps the birth's rise window past the tail of the fall
+  at j; n must be that fall's. At the stream's end every boundary not yet searched (the commit lag, 170.7 to 338.7 ms) is searched
+  after the flush's 17 samples of no evidence, pushed with no tail, so n read from the last sample pushed was 0: a mark the end cut
+  off read as a row of one-sample E's 16 to 19 ms apart, each birth's rise window reading the last fall's tail again (clip03 cut to
+  38 s, 37.74 to 37.94 s: seven E's; traced, and the test `SegmentalTail.AMarkCutOffByTheStreamsEndIsNotReadAsARowOfDots`).
 - *Why the tail is read after the run's last −6 dB sample.* That sample is where the filtered mark's amplitude falls through half,
   the template's 1 − s_m = 0.5 between m = 7 and 8 at m = 1, so m − h counts from the claim (derived, to a sample).
 - *Why an over's end waits n + 6 samples.* A birth at b has its rise window from b + 5; the tail's last sample is j + 10 + n: b ≥ j +
@@ -4677,7 +4707,29 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   61 × 61 for the matrix (derived): a Gaussian of W √(T)/step steps (12 at W = 20) folded at the ends, where the passes approach the
   same Gaussian (binomial) one.
 
-**Provenance.** All in `docs/decision-log.md`, 2026-11-21 (`text-fast-1`).
+**Provenance.** All in `docs/decision-log.md`, 2026-11-21 (`text-fast-1`) and 2026-11-22 (`text-tail-2`).
+- `echo_absolute` 1 by measurement (text-tail-2, with the review's bound), no-space CER, the over's end fixed in both: the owner's clips
+  scored on their span, cut to 38 s 0.261 and 0.156 to 0.159 and 0.104, whole tracks 0.239 and 0.156 to 0.148 and 0.078 (DeepCW 0.398
+  and 0.338); the same recording's held-out 35 WPM passage (833 to 873 s and 911 to 1 043 s, 483 characters, the review's reference,
+  typed with decodes in view) 0.199 to 0.108, its 12 WPM preamble (372 to 790 s) 0.048 to 0.050; the matched set with a tail
+  (synth-tail-1's generator: −7 dB re the mark, τ 15 ms, f_D 8 Hz) 0.386, 0.374, 0.686, 1.462 to 0.302, 0.266, 0.350, 0.411 by f_D
+  cell (0.7 to 1.4, 2.1 to 4.2, 7 to 14 Hz, and 21 to 42 Hz asked, which the generator's direct path realizes as about 18 to 25 Hz);
+  the matched set without a tail the same to the symbol, VE3NEA's conditions the same in 39 of 40 cells (hand, f_D 3 Hz, +13.78 dB
+  S₅₀₀: 947 to 952 edits of 13 054). Without the bound (M̄ of the strong runs over 30 runs) the clips read 0.102, 0.078, 0.080 and
+  0.026 and the held-out passage 0.079, but the preamble 0.071 (dahs split into a dit, a tail and a dit: B as 5, U as V, a comma as
+  PW) and the review's channels as rows of E's. On the tests' own channel (a −10 dB re the mark tail at 5 Hz, the direct path at
+  f_D 0.3 and 1 Hz, four seeds) the unbounded and proportional forms read alike: 0.300 against 0.332 at 0.3 Hz, 0.332 against 0.315
+  at 1 Hz (mean no-space CER, measured). The tail's presence and length are decided by the mean of the ratios in both forms, a
+  heuristic chosen on one clip: with the ratio of means deciding, clip03's tail, about −15 dB re the mark, stood under `echo_on_db`
+  until 18.9 s and clip03 read 0.511. `echo_level_runs` 20, `echo_level_min_db` +10 dB re F and `echo_level_margin_db` 6 dB: the margin the largest
+  that reads the review's channels as the proportional form does (8 dB at 10 runs does not, nor 6 dB at 30 runs), the memory between
+  10 runs, which lost WD2E (a window-confirmed call at the 2-point bar on the 2026-11-17 20 m replay; traced: kept at 20 and 30, and with
+  the proportional form), and 30 runs, which reads one of the review's channels as E's; then measured on the clips and the held-out
+  passage together (10 runs: cuts 0.159 and 0.117, whole 0.148 and 0.091, held out 0.112; 5 runs 0.170, 0.117, held out 0.120; a 3 dB
+  margin 0.227, 0.130, held out 0.168; 20 runs at +20 dB re F 0.170, 0.104, held out 0.104). `echo_min_runs` 30 kept (by measurement, unbounded): fewer runs read a
+  fresh track's first seconds better, the clips cut to 38 s 0.102 and 0.078 at 30, 0.080 and 0.065 at 20, 0.068 and 0.065 at 15 and
+  10; but at 20 the 2026-11-17 20 m replay lost WD2E, a window-confirmed call at the 2-point bar, and at 15 DEV2's E2 (seed 1, oracle)
+  read +0.0010 (+0.0001 to +0.0021, 95% bootstrap interval) re main.
 - The tail's estimator (+10 dB re F, kz4ap-fading's run threshold; 32 ms; 200 and 30 runs), echo_on_db −15 dB re the mark, echo_end_db −25 dB re the mark,
   48 ms: heuristics. echo_min_db +20 dB re F by measurement: without it VE3NEA's clean stations at 12 to 15 dB re F read a tail of −7
   to −14 dB re the mark (a bias at the run threshold) and their CER rose (+1.78 dB S₅₀₀, f_D 3 Hz, hand: 0.705 to 0.739). On the
@@ -4699,7 +4751,16 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
 
 **Limitations.**
 - The tail is one shape per stream, for every fall: a channel whose tail changes faster than about 200 runs (40 s at 35 WPM) is read
-  with the shape before; a track's first 32 strong runs are read without one (about 6 to 8 s at 35 WPM). A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
+    with the shape before; a track's first 32 strong runs are read without one (about 6 to 8 s at 35 WPM). Its absolute power follows
+  M̄ over 20 runs (about 4 s at 35 WPM), bounded 6 dB above the belief's level: a fade of the direct path deeper than 6 dB takes the
+  bounded tail, so the gain in deep fades is cut (the owner's clips: about half the unbounded form's; decision log); a tail that does
+  follow the mark's fades (one delayed path fading with the direct one) is read up to 6 dB too strong in a fade. M̄ is the runs' median
+  e², noise included. The residual of the review's case: a weaker station's first runs after a strong one take a tail up to 6 dB
+  above their own level until M̄ follows them (about 20 runs), and one within 6 dB of the strong station takes up to the strong one's
+    tail (the review's channels, 10 to 24 dB below, read as the proportional form). The evidence for the absolute form is one evening's
+  recording; the re-review's channel, a tail at −5 dB re the mark behind a Rayleigh-faded direct path, reads 0.13 to 0.16 CER worse with
+  it than with the proportional form, and the owner's ear clips from other days learn no tail at all.
+- An absolute tail's power in the fall's window is taken in whole 1.5 dB steps (±0.75 dB). A station under +20 dB re F learns none, so a weak station's gaps still fill (the tail then under +5 dB re F).
 - The tail's mean is read low by about 2 dB re the true tail's power: a Rayleigh tail's samples above −6 dB re the mark move the last −6 dB sample into it
   (test `EchoEstimator.LearnsATailAfterTheFallAndNoneWhereThereIsNone`: 0.06 for 0.1).
 - The tail is not in the level filter, and not in the next mark's rise window: where a gap is shorter than the tail, the next rise
@@ -4879,6 +4940,10 @@ Nothing beyond section 9: its delays are derived in the sections it names (A.6 f
 
 **List (`TrackTable::set_plausible_only`).** A new row is hidden until `text_evidence(row).plausible()`, then listed for good. A new track within 30 Hz (`kSamePlaceHz`, the detector's D) of an ended row, listed or hidden, goes on with it after a word space, and its corrections start after the earlier tracks' symbols. Rows ended over 60 s ago leave. Past 4 256 symbols a row drops its oldest 256; the report and `--decoded` then hold a long row's end only. A row leaves out a stretch its tracks heard from a neighbor where the neighbor's listed row holds it, and a hidden row that ends as a copy with text of its own waits as a faded one (A.6, "A neighbor's text"); the report and `--decoded` hold what the rows show.
 
+**The app's `--decoded` file (`decoded_json`, `app/core/decoded_file.hpp`; `format_version` 3).** One JSON object on one line: `front_end`, `recording` and `tracks` with each row's `id`, `freq_hz`, `last_freq_hz` and `text` as before (what `kz4ap-bench --score-decoded` reads). At the top also `stream_start_utc` (the stream's first sample, in the form a recording's sidecar uses, for example `2026-11-17T12:30:05.046Z`, or null), `stream_s` (the stream time at writing, s), `written_utc` (the system clock at writing), `lost_samples` (the report's `pipeline_lost_samples`) and `radio_resets` (null for a recording). Per row also `track_ids`; `born_s`, its first track's birth; `died_s`, the table's stream time when its last track's Died event was applied (the GUI advances that clock each tick, so up to one tick late), or the stream's end for a row live then, null while `live`; `start_s` and `end_s`, its span, from the earlier of `born_s` and its first character's start (a character decoded from the replay's kept past starts up to 2 s before the birth) to the later of `died_s` (`stream_s` while live) and its last character's end; `trimmed`, the symbols dropped from its head (past 4 256); and `symbols`, the shown characters as [text, start_s, end_s], the decoder's own times (`DecodedSymbol`) rounded to 1 ms, whose texts concatenate to `text`. A word space the table puts in has null times: one for a left-out stretch, and one between tracks at one place, which the table stores at 0.0 and 0.0, so a " " at 0.0 and 0.0 is taken for the table's (no decoder's word space, a gap of 7 dits, has both). UTC of a character is `stream_start_utc` + its start_s.
+
+**Stream start, live (`SdrplaySource::start_unix_ms`, `LiveStart`).** None until the radio's first block with samples arrives; then t₀ = t_arrival − n/f_s, the system clock (ms since 1970 UTC) at that block's callback less the block's n samples at the rate f_s (`first_sample_unix_ms`), stamped once: an empty block stamps nothing, and a reset never stamps again. The app takes it when it first writes the report, `--decoded` or `--calls`. It is late by the radio's and driver's buffering before the callback, not measured (heuristic: a few ms to a few tens of ms for a USB radio), plus the system clock's error. Stream time counts samples received, so after a gap (`lost_samples` > 0, a radio reset, or a USB transfer lost without being counted) every later character is dated early by the gap; the sample clock's drift against the system clock adds about 1.8 ms per hour at 0.5 ppm (an estimate, not measured). The file shows the total: lag = (`written_utc` − `stream_start_utc`) − `stream_s`, the gaps, the backlog not yet decoded and the drift, less the start's own lateness.
+
 **Overflow.** `SdrplaySource::read`: when the driver's callback finds no room it sets a flag, and the next read empties the ring and counts the samples as lost. So one gap, not a click each read.
 
 **Budget (`StreamRunner`, with a live source).** At each check, at least 1 s of stream after the last: grown = b > b_last + m, m = 0.05 s if b_last ≤ 0.25 s, else 0; g = grown ? g + 1 : 0. If b > 1 s, g ≥ 2 and live > 8: budget = max(8, ¾ live), and the engine closes the rest at its next block, ranked (proven, E) lowest first, `TrackEnd::Shed`, hold 8 s; a new track must then replace a weaker. Else if a budget is in force, b < 0.25 s and 5 s have passed since it changed: budget + 5; at `max_tracks` it goes away.
@@ -4899,6 +4964,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 - Text's q: fitted to 4 968 symbols of real junk (one recording), raised for T; 0.03 to the rest. −6, +8, +6 nats: Wald's bound gives P(reach +x under p) ≤ e^(−x) and P(reach −x under q) ≤ e^(−x) (derived for independent symbols from the models). As error rates on the air they are not valid: real junk is neither independent nor from q. They are heuristics.
 - Holds 8, 30, 120 s, 60 s, 750 Hz, 4: heuristics on real 40 m.
 - List's 60 s, 30 Hz: heuristics, the second the detector's D. 4 000 symbols: heuristic, 27 min at 30 WPM.
+- A live stream's start, late by a few ms to a few tens of ms: heuristic, not measured; t₀ = t_arrival − n/f_s is derived for a callback at the block's last sample, and anything the radio and driver hold before the callback adds to the lateness. The system clock's own error (Windows' time service) is added and not measured here.
+- Sample-clock drift, about 1.8 ms per hour: an estimate, from an assumed 0.5 ppm offset of the radio's sample clock against the system clock (0.5 × 10⁻⁶ × 3 600 s = 1.8 ms), not measured on this radio; `written_utc` measures the total lag.
 - Speed's formula: derived from PARIS (a dot 1.2 s / WPM) and the code's element lengths; valid while the claimed edges are unbiased: a clean 40 WPM station at +20 dB S₅₀₀ reads 39.92 to 40.10 WPM (measured, `SegmentalSpeed` test). 16 letters: heuristic, about 4 s at 40 WPM; a median, so with up to 7 junk letters among the 16 it stays within the range of the other letters' own speeds (derived).
 - First retirement open: heuristic, chosen by measurement (A.6).
 - Budget's values: heuristics. 5.46 s is derived: 2^k ≥ 4 s × rate, at each radio rate 2^k / rate = 5.46 s. Cap 400: heuristic; a 300-station generated band needs over 300 and the project's goal names 500 tracks on half the desktop.
@@ -5069,7 +5136,8 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Segmental: the fast frame (text-fast-1) | 10.67 ms, 4 samples at m = 1; 8 ms, 1 sample at m = 3; joined into level_frame_s while the walk is slow and where a tail is modeled (and, with `doppler_hold_frames` 1, until it is decided) | `level_fast_frame_s` | heuristic by measurement |
 | Segmental: the walk set by the Doppler spread (text-fast-1) | fast from f_D 3 Hz, back under 2.5 Hz, with the runs at +18.3 dB re F (+10 dB S₅₀₀) or more, ln \|ρ(21.33 ms)\| / ln \|ρ(τ)\| within 0.4 to 1.6 of (21.33 ms / τ)² at τ = 8 … 18.67 ms (`doppler_shape_lo`, `doppler_shape_hi`), and each run's own \|C\| reading at least 0.5 of f_D (`doppler_min_runs_ratio`); W = 1.4 nepers/√s per Hz of f_D, 4.8 to 20, a Gaussian matrix | `doppler_fast_hz`, `doppler_slow_hz`, `doppler_min_db`, `doppler_walk_per_hz`, `doppler_walk_max` | heuristics by measurement |
 | Segmental: the Doppler estimator (text-fast-1) | the widest stream's runs above +10 dB re F; pairs 8 to 21.33 ms apart within each stretch at or above −10 dB re the run's median, 8 ms inside its ends, the front filter's noise correlation taken out; memory 100 runs, used from 20; f_D = 2σ_D at 21.33 ms, Gaussian spectrum | `doppler_end_guard_s`, `doppler_memory_runs`, `doppler_min_runs` | form derived; values heuristic |
-| Segmental: the channel's tail (text-fast-1) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 33rd strong run (weight 30), then every 10th; on at g₁₁ ≥ −15 dB re the mark, kept to −25 dB re the mark or 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` by measurement |
+| Segmental: the channel's tail (text-fast-1, text-tail-2) | per stream; runs above +10 dB re F of at least 32 ms, median at least +20 dB re F; memory 200 runs, first made at the 33rd strong run (weight 30), then every 10th; on at the mean of (e² − F)/M at m = 11 ≥ −15 dB re the mark, kept while ≥ −25 dB re the mark, to 48 ms (18 positions at m = 1, 6 at m = 3); 0 s leaves it out | `echo_max_s`, `echo_run_db`, `echo_min_db`, `echo_min_run_s`, `echo_memory_runs`, `echo_min_runs`, `echo_on_db`, `echo_end_db` | likelihood derived; values heuristic, `echo_min_db` and `echo_min_runs` by measurement |
+| Segmental: the tail's power (text-tail-2) | absolute, g_m min(M̄, κa²): g_m = Σ(e² − F)/ΣM, M̄ the median e² of every run at +10 dB re F or more over 20 runs (exponential memory), κ 6 dB above each level of the belief; 0: g_m a² at the belief's level, g_m the mean of (e² − F)/M (text-fast-1's); the fall window's noise in whole 1.5 dB steps (none for ρ₀ < 0.1885) | `echo_absolute` 1, `echo_level_runs` 20, `echo_level_min_db` 10, `echo_level_margin_db` 6 | form derived; 1 by measurement; 20 runs, +10 dB re F and 6 dB heuristics by measurement (the review's channels, a replay's call); the steps an approximation |
 | Segmental: look-ahead, commit | 8 frames each, 170.7 ms; a sample committed 64 to 127 samples after it arrives | `level_lookahead_s`, `level_commit_s` | heuristic; no measured effect from 0.085 to 1.5 s |
 | Segmental: belief threshold, edge groups | P̂ ≥ 10⁻⁴; at most 8 groups of levels for the edges | evidence.cpp, `kEdgeLevels` | heuristic |
 | Segmental: template's window | m = 5 … 10 (0 below, 1 from 11); elements below 6 samples by the pair's template | `kEdgeFirst`, `kEdgeCount`; `short_score` | derived approximation |
@@ -5156,8 +5224,10 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Callsign stage: call forms | three characters before the digit only for 3D? (a half series) and 3XY, then three letters at most; US series (K, N, W, AA–AL): one to three letters, two after AA–AL and NA–NZ (AF#EMA, NF#EMA excepted), no 1x1 ending in X; a letter-digit prefix (C6, E7) and 1 to 4 letters, its digit the call's; around a slash both sides tried as the base, and when both can: the listed one, else the one that is not a location form (VP2V), else the left | `parse_form` (`three_character_prefix`, `us_form`, `location_form`), `CallSearch::add` | derived: RR 19.68 and 19.68.1, Appendix 42; 47 CFR 97.3(a)(11) and the FCC's HD.dat of 2026-11-15; 3XY sourced (Guinea's DXpeditions); the prefix-digit form measured (MASTER.SCP, the RBN); the slash's choice heuristic (A.12) |
 | Callsign stage: unusual forms | four letters after one digit (VK3FABC): unlisted, with or without a list loaded, at least this many points, fewer when a counted occurrence signed (2; 1: from a list only, the rule before `calls-list-1`; 0: as any call; `unusual_listed_only`, the old name, sets the same) | `unusual_form` 2, `unusual_points` 4, `unusual_points_signed` 3 | heuristic, CW Skimmer's practice in kind (an unusual pattern needs more); the owner's ruling (several repeats, no signature required); the bars chosen by measurement: the lowest bare bar of 4 to 8 losing no window-confirmed call and adding no generated false call, the signed bar the lowest adding none (A.12); no recall evidence for any bare bar |
 | Callsign stage: prefix-digit forms | no digit but the prefix's (C6AGU): as unusual forms | `prefix_digit_form` 2, `prefix_digit_points` 4, `prefix_digit_points_signed` 3 (`prefix_digit_listed_only`, the old name) | heuristic, as unusual forms (A.12) |
-| Callsign stage: words of CW | rigs, antennas, software (21, exact) and one or two letters before 5NN: as unusual forms (from a list only, always, before `calls-list-1`) | `is_cw_word`, `ParsedCall::cw_word`; `cw_word_form` 2, `cw_word_points` 4, `cw_word_points_signed` 3 | heuristic (manta's exact matches); as unusual forms (A.12) |
+| Callsign stage: words of CW | one or two letters before 5NN (R5NN, TU5NN, DJ5NN): as unusual forms (from a list only, always, before `calls-list-1`); no fixed names of rigs, antennas or software since the review of `calls-form-3` | `is_cw_word`, `ParsedCall::cw_word`; `cw_word_form` 2, `cw_word_points` 4, `cw_word_points_signed` 3 | heuristic, the 5NN form measured (UR5NN read 14 times on one recording); the names dropped by the owner's ruling (2026-11-22; A.12) |
 | Callsign stage: special forms | two or more digits after the prefix (W100AW, TM100TF): as unusual forms (from a list only, always, before `calls-list-1`) | `special_form` 2, `special_points` 4, `special_points_signed` 3 | heuristic, as unusual forms (A.12) |
+| Callsign stage: truncation evidence | a 1x1's or prefix-digit call's occurrence within this many Hz and s of an own occurrence (not only named) of a reported longer call containing it (L3I in DL3I) counts toward its bar at `contained_weight` times its points and does not sign it; a reported fragment the containment alone makes fail is withdrawn when its container reads beside it; when a container is withdrawn its fragments are judged again (0: every occurrence in full) | `truncation_evidence` 1, `truncation_hz` 10 Hz, `truncation_s` 120 s, `contained_weight` 0.5 | the owner's ruling (evidence adjusts a bar, never excludes); 10 Hz measured (382 of 399 readings of `main`'s misread and unknown 1x1 and prefix-digit calls beside a container lie within 10 Hz of it, 376 within 1 Hz; the rest spread to 130 Hz, where a pileup's callers lie); 120 s and 0.5 heuristics, chosen by measurement (30 s and 0.75 lost K1LGQ, window-confirmed; 0.25 lost N4N, spotted that day; 600 s changed nothing; A.12) |
+| Callsign stage: a QSO's frame | a word of CW (a 5NN word) passes its bar also when its occurrences in a QSO's frame (DE before or after it, or sent twice; a sign-off after it alone is none) come from this many overs, an over ending at a pause of more than `over_gap_s` between framed occurrences (0: the bar alone) | `cw_word_evidence` 1, `cw_word_frame_overs` 2, `over_gap_s` 10 s; `CallReading::qso_frame` | the owner's ruling (frames of ordinary QSOs; evidence only lowers a bar) and the review's (an over counts once, two needed, a sign-off alone no frame); 2 and 10 s heuristics (A.12) |
 | Callsign stage: those four forms' readings | unlisted, only whole and glued readings reach a candidate (0: every reading) | `form_whole_words` 1 | heuristic, as a tiny call's rule; chosen by measurement (A.12) |
 | Callsign stage: a keyword run onto 5NN | a word of CW whose letters before 5NN are a keyword (UR5NN, TU5NN, R5NN): unlisted, not reported without a counted signed occurrence (0: the bar alone) | `keyword_report_signed` 1 | heuristic, chosen by measurement (A.12) |
 | Callsign stage: those four forms against variants | unlisted and not reported, such a call holds no rival back; reported, it holds and defends at its full points (0: as any call) | `form_rival_reported` 1 | heuristic, the review's ruling (the weight must give way to evidence); measured (A.12) |
@@ -5803,8 +5873,12 @@ is no location), and with K4SV alone listed, K4SV. Before `call-form-2` the left
 was refused. `training/kz4ap_proto/calls_score.py`'s `base_call` takes rules (b) and (c), with no list, and since the review of
 `calls-list-1` the prefix-digit form (C6AGU, L3I) too; a call in a CSV it still does not take is scored as it stands and counted.
 
-**Words of CW.** `is_cw_word`: exact, G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX, TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V,
-FT8DX, FT5DX, FT3DX, W2DU, W8JK, W3DZZ; and any base of one or two letters before 5NN (R5NN, TU5NN, FN5NN, DJ5NN, W5NN), which
+**Words of CW.** `is_cw_word`: any base of one or two letters before 5NN (R5NN, TU5NN, FN5NN, DJ5NN, W5NN; measured: UR5NN read
+14 times on 2026-11-17 40 m). No fixed names: the 21 names of rigs, antennas and software with a call's form listed until the review
+of `calls-form-3` (G5RV, K3S, K4D, N1MM, K1EL, K9AY, TH7DX, TH6DX, TH5DX, TH3JR, TH2MK, HF5B, HF6V, HF9V, HF2V, FT8DX, FT5DX, FT3DX,
+W2DU, W8JK, W3DZZ; manta's practice, never counted on a corpus) were dropped by the owner's ruling (2026-11-22: "No on keeping the
+list of calls for now"), so each is a call of its own shape under that shape's bar (N1MM a 1x2 call, K3S a 1x1, G5RV a 1x2); the
+5NN form, which
 takes in the exact list it replaces, {R, K, E, T, N, TU, UR, ES, EE, TT, ET, TE}5NN. Since `call-form-2` such a word is not refused:
 `parse_call` marks it (`ParsedCall::cw_word`), every reading rule treats it as a call, and the stage holds it to its own bar unless
 the list holds it (`cw_word_form`, report test below; from a list only before `calls-list-1`). A joined reading (rule 4 below) neither starts at one nor runs through one. `only_tiny_pieces`: every character in E T I S H A N M U 5:
@@ -5924,7 +5998,9 @@ role, or the same word was next to it (`doubled_is_framed`). *Pooled* points (`p
 counting each chain of occurrences connected by overlaps in time once, at the largest of their points, wherever they lie (a sweep in order of start, so the result does not depend on the order of the tracks); framed, named and sure as
 any counted o. A candidate's first time is its earliest reading, which a correction can move back.
 
-**Report test** (a named word no exception: CW Skimmer's practice, provenance below), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. First, since `call-short-1`, an unlisted call of three characters (`is_short_call`: a letter, a digit, a letter, the 1x1 form of any series: N4A, W6S, G2M) needs at least `short_points` (3) on the points tested, or `short_points_signed` (2) when an occurrence counted holds a reading with the role *signed* (`Occurrence::sender`; `Support::sender`), whatever it would pass on below (a tiny call, a named word); 0 leaves the bar to the rules below. And with `cut_number_form` 2 (the default) an unlisted call of a cut number's shape (`is_cut_number_form`: a digit 2 to 9, then A, N or T, then the call's digit, the pair not 9A, 7N or 8N: 2T7A, 3N4D, 5A3BOB, 4A7A) needs in the same way at least `cut_number_points` (5), or `cut_number_points_signed` (2) with such a signed occurrence; with 1 its readings off the list are dropped before they reach a candidate; with 0 it is any call. And since `calls-list-1`, four forms each with its own setting, the owner's ruling (2026-11-21) that without the list no real form is excluded outright: a special form, two or more digits after the prefix (`ParsedCall::special`: W100AW, TM100TF; `special_form`), an unusual one, four letters after one digit (`unusual`: VK3FABC; `unusual_form`), a prefix-digit one, a letter-digit prefix whose digit is the call's (`prefix_digit`: C6AGU, E7DX, D4C; `prefix_digit_form`), and a word of CW (`cw_word`, `is_cw_word`: N1MM, K9AY, G5RV, DJ5NN; `cw_word_form`). With the setting at 2 (the default) an unlisted call of the form needs at least its `*_points` (4 each: `special_points`, `unusual_points`, `prefix_digit_points`, `cw_word_points`), or its `*_points_signed` (3 each) with a signed occurrence counted, as the 1x1's bar works; with 1, the rule before `calls-list-1`, its readings off the list are dropped before they reach a candidate; with 0 it is any call. Three rules go with the bar, all for these four forms unlisted at 2 only. (a) `form_whole_words` 1: only whole and glued readings reach a candidate; a joined or stripped one is dropped in `add`, as a tiny call's are (0: every reading). (b) `keyword_report_signed` 1: a word of CW that is a keyword run onto 5NN (`is_keyword_report`: the one or two letters before 5NN one of `is_keyword`'s words) is not reported without a counted signed occurrence, however many points it has (0: the bar alone). Its exact reach, 24 strings: K5NN, R5NN, CQ5NN, DE5NN, TU5NN, KN5NN, BK5NN, SK5NN, AR5NN, NR5NN, UR5NN, UP5NN, DX5NN, GM5NN, GA5NN, GE5NN, GN5NN, OM5NN, ES5NN, FB5NN, HW5NN, NA5NN, SS5NN, FD5NN. Nearly all are calls' forms of allocated series, and some are issued: K5NN (active in the FCC's file), NA5NN and NR5NN (in MASTER.SCP); KN5NN has a US form too; and the forms of Scotland (GM5NN), Slovakia (OM5NN), Estonia (ES5NN), Ukraine (UR5NN), Sweden (SK5NN), Germany (DE5NN), Pakistan (AR5NN), Kazakhstan (UP5NN), the Philippines (DX5NN), France (FB5NN, FD5NN, HW5NN), China (BK5NN), Portugal (CQ5NN) and Russia (R5NN). Unlisted, each needs a signed reading; one running a contest signs by CQ and the event word (`cq_event_signed`, Role above). (c) `form_rival_reported` 1, in the arbitration below. A call of two such forms needs the highest of its bars (`max`), the 1x1's and the cut number's among them. A listed call of any of these forms needs only what any listed call needs; with a list loaded, a call it does not hold still needs its bar (the review's ruling: MASTER.SCP is one-sided evidence, and CW Skimmer does the same). The first digit is 2 to 9 by derivation: a member's number sent in cut digits has its 1 and 0 sent as A and T too, so it never starts with either digit. *Counted*: the pooled test counts an occurrence, and its role, only inside the window (`window_s`) and where no variant holds the call (`held_at`), so a signed reading at a place where a variant holds the call does not lower the bar; the List's *Signed* (`CallRow::framed`) counts every reading, held or not, and is another thing. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+**Report test** (a named word no exception: CW Skimmer's practice, provenance below), on the pooled points when `pool_places` is 1 (the default: the same test then reports and withdraws, so a row does not come and go; review 15), else on the local points; in order. First, since `call-short-1`, an unlisted call of three characters (`is_short_call`: a letter, a digit, a letter, the 1x1 form of any series: N4A, W6S, G2M) needs at least `short_points` (3) on the points tested, or `short_points_signed` (2) when an occurrence counted holds a reading with the role *signed* (`Occurrence::sender`; `Support::sender`), whatever it would pass on below (a tiny call, a named word); 0 leaves the bar to the rules below. And with `cut_number_form` 2 (the default) an unlisted call of a cut number's shape (`is_cut_number_form`: a digit 2 to 9, then A, N or T, then the call's digit, the pair not 9A, 7N or 8N: 2T7A, 3N4D, 5A3BOB, 4A7A) needs in the same way at least `cut_number_points` (5), or `cut_number_points_signed` (2) with such a signed occurrence; with 1 its readings off the list are dropped before they reach a candidate; with 0 it is any call. And since `calls-list-1`, four forms each with its own setting, the owner's ruling (2026-11-21) that without the list no real form is excluded outright: a special form, two or more digits after the prefix (`ParsedCall::special`: W100AW, TM100TF; `special_form`), an unusual one, four letters after one digit (`unusual`: VK3FABC; `unusual_form`), a prefix-digit one, a letter-digit prefix whose digit is the call's (`prefix_digit`: C6AGU, E7DX, D4C; `prefix_digit_form`), and a word of CW (`cw_word`, `is_cw_word`: one or two letters before 5NN, R5NN, DJ5NN; `cw_word_form`). With the setting at 2 (the default) an unlisted call of the form needs at least its `*_points` (4 each: `special_points`, `unusual_points`, `prefix_digit_points`, `cw_word_points`), or its `*_points_signed` (3 each) with a signed occurrence counted, as the 1x1's bar works; with 1, the rule before `calls-list-1`, its readings off the list are dropped before they reach a candidate; with 0 it is any call. Three rules go with the bar, all for these four forms unlisted at 2 only. (a) `form_whole_words` 1: only whole and glued readings reach a candidate; a joined or stripped one is dropped in `add`, as a tiny call's are (0: every reading). (b) `keyword_report_signed` 1: a word of CW that is a keyword run onto 5NN (`is_keyword_report`: the one or two letters before 5NN one of `is_keyword`'s words) is not reported without a counted signed occurrence, however many points it has (0: the bar alone). Its exact reach, 24 strings: K5NN, R5NN, CQ5NN, DE5NN, TU5NN, KN5NN, BK5NN, SK5NN, AR5NN, NR5NN, UR5NN, UP5NN, DX5NN, GM5NN, GA5NN, GE5NN, GN5NN, OM5NN, ES5NN, FB5NN, HW5NN, NA5NN, SS5NN, FD5NN. Nearly all are calls' forms of allocated series, and some are issued: K5NN (active in the FCC's file), NA5NN and NR5NN (in MASTER.SCP); KN5NN has a US form too; and the forms of Scotland (GM5NN), Slovakia (OM5NN), Estonia (ES5NN), Ukraine (UR5NN), Sweden (SK5NN), Germany (DE5NN), Pakistan (AR5NN), Kazakhstan (UP5NN), the Philippines (DX5NN), France (FB5NN, FD5NN, HW5NN), China (BK5NN), Portugal (CQ5NN) and Russia (R5NN). Unlisted, each needs a signed reading; one running a contest signs by CQ and the event word (`cq_event_signed`, Role above). (c) `form_rival_reported` 1, in the arbitration below. A call of two such forms needs the highest of its bars (`max`), the 1x1's and the cut number's among them. A listed call of any of these forms needs only what any listed call needs; with a list loaded, a call it does not hold still needs its bar (the review's ruling: MASTER.SCP is one-sided evidence, and CW Skimmer does the same). The first digit is 2 to 9 by derivation: a member's number sent in cut digits has its 1 and 0 sent as A and T too, so it never starts with either digit. *Counted*: the pooled test counts an occurrence, and its role, only inside the window (`window_s`) and where no variant holds the call (`held_at`), so a signed reading at a place where a variant holds the call does not lower the bar; the List's *Signed* (`CallRow::framed`) counts every reading, held or not, and is another thing. A tiny call: `tiny_points`. Any occurrence that is a whole or glued word with the role *named*: `points_named` (2 by default, so no exception; 1 a variant), with a list for a listed call only (`named_listed_only`). On a list: `points_known` if framed, or, with `known_margin_nats` above 0 (a variant; 0 by default), if an occurrence of 1 point has a margin of at least that (*sure*); else `points_known_bare`. Off it: `points_framed` if framed, else `points_bare`.
+
+**The forms' evidence** (`calls-form-3`; the owner, 2026-11-22: "I don't see why unusual calls such as N1MM should necessarily need to have the same evidence as very short calls such as N4K, they are special in different ways", and his ruling on it: evidence adjusts a form's bar, and no reading of a real call's shape is excluded outright). Each rule is for an unlisted call of its form at the form's setting 2, and each has its own setting, at 0 the rule before (every occurrence at its points, against the bars above; both at 0 give `main`'s lists byte for byte on the 2026-11-17 and 2017 replays, without and with MASTER.SCP, and on the 46 generated logs without it, but for the one 2026-11-17 recording where the words of CW's fixed names, dropped by the owner's ruling, change a call: K3S on 20 m at 19:00Z). (a) *Truncation* (`truncation_evidence` 1), for a 1x1 and a prefix-digit call, whose typical false reading is a fragment of a longer call (DL3I read L3I, N3QE read N3Q): an occurrence o is *contained* when some reported call whose base holds the call's base as a substring (L3I in DL3I, N4K in KN4KX), and is longer, has an occurrence x of its own (`Occurrence::own`: some reading of it not named by another, since a runner names each caller on his own carrier) with |f_x − f_o| ≤ `truncation_hz` (10 Hz) and start_x − `truncation_s` < end_o, start_o < end_x + `truncation_s` (120 s). The bars of the two forms (`short_points`, `prefix_digit_points` and their signed values) are then tested on Σ w_o p_o over the counted occurrences, transmissions grouped as for the pooled points, with w_o = `contained_weight` (0.5) for a contained occurrence and 1 for any other; and a contained occurrence's signed reading does not lower the bar (`Support::clean_sender`). So a fragment read often enough on its longer call's carrier is still reported, and a real call of the form elsewhere, or on a caller's carrier more than 10 Hz away, counts in full. Two judgments follow a reading (`after_reading`): when a reported call's reading (or, when the call was reported by it, any of its occurrences) has an occurrence of its own within `truncation_hz` and `truncation_s` of a reported 1x1 or prefix-digit call it contains, that call is withdrawn only if it fails its pooled test with the containment and passes it without (`withdraw_fragments`), so a fragment that fails for another reason is left to the arbitration; and when a call is withdrawn, the unreported calls of these forms inside it that it contained are judged again at the present (`recheck_fragments`), so a fragment weighed down by a container that later leaves is reported if it passes. A call reported on a counted signed occurrence that no reported longer call contained (`Candidate::reported_signed`, from `Support::clean_sender` at the report) is not weighed by containment while it stays reported (`containers` gives none), so containment alone never withdraws it; a rival at its place still can, by the arbitration, and once withdrawn it is weighed again toward its next report (the re-review of `calls-form-3`: a special-event 1x1 running a pileup of callers whose calls contain it, N4A and KN4ABC 5 Hz off at zero beat). Only a reported call contains: on the replays a real 1x1 (W7E, W6S, N7S on the 2017 recordings) is read beside dozens of junk extensions of itself (W7EE, EW7E, W7EA), so containment by any reading would weigh down every real 1x1. (b) *Join form*: none. Four letters after the digit keep the bar of calls-list-1; `calls-form-3` measured a rule (a reading ending in K, R, E, I or T whose gap before that letter was over 1.6 times its other letter gaps weighed half) and dropped it: it changed no call on any replay or generated set (provenance). (c) *QSO frame* (`cw_word_evidence` 1), for a word of CW (since the owner's ruling of 2026-11-22 the 5NN words only: R5NN, DJ5NN), whose typical false reading is the report run onto a word (UR 5NN read UR5NN): every occurrence counts, against `cw_word_points` and `cw_word_points_signed` as before, and the bar is also passed when the occurrences in a QSO's frame come from at least `cw_word_frame_overs` (2) overs. A reading is in a QSO's frame (`CallReading::qso_frame`) when, past its repeats and stray E, T, I, the word before it or the word after it is DE, or the same word is right before or after it (sent twice): the frames of a casual QSO (W1AW DE DJ5NN K, DJ5NN DE W1AW), which hold in contests too; a sign-off after it (K, KN, BK, AR, SK) is no frame by itself, nor are 5NN, UR, TU and the event words (CQ and the event words already sign, Role). Overs: the framed occurrences counted, in order of start, one over each time one starts more than `over_gap_s` (10 s) after the end of all before it, so a call sent twice in one over, or DE call DE call, counts once. (d) The special form is unchanged: repeats remain its evidence. The reading log (`kz4ap-calls --readings`) prints the frame.
 
 **Arbitration.** Against every other candidate with a reading within `variant_hz` of this one and whose occurrences span to within `variant_s` of the judgment time on either side (now, or a loser's last reading, below), by base-call edit distance d,
 the limit being 2 for a shorter call of 4 characters or more, else 1, and 2 also for a *short pair* (`short_variant_ratio` not 0): one of the two has one letter after its last digit and both have the same characters up to their last digit (K1T and K1BX); a call that is the start of the other, or starts with it, counts as d = 1 at any distance (`prefix_held`). A rival beats a call if both are on or off the list and its points
@@ -6100,7 +6176,7 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   contest +1 true); a transmission read as two near calls counted for the better reading only (`shadow_alternatives`: 200 to 199
   confirmed, misreadings 54 to 57, OH2J false on H2; it did take K0HBN off real30).
 
-**Heuristics not tuned:** `stripped_points`, the keyword sets, the words of CW (listed only) and the refused characters.
+**Heuristics not tuned:** `stripped_points`, the keyword sets, the 5NN form of the words of CW and the refused characters.
 
 **Not taken:** `near_factor` (a call's near variants adding to its points: 217 true and 3 to 11 false on the contest, but 24 to 76 rows on real 40 m); a call before UP at 1 point (does not bring E51MWA back when the word is lost); CW Skimmer's 1 repetition for a listed call on real MASTER.SCP (1 true for 3 false on real 40 m; review 5). In `call-2`, on the two tuned 2017 recordings without a list (int-1's rules 97 / 49, `call-2`'s 97 / 45): a word named once to pass only at a margin of 0.05, 0.1, 0.2, 0.5 or 1 nat (0.5 nat: 95 / 36, and on the contest 216 / 4 against 220 / 6; 0.05 nat: the contest 219 / 5, but W4BOH, confirmed, lost on W3OA); a whole word of margin under 0.2, 0.5, 1 or 2 nats scoring 0.5 or 0.75 point (0.5 nat at 0.5 point, without the short pairs: 92 / 29, the contest 206 / 3); no word named alone at all (85 / 22, the contest 210 / 2; taken in `rob-1` with pooled points, above); a call named once held while a reported call one edit from it stands anywhere in the band (96 / 42: one confirmed call fewer, three misreadings fewer). Each takes confirmed calls with the misreadings: the margin of a correct named word is often under 0.5 nat too (W4BOH 0.00, N1XI 0.22), and wrong ones can be sure (K8VC, W6UM).
 
@@ -6438,6 +6514,56 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   MASTER.SCP, one edit from three calls spotted that day) too; T5T (80 m and 40 m) and H8M (40 m) the RBN spotted elsewhere that
   day, unverified (T5T is gained on four recordings of two days, 20 m to 80 m, more like a fragment than a Somali station). None lost. A heuristic,
   the bars the test set's choice.
+- The forms' evidence (`calls-form-3` and its review, 2026-11-22; the owner: "I don't see why unusual calls such as N1MM should
+  necessarily need to have the same evidence as very short calls such as N4K, they are special in different ways"; on the first
+  form of the rule, which counted only uncontained, gap-measured or framed occurrences: "I don't like 'only copies in call position
+  count', that seems too restrictive. How you identify 'call position' is very specific to contests, for example", ruled so that
+  evidence adjusts a bar and never excludes a reading; and in the review, on the words of CW: "No on keeping the list of calls for
+  now"). *Measured* first, each form's typical false reading (`build/cf-3/scratch/trunc.py`, `gaps.py`, `cwframe.py`, `dfcheck.py`
+  over the replays' reading logs; git-ignored). (i) Truncation: of the 1x1 and prefix-digit calls `main` reported, the misreadings
+  read most often lie beside a reported call that contains them on the same carrier (N3J beside N3JT, W1Q beside W1QK, K0H beside
+  K0HT on the 2026-11-18 CWT, read 32 to 56 times), while the real 1x1 calls of the 2017 recordings (W7E, W6S, N7S, W0E, W0D) have
+  no reported container though dozens of their junk extensions are read (W7EE, EW7E, W7EA): so containment is by a reported call
+  only. The carrier offset from such a fragment's reading to its container's nearest reading (within 150 Hz and 120 s), over the
+  three replay sets on `main`: of the 399 readings of calls the RBN judge calls misread or unknown, 376 within 1 Hz, 382 within 10
+  Hz, 388 within 50 Hz, the largest 130 Hz; of the 143 of calls it confirms (real or the RBN's own misreadings), 131 within 1 Hz,
+  the largest 104 Hz. So `truncation_hz` 10 Hz (measured; the margin from 1 Hz to 10 Hz takes in 6 more readings), where 150 Hz
+  (`variant_hz`, the first form) let a pileup's caller 60 Hz off weigh the runner down (the review's probe: N4A withdrawn from
+  8.6 s to 98.6 s). The prefix-digit junk is mostly not a fragment (E5E, T5T, A2EW, D4Y: no container). (ii) Join: the gap before
+  the last letter over the median of the other letter gaps, on 2 412 whole readings of reported calls of 5 to 7 characters on the
+  2026-11-17 and 2017 replays: median 1.00, 99% 1.44, 99.5% 1.6; the join form's 131 whole readings there are mostly noise text
+  with ordinary gaps (G5ETEE 0.69 to 0.78), so a rule weighing a long-gap reading ending in K, R, E, I or T half was tried; on every
+  replay and generated set it could act only on UR5NNET and R9CEPE (2026-11-18 80 m, two readings each, far below the bar) and
+  changed no call, so it was dropped (the coordinator's ruling: no inert code). (iii) Words of CW: of the rigs', antennas' and
+  loggers' names then listed none is read more than twice in a recording on any replay set (K3S, K4D twice); the 5NN forms are read
+  more (UR5NN 14 times on 2026-11-17 40 m), kept off by the keyword rule. *Tried* (exact replays; RBN judge with MASTER.SCP and
+  HD.dat; window-confirmed / spotted that day / misread / unknown; tables in `build/cf-3/judge/`, git-ignored). The first form,
+  withdrawn by the ruling: its truncation part gained K1LGQ (window-confirmed by 31 skimmers) on 2026-11-17, as every later form
+  does (`main` reported K1L, read whole and joined, in its place). Lower bars, measured with that first form (a contained
+  occurrence counting nothing), none gaining a window-confirmed call: a 1x1 bar of 2 on uncontained readings gained 7 generated 1x1
+  callers (G6I, I1J, I8Z on the contest, F8L, I0M, K2Z, W4T on its fresh seed) but added 7 misreadings on 2026-11-17 (B4V, N4A, I5E,
+  K1I, K2H, N3V, R5I) and K2T, K3Z and W0M (spotted that day) on 2017; a prefix-digit bar of 3, 2 signed, brought back L3I on the
+  fresh-seed contest and added P2P, T5E, E4E, E5S, E5E, T3E on the replays; so the bars stay `main`'s. The second form (a contained
+  occurrence at 0.5 within 150 Hz; every reading of a word of CW counted, the frame bar 2 points; the join rule): `truncation_s`
+  30 s and `contained_weight` 0.75 lost K1LGQ, 600 s changed nothing, 0.25 lost N4N (2017, N2GZ; spotted that day); and it lost
+  T2T, N7W and W3P on 2026-11-18 20 m and K4N on 40 m. The review traced those losses to the first retest (a reported fragment
+  judged again at any reading of its container anywhere in the band, against every rival present: `contained_weight` 1 lost them
+  too), found the frame bar reached by one over of conversation (G5RV G5RV), and a fragment never released when its container
+  left. *Taken* (the review's fixes: 10 Hz and the container's own occurrences, the retest only beside the container and only when
+  the containment alone makes the fragment fail, a withdrawn container's fragments judged again, frames once per over and two
+  overs needed, the join rule dropped, the fixed names of the words of CW dropped; and from the re-review, a call reported on a signed reading not weighed by containment again while it stays reported), `main` to the branch, calls / window-confirmed /
+  spotted that day / misread / unknown. No list: 2026-11-17 408 / 172 / 66 / 79 / 91 to 410 / 173 / 66 / 80 / 91; 2017 415 / 200 /
+  105 / 53 / 57 to 413 / 200 / 105 / 51 / 57; 2026-11-18 1 187 / 580 / 182 / 244 / 181 to 1 184 / 580 / 182 / 240 / 182, of which its CWT recordings (20 m and 40 m) 1 120 / 564 / 169 / 226 / 161 to 1 117 / 564 / 169 / 222 / 162 and its 80 m (non-CWT) 67 / 16 / 13 / 18 / 20 unchanged. With MASTER.SCP: 2026-11-17 420 / 172 / 72 / 81 / 95 to 421 / 173 / 72 / 81 / 95;
+  2017 457 / 219 / 120 / 58 / 60 to 456 / 219 / 120 / 57 / 60; 2026-11-18 1 133 / 572 / 178 / 209 / 174 to 1 134 / 572 / 178 / 209 / 175 (CWT 1 059 / 555 / 163 / 187 / 154 to 1 060 / 555 / 163 / 187 / 155, 80 m 74 / 17 / 15 / 22 / 20 unchanged). Every set together, no list: non-CWT 890 / 388 / 184 / 150 / 168 to 890 / 389 / 184 / 149 / 168, CWT 1 120 / 564 / 169 / 226 / 161 to 1 117 / 564 / 169 / 222 / 162; with MASTER.SCP non-CWT 951 / 408 / 207 / 161 / 175 to 951 / 409 / 207 / 160 / 175, CWT 1 059 / 555 / 163 / 187 / 154 to 1 060 / 555 / 163 / 187 / 155. No window-confirmed call lost on any set, with or without
+  the list. Calls changed, no list: 2026-11-17 40 m 12:30Z K1L lost (misread), K1LGQ gained (window-confirmed by 31 skimmers, an
+  active license), K1M gained (misread; 4 points, signed, not on `main`'s final list); 20 m 19:00Z K3S gained (misread; a word of CW
+  until the owner's ruling, now a 1x1 read three times); 2017 N4I (W3OA), K7D (KC2LRC-1) lost, both misread; 2026-11-18 20 m E5EB, N7W lost (misread), EE5EB (misread) and G5EB (unknown; E5EB held it on `main`) gained; 40 m I7Y, K7S, W1Q lost (misread); 80 m none (T2T and K4N, spotted that day, which the second form lost, are kept; and the re-review's rule keeps K2M on 2017 and W3P and W9G on 2026-11-18 20 m, misread 1x1 calls the review's version withdrew after a signed report, the cost of never withdrawing a signed call by containment alone). With
+  MASTER.SCP: 2026-11-17 K1L to K1LGQ and K3S gained; 2017 K7D lost; 2026-11-18 E5EB lost, EE5EB and G5EB gained. Of these, the gear-word removal alone (both evidence
+  settings at 0, against `main`): K3S gained on 2026-11-17, with the list too; nothing on 2017, nor on 2026-11-18 (no list there gains or loses a gear word). Report times (`reported_s`)
+  of the calls both lists hold: no list, 1 993 of 2 002 unchanged; earlier W3QT (−19.2 s), N4QS (−107.3 s), EE4E (−626.8 s), N3MK (−4.4 s); later N4N (+853.2 s; 2017, spotted that day) and four 1x1 fragments now weighed down, N4E (+944.4 s), W9G (+699.8 s), K0H (+94.2 s), N4F (+56.2 s), all misread; with MASTER.SCP 2 006 of 2 007 unchanged, W3QT −19.2 s. The generated sets (46 logs), no list and with MASTER.SCP: every list's calls `main`'s,
+  and with both settings at 0 byte for byte (no list: the contest 1 false, fresh seed 0, strong pairs 1 and 0, crowded 1, 100
+  stations 0, G2 0 and 2, H2 2 and 0). The stage's CPU (`kz4ap-calls`, wall time over channel-seconds, up to six replays side by
+  side with other programs running): on the 2026-11-18 CWT, 20 m, `main` and the branch (as of the review; the re-review's rule adds a flag test) run side by side at Idle priority, 2.570 and 2.567 ms per channel-second (1 455.0 and 1 453.2 s of wall time); the replays above, under other load, gave the branch 6.25 ms on 20 m, and 0.010 ms on 80 m, against the bar's 40 ms and the goal's 8 ms. *The re-review* (of the review's version): a signed, reported 1x1 was withdrawn by a zero-beat caller containing it (N4A, then KN4ABC 5 Hz off, worked; N4A back only at 98.6 s), hence the signed-report rule (exact form, (a)); its tests are the probes. Its long-over probe (DE DJ5NN at both ends of one over), which it found not reported, reports at 11.8 s here, with the commit it reviewed rebuilt and with this one: its two readings lie 10.5 s apart at the test's 0.1 s a character, two overs by the rule as written, so neither the code nor this description was wrong; the cause of the different result on the re-review's side was not found. A test now holds both sides (10.5 s apart: reported; 7 s apart: not). *Held out, once* (the two 2026-11-19 recordings, both in CWT hours, run after the re-review's fix, to report only; `build/cf-3/heldout3/`, git-ignored), calls / window-confirmed / spotted that day / misread / unknown, `main` to the branch: no list 509 / 261 / 68 / 105 / 75 and with MASTER.SCP 501 / 260 / 69 / 95 / 77, both unchanged, no call changed (the second form had lost N5O, misread). The one new non-CWT recording (40 m, 2026-11-22 16:00Z, a weekend daytime hour) was not run: it has no logged decoder events, the RBN's file of that day is not yet out to judge it by, and its decode would have held the desktop busy while the decode-only sessions were pausing for a busy machine.
 - `cq_event_signed` (the review of `calls-list-1`): the CQ and an event word sign the call after them (Role, above). *Measured* at
   bar 8 and signed bar 2, on and off: on the 2026-11-17 and 2017 replays and the generated sets the same calls (4 rows signed now,
   N5ZC, W0ECC, WA3AER on KC2LRC-2 and AB9CA on W3OA, and some rows placed at their signed reading); on the 2026-11-18 CWT W8K
@@ -6500,7 +6626,9 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   OM5NN, UR5NN) needs a signed reading unlisted: a CQ, DE or K beside it, or CQ and an event word (CQ CWT K5NN); a station of that
   form only calling others bare is never reported. A junk word read often passes any bar (D4Y, 44 whole words on 20 m, 2026-11-17;
   A2EW, 9), as does a CWT runner's number that starts with a 1, sent A, and so has the prefix-digit form (A7TA, 1701, 71 readings),
-  as the cut-shaped numbers do, and so does a word of CW read four times in 30 min in a QSO about rigs or software (G5RV, K3S, N1MM; a test). A call of these forms that reaches its bar holds its near variants as any call does, so a commoner
+  as the cut-shaped numbers do. Since the review of `calls-form-3` the names of rigs, antennas and software (G5RV, N1MM, K9AY) are
+  calls of their own shapes, so one read twice in 30 min in a QSO about rigs or software is reported at any call's bar (a test: LOG
+  IS N1MM N1MM); the owner's ruling, its cost measured by the false-call checks on the casual-QSO recordings. A call of these forms that reaches its bar holds its near variants as any call does, so a commoner
   misreading of a real call can take the call's row (E7R, read 13 times whole, holds EE7R on the 2026-11-18 CWT). A pattern table per
   series, as CW Skimmer's, would separate C6@ from E5@ (backlog). `<BK>` is read as BK, but BK has no role, so "call BK" reads bare.
   The generated sets' scorer (`calls_score`) refused a prefix-digit call by its own pattern and skipped its row, so a false call of
@@ -6509,6 +6637,32 @@ cases (N5ZC, GM3YOR, W7QC) are among those the rules were made from. Numbers: ca
   never dropped; a test scores an L3I-like false call and a C6AGU-like true one. Rescored with it, `main`'s and the final build's
   generated lists give the same numbers as before, without and with MASTER.SCP, no row outside the grammar; the signed-bar-2 runs
   now show L3I (the fresh-seed contest's false calls 0 to 1).
+- The forms' evidence (`calls-form-3`): no reading of a real call's shape is excluded, so every rule only moves a bar. A fragment
+  weighs half only beside a *reported* call's own occurrence containing it within 10 Hz: one whose call is never reported (the
+  generated contest's DL3I, read only as P L3I and L3I C) counts in full, as does one read from another track of its signal more
+  than 10 Hz off (17 of `main`'s 399 contained fragment readings lie 10 to 130 Hz from their container), and a fragment read often on
+  its call's carrier (twice the bar) is still reported. A containing reading
+  that is not reported weighs nothing, since a real 1x1's own junk extensions are read beside it (W7EE beside W7E). Containment is a
+  substring, so a real 1x1 inside a longer call's own transmissions on its carrier within 120 s (a 1x1 answered by a caller
+  whose call contains it, both on one carrier within 10 Hz) is weighed down too. A container's later withdrawal releases its
+  fragments at once; a container that merely ages out does not (the fragment is judged at its next reading, as any call). The join
+  form has no rule: a call glued to the over's K (DL1ABC K read DL1ABCK), to TU or to a name passes on the form's bar. The names of rigs,
+  antennas and software (G5RV, N1MM, K9AY, K3S) are calls of their own shapes by the owner's ruling, so one read twice in 30 min in
+  conversation, or sent twice in one over, is reported at its shape's bar (the review's probes: ANT G5RV G5RV, LOG IS N1MM N1MM,
+  BALUN IS W2DU W2DU, and G5RV, K9AY, HF6V read once in each of two overs, are reported; K3S on 2026-11-17 20 m); the false-call
+  checks on the casual-QSO recordings measure that cost. The QSO frames of the 5NN words (DE before or after, or sent twice) hold
+  in casual QSOs and contests alike, and the overs are told apart by a 10 s pause between framed readings, not by the sign-offs,
+  so one long over that names the call at its start and its end more than 10 s apart counts as two overs and passes the frame bar
+  (a test: DE DJ5NN at both ends of one over, 10.5 s apart, is reported; 7 s apart it is not). Callers within 10 Hz: a caller at
+  zero beat whose call contains a 1x1 or prefix-digit runner (KN4ABC beside N4A) weighs the runner's readings half toward his first
+  report, and his signed readings then do not lower his bar; once the runner is reported on a signed reading he is not weighed
+  again while reported, so the residual is a runner who never signs (a contest runner sending only TU N4A) beside such a caller:
+  he needs up to twice the readings for his first report, and is withdrawn when the caller is reported if the containment alone
+  makes him fail. The recheck after a withdrawal evaluates a fragment at the present without a reading of its own, so a fragment
+  reported again can withdraw the rivals it beats at its place, which `main` does only on a reading; the rechecks run at most
+  1 000 rounds after a reading, and what is still queued waits for the next reading's rechecks. The re-review found no case of either;
+  the replays do not count them apart. No rule lowers a bar below `main`'s but the frame rule: no lower bar was measured safe
+  (provenance).
 - Who sent a call is known only from the words around it: a DX naming a caller twice with no 5NN read next to it counts as *bare*, at the DX's frequency. *Named*
   is only as good as the decoder's reading of those words.
 - A misreading read twice, with its true call read less, is reported: on real 40 m IK0S beside IK0HBN (too many edits apart for the arbitration); IK6QOP, read exactly once, shows as K6QOP and IK6QO, the stray-letter reading of a word giving half a point to the shorter call. The arbitration cannot know which of two near calls is the true one without a list, and with one a misreading that lies on the list beats the true call.

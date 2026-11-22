@@ -88,6 +88,7 @@ void TrackText::apply(const std::vector<kz4ap::DecodedSymbol>& chars,
                       const std::vector<kz4ap::TextCorrection>& corrections) {
     for (const auto& c : chars) {
         final_.push_back(c.text);
+        timed_.push_back(c);
         immediate_ += c.text;
     }
     for (const auto& k : corrections) {
@@ -103,7 +104,11 @@ void TrackText::apply(const std::vector<kz4ap::DecodedSymbol>& chars,
                final_[final_.size() - 1 - suffix] == k.chars[new_n - 1 - suffix].text)
             ++suffix;
         final_.resize(from);
-        for (const auto& c : k.chars) final_.push_back(c.text);
+        timed_.resize(from);
+        for (const auto& c : k.chars) {
+            final_.push_back(c.text);
+            timed_.push_back(c);
+        }
         corrections_.push_back({k.t_s, k.reach_s, k.reason, old_n - prefix - suffix, new_n - prefix - suffix});
     }
 }

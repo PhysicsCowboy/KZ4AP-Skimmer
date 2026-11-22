@@ -81,6 +81,9 @@ void set_value(CallSearchConfig& c, const std::string& assignment) {
         {"joined_periodic", &c.joined_periodic}, {"x_as_tu", &c.x_as_tu}, {"joined_covers", &c.joined_covers}, {"covers_own_points", &c.covers_own_points}, {"flat_stripped", &c.flat_stripped},
         {"short_points", &c.short_points}, {"short_points_signed", &c.short_points_signed}, {"cut_number_form", &c.cut_number_form},
         {"cut_number_points", &c.cut_number_points}, {"cut_number_points_signed", &c.cut_number_points_signed},
+        {"truncation_evidence", &c.truncation_evidence}, {"truncation_hz", &c.truncation_hz}, {"truncation_s", &c.truncation_s},
+        {"contained_weight", &c.contained_weight}, {"cw_word_evidence", &c.cw_word_evidence},
+        {"cw_word_frame_overs", &c.cw_word_frame_overs}, {"over_gap_s", &c.over_gap_s},
         {"segment_stray_nats", &c.segmentation.stray_nats}, {"segment_call_nats", &c.segmentation.call_nats},
         {"segment_repeat_nats", &c.segmentation.repeat_nats}, {"segment_de_before_nats", &c.segmentation.de_before_nats},
         {"segment_de_after_nats", &c.segmentation.de_after_nats}, {"segment_word_min_nats", &c.segmentation.word_min_nats},
@@ -157,12 +160,13 @@ int main(int argc, char** argv) {
         std::ofstream readings;
         if (!o.readings.empty()) {
             readings.open(o.readings);
-            readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats\n";
+            readings << "call,how,role,doubled,start_s,end_s,freq_hz,margin_nats,qso_frame\n";
             stage.set_reading_log([&](const CallReading& r, double freq_hz) {
                 static constexpr const char* kHow[] = {"whole", "glued", "stripped", "joined"};
                 static constexpr const char* kRole[] = {"unknown", "sender", "named"};
                 readings << r.full << ',' << kHow[static_cast<int>(r.reading)] << ',' << kRole[static_cast<int>(r.role)] << ',' << (r.doubled ? 1 : 0) << ','
-                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << r.margin_nats << '\n';  // nats; -1: unknown
+                         << r.start_s << ',' << r.end_s << ',' << freq_hz << ',' << r.margin_nats  // nats; -1: unknown
+                         << ',' << (r.qso_frame ? 1 : 0) << '\n';
             });
         }
         double stage_s = 0.0, channel_seconds = 0.0, stream_s = 0.0;

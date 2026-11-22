@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -22,6 +24,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace kz4ap;
@@ -1644,6 +1647,137 @@ TEST(EchoEstimator, LearnsATailAfterTheFallAndNoneWhereThereIsNone) {
     EXPECT_FALSE(learn_tail(60.0, 0.1, 12, 23).on);
 }
 
+// Marks alternating 20 runs at +30 and 20 at +25 dB re the floor (1000 and 316 FS^2, the floor 1 FS^2), each followed by a tail of
+// 31.6 FS^2 for 12 samples, whatever the mark (-15 and -10 dB re the marks); the estimator's shape and M-bar at the end (text-tail-2).
+std::pair<EchoShape, double> learn_alternating_tail(double absolute) {
+    SegmentalConfig config;
+    config.echo_absolute = absolute;
+    config.echo_level_runs = 30.0;
+    config.echo_level_min_db = 20.0;
+    const SegmentalShared shared(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    EchoEstimator estimator(config, shared.template_tables);
+    std::mt19937 rng(31);
+    std::normal_distribution<double> unit(0.0, std::sqrt(0.5));
+    for (int run = 0; run < 400; ++run) {
+        const double level = (run / 20) % 2 == 0 ? 1000.0 : 316.0;
+        const int mark = run % 3 == 0 ? 39 : 13, gap = run % 5 == 0 ? 39 : 13;
+        for (int k = 0; k < mark; ++k) estimator.push(std::norm(std::complex<double>(std::sqrt(level) + unit(rng), unit(rng))), 1.0);
+        for (int k = 0; k < gap; ++k)
+            estimator.push(std::norm(std::complex<double>(unit(rng), unit(rng))) * (1.0 + (k < 12 ? 31.6 : 0.0)), 1.0);
+    }
+    return {estimator.shape(), estimator.level_fs2()};
+}
+
+TEST(EchoEstimator, AnAbsoluteTailIsReadReTheMeanMarkAndFollowsTheRecentMarkPower) {
+    // A tail that does not follow the mark: re the mean mark, (1000 + 316) / 2 = 658, it is 31.6 / 658 = -13.2 dB; the mean of the
+    // ratios (31.6 / 1000 and 31.6 / 316) is -11.8 dB re the mark (derived): 1.4 dB apart before the estimator's bias. Both read low
+    // (A.8e: the last -6 dB sample moves into the tail), and more so behind the weaker marks, whose tail stands 5 dB nearer their
+    // half point: that bias weighs on the mean of the ratios, where those marks count as much as the strong ones, more than on the
+    // ratio of the means, where they count by their power. Measured (seed 31): -14.8 and -14.1 dB re the mark, read low by 1.6 and
+    // 2.3 dB, 0.71 dB apart. Whether there is a tail, and how long, is the mean of the ratios' in both forms. M-bar, here with a
+    // memory of 30 runs and every strong run, ends between the levels: 548 FS^2 by the exponential memory (derived), the last 20
+    // runs having been at 316.
+    const auto [absolute, level] = learn_alternating_tail(1.0);
+    const auto [relative, unused] = learn_alternating_tail(0.0);
+    (void)unused;
+    ASSERT_TRUE(absolute.on);
+    ASSERT_TRUE(relative.on);
+    EXPECT_TRUE(absolute.absolute);
+    EXPECT_FALSE(relative.absolute);
+    EXPECT_EQ(absolute.tail.size(), relative.tail.size());
+    const double difference_db = 10.0 * std::log10(relative.tail[0] / absolute.tail[0]);
+    std::cout << "alternating marks: the tail " << 10.0 * std::log10(absolute.tail[0]) << " dB re the mean mark, "
+              << 10.0 * std::log10(relative.tail[0]) << " dB re the mark as a mean of ratios; M-bar " << level << " FS^2\n";
+    EXPECT_GT(difference_db, 0.3);
+    EXPECT_LT(difference_db, 2.5);
+    EXPECT_GT(level, 500.0);
+    EXPECT_LT(level, 600.0);
+}
+
+// A keyed carrier at s500_db through LevelEvidence with the tail's shape (8 positions of g, the fall window at g) in one form;
+// absolute: M-bar = level_fs2 (sigma^2 = 1 FS^2). Every claim's fall and 8-position tail, read back from the sums.
+struct TailReading {
+    std::vector<double> fall, tail;
+};
+
+TailReading read_tail(const SegmentalShared& shared, const SegmentalConfig& config, const Simulated& sim, int form, double g, double level_fs2) {
+    RunningSums sums;
+    LevelEvidence evidence(config, shared.level_tables, sums);
+    if (form > 0) {
+        EchoShape shape;
+        shape.on = true;
+        shape.absolute = form == 2;
+        shape.in_fall.fill(g);
+        shape.tail.assign(8, g);
+        evidence.set_echo(shape);
+        evidence.set_echo_level(level_fs2);
+    }
+    for (const double e : sim.e) evidence.push(e, 1.0);
+    evidence.finish();
+    TailReading out;
+    for (std::int64_t j = 3000; j < 5800; ++j) {
+        out.fall.push_back(sums.fall(j));
+        out.tail.push_back(sums.tail(j, 8));
+    }
+    return out;
+}
+
+TEST(LevelEvidence, TheAbsoluteFallWindowAndTailAtTheStationsLevelReadAsTheProportionalOnes) {
+    // text-tail-2 (review): a steady carrier at +21 dB S500, a grid level, and a tail of g = 0.1 (-10 dB re the mark). With M-bar the
+    // carrier's a^2 the two forms take the same tail power: the tail's 8 positions read alike to the belief's spread over the edge
+    // groups, and the fall window alike within its noise's rounding to whole 1.5 dB steps (rho_0 = 0.1 x 846 = 85, 19.3 dB re sigma^2,
+    // taken as 13 steps, 19.5 dB: the absolute form's own approximation), while the groups off the carrier's level take M-bar (at
+    // most 6 dB above their own) where the proportional form takes their own: within 5% of each score, a bound by measurement (seed 5: the
+    // tail within 2.4%, the fall within 2.0%).
+    const SegmentalConfig config;
+    const SegmentalShared shared = make_shared_parts(config);
+    const Simulated sim = simulate(21.0, shared.output_noise.sigma2_per_n0_hz, 5);
+    const double r2 = std::pow(10.0, 2.1) * 500.0 / shared.output_noise.sigma2_per_n0_hz;
+    const TailReading proportional = read_tail(shared, config, sim, 1, 0.1, 0.0);
+    const TailReading absolute = read_tail(shared, config, sim, 2, 0.1, r2);
+    double tail_worst = 0.0, fall_worst = 0.0;
+    for (std::size_t i = 0; i < proportional.tail.size(); ++i) {
+        tail_worst = std::max(tail_worst, std::fabs(absolute.tail[i] - proportional.tail[i]) / (1.0 + std::fabs(proportional.tail[i])));
+        fall_worst = std::max(fall_worst, std::fabs(absolute.fall[i] - proportional.fall[i]) / (1.0 + std::fabs(proportional.fall[i])));
+    }
+    std::cout << "steady +21 dB S500: tail within " << tail_worst << ", fall within " << fall_worst << " (relative)\n";
+    EXPECT_LT(tail_worst, 0.05);
+    EXPECT_LT(fall_worst, 0.05);
+}
+
+TEST(LevelEvidence, AnAbsoluteTailUnderHalfAStepLeavesTheFallWindowAndAHugeOneStaysFinite) {
+    // The fall window's noise sigma^2 (1 + rho_0) is taken in whole 1.5 dB steps: rho_0 under 10^(0.075) - 1 = 0.1885 rounds to none,
+    // and the fall reads as with no tail to the bit; rho_0 = 0.2 rounds to one step. A tail far above the grid is clamped to its
+    // bottom (evidence.cpp, the table's first index) and every score stays finite.
+    const SegmentalConfig config;
+    const SegmentalShared shared = make_shared_parts(config);
+    const Simulated sim = simulate(21.0, shared.output_noise.sigma2_per_n0_hz, 6);
+    const TailReading none = read_tail(shared, config, sim, 0, 0.1, 0.0);
+    const TailReading under = read_tail(shared, config, sim, 2, 0.1, 1.8);  // rho_0 = 0.18
+    const TailReading over = read_tail(shared, config, sim, 2, 0.1, 2.0);   // rho_0 = 0.20
+    EXPECT_EQ(under.fall, none.fall);
+    EXPECT_NE(over.fall, none.fall);
+    SegmentalConfig unbounded = config;
+    unbounded.echo_level_margin_db = 1000.0;
+    const TailReading huge = read_tail(shared, unbounded, sim, 2, 0.1, 1e12);
+    for (std::size_t i = 0; i < huge.fall.size(); ++i) {
+        ASSERT_TRUE(std::isfinite(huge.fall[i])) << i;
+        ASSERT_TRUE(std::isfinite(huge.tail[i])) << i;
+    }
+}
+
+TEST(EchoEstimator, RefusesTheTailsSettingsThatCannotBe) {
+    const auto refused = [](const auto& change) {
+        SegmentalConfig config;
+        change(config);
+        EXPECT_THROW((void)SegmentalShared(config, ChannelizerConfig{48000, 2048, 64, 150.0}), std::invalid_argument);
+    };
+    refused([](SegmentalConfig& c) { c.echo_absolute = 0.5; });
+    refused([](SegmentalConfig& c) { c.echo_level_runs = 0.0; });
+    refused([](SegmentalConfig& c) { c.echo_level_min_db = std::numeric_limits<double>::quiet_NaN(); });
+    refused([](SegmentalConfig& c) { c.echo_level_margin_db = std::numeric_limits<double>::infinity(); });
+}
+
 TEST(LevelEvidence, ShortFramesJoinedIntoBlocksScoreAsTheLongFrame) {
     // While the walk is slow the frames of 10.67 ms are joined two by two into the 21.33 ms frame: the evidence is the old one,
     // to the bit.
@@ -1801,7 +1935,8 @@ struct Channel35 {
     EchoShape echo;
 };
 
-Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tail, int tail_samples, unsigned seed) {
+Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tail, int tail_samples, unsigned seed,
+                        int cut_mark_samples = 0) {
     const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
     const double amplitude = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
     std::mt19937 rng(seed);
@@ -1810,7 +1945,9 @@ Channel35 decode_35_wpm(const SegmentalConfig& config, double f_d_hz, double tai
     const std::string message = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789";
     out.text = message;
     while (static_cast<int>(out.text.size()) * 51 * 8 < 1500 * 70) out.text += " " + message;
-    const Keyed keyed = keyed_text(out.text, 51, 600, 1500);
+    Keyed keyed = keyed_text(out.text, 51, 600, 1500);
+    // a mark the stream's end cuts off (text-tail-2): key-down to the last sample
+    if (cut_mark_samples > 0) keyed.add(1, cut_mark_samples);
     const auto gain = f_d_hz > 0.0 ? fading_gain(f_d_hz, 1500.0, keyed.key.size(), seed + 1)
                                    : std::vector<std::complex<double>>(keyed.key.size(), 1.0);
     auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
@@ -1879,6 +2016,165 @@ TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
     // Its first 30 runs, about 10 s, are read without it.
     EXPECT_LT(cer_with, 0.25);
     EXPECT_GT(cer_without, 0.5);
+}
+
+TEST(SegmentalTail, AMarkCutOffByTheStreamsEndIsNotReadAsARowOfDots) {
+    // text-tail-2: the stream ends 200 ms into a mark (300 samples at 1 500 samples/s), with the tail learned. At the end every
+    // boundary still to be searched is searched after the flush's samples of no evidence; an over's end there used to wait the
+    // 6 samples of a channel with no tail (the last sample pushed, a flush sample, carried none), so a birth's rise window read the
+    // tail's samples again and the mark read as a row of one-sample E's (the owner's clip03 cut to 38 s: seven E's at its end).
+    // The wait is now the tail of the claim at the over's end: the mark adds at most one symbol to the text.
+    SegmentalConfig config;
+    const Channel35 whole = decode_35_wpm(config, 0.0, 0.1, 45, 51);
+    const Channel35 cut = decode_35_wpm(config, 0.0, 0.1, 45, 51, 300);
+    ASSERT_TRUE(cut.echo.on);
+    std::cout << "cut mark: ends \"" << cut.read.substr(cut.read.size() > 12 ? cut.read.size() - 12 : 0) << "\", whole \""
+              << whole.read.substr(whole.read.size() > 12 ? whole.read.size() - 12 : 0) << "\"\n";
+    ASSERT_GE(cut.read.size(), whole.read.size());
+    EXPECT_EQ(cut.read.substr(0, whole.read.size()), whole.read);
+    EXPECT_LE(cut.read.size(), whole.read.size() + 2);  // a word space and one symbol at most
+}
+
+// The review of text-tail-2's two channels (its experiments, made tests): a strong station at +30 dB S500 with a scatter's tail
+// (-10 dB re its mark, fading at 5 Hz, 30 ms after each fall), then, or between its turns, a weaker station with no tail.
+const char* const kTurnCalls[] = {"W9XYZ 5NN 03", "K4ABC 5NN 05", "N7QRS 5NN 04", "VE3TUV 5NN 04"};
+
+struct WeakRead {
+    std::string text;  // what the weaker station sent
+    std::string read;  // what was read of it: the symbols starting from 0.2 s into it
+};
+
+void feed_channel(const SegmentalConfig& config, const std::vector<int>& key, const std::vector<double>& amp, const std::vector<char>& tailed,
+                  unsigned noise_seed, unsigned tail_seed, std::vector<DecodedSymbol>& list) {
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double strong = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
+    std::mt19937 rng(noise_seed);
+    std::normal_distribution<double> draw(0.0, std::sqrt(n0_fs2_per_hz * 1500.0 / 2.0));
+    const auto other = fading_gain(5.0, 1500.0, key.size(), tail_seed);
+    auto shared = std::make_shared<const SegmentalShared>(config, ChannelizerConfig{48000, 2048, 64, 150.0});
+    SegmentalDecoder decoder(1500.0, shared);
+    decoder.set_noise_density_fs2_per_hz(n0_fs2_per_hz);
+    const auto take = [&](const DecodeUpdate& update) {
+        for (const TextCorrection& correction : update.corrections) {
+            list.resize(correction.from_index);
+            for (const DecodedSymbol& symbol : correction.chars) list.push_back(symbol);
+        }
+        for (const DecodedSymbol& symbol : update.chars) list.push_back(symbol);
+    };
+    int since_fall = 1 << 30;
+    std::vector<Sample> block;
+    for (std::size_t k = 0; k < key.size();) {
+        block.clear();
+        const std::size_t first = k;
+        for (; k < key.size() && block.size() < 32; ++k) {
+            since_fall = key[k] == 1 ? 0 : since_fall + 1;
+            std::complex<double> y = amp[k] * static_cast<double>(key[k]);
+            if (tailed[k] && since_fall <= 45) y += strong * std::sqrt(0.1) * other[k];
+            block.emplace_back(static_cast<float>(y.real() + draw(rng)), static_cast<float>(y.imag() + draw(rng)));
+        }
+        take(decoder.process(block, static_cast<double>(first) / 1500.0));
+    }
+    take(decoder.flush());
+}
+
+// 60 s of the strong station, then the weaker one at weak_s500_db (dB S500), on one channel (the review's experiment 1).
+WeakRead weak_after_strong(const SegmentalConfig& config, double weak_s500_db, unsigned seed) {
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double strong = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
+    const double weak = std::sqrt(std::pow(10.0, weak_s500_db / 10.0) * n0_fs2_per_hz * 500.0);
+    const std::string message = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789";
+    std::string a = message;
+    while (static_cast<int>(a.size()) * 51 * 8 < 1500 * 60) a += " " + message;
+    WeakRead out;
+    out.text = "CQ TEST K1ABC K1ABC W9XYZ 5NN 0401 TU K1ABC PACK MY BOX WITH FIVE DOZEN LIQUOR JUGS 73";
+    const Keyed ka = keyed_text(a, 51, 600, 1500);
+    const Keyed kb = keyed_text(out.text, 51, 600, 1500);
+    std::vector<int> key = ka.key;
+    const std::size_t b0 = key.size();
+    key.insert(key.end(), kb.key.begin(), kb.key.end());
+    std::vector<double> amp(b0, strong);
+    amp.resize(key.size(), weak);
+    std::vector<char> tailed(b0, 1);
+    tailed.resize(key.size(), 0);
+    std::vector<DecodedSymbol> list;
+    feed_channel(config, key, amp, tailed, seed, seed + 2, list);
+    for (const DecodedSymbol& s : list)
+        if (s.start_s >= static_cast<double>(b0 + 300) / 1500.0) out.read += s.text;
+    return out;
+}
+
+// A run station with the tail and four callers without it, taking turns 0.4 s apart (the review's experiment 2): what was read in
+// each caller's turn.
+std::vector<std::string> callers_in_turn(const SegmentalConfig& config, double weak_s500_db) {
+    const double n0_fs2_per_hz = 0.02 * 0.02 / 48000.0;
+    const double strong = std::sqrt(1000.0 * n0_fs2_per_hz * 500.0);
+    const double weak = std::sqrt(std::pow(10.0, weak_s500_db / 10.0) * n0_fs2_per_hz * 500.0);
+    std::string learn = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789";
+    learn += " " + learn;
+    std::vector<std::pair<std::string, bool>> turns = {{learn, true}};
+    for (const char* c : kTurnCalls) {
+        turns.push_back({"TU CQ TEST K1ABC", true});
+        turns.push_back({c, false});
+    }
+    std::vector<int> key;
+    std::vector<double> amp;
+    std::vector<char> tailed;
+    std::vector<std::pair<std::size_t, std::size_t>> spans;
+    for (const auto& [text, is_strong] : turns) {
+        const Keyed k = keyed_text(text, 51, 300, 300);
+        const std::size_t s0 = key.size();
+        key.insert(key.end(), k.key.begin(), k.key.end());
+        amp.resize(key.size(), is_strong ? strong : weak);
+        tailed.resize(key.size(), is_strong ? 1 : 0);
+        if (!is_strong) spans.push_back({s0, key.size()});
+    }
+    std::vector<DecodedSymbol> list;
+    feed_channel(config, key, amp, tailed, 71, 73, list);
+    std::vector<std::string> reads;
+    for (const auto& [a, b] : spans) {
+        std::string r;
+        for (const DecodedSymbol& s : list)
+            if (s.start_s >= static_cast<double>(a) / 1500.0 && s.start_s < static_cast<double>(b) / 1500.0) r += s.text;
+        reads.push_back(r);
+    }
+    return reads;
+}
+
+// The callers whose call was read in their turn.
+int calls_read(const std::vector<std::string>& reads) {
+    int calls = 0;
+    for (std::size_t i = 0; i < reads.size(); ++i) {
+        const std::string call = std::string(kTurnCalls[i]).substr(0, std::string(kTurnCalls[i]).find(' '));
+        calls += reads[i].find(call) != std::string::npos ? 1 : 0;
+    }
+    return calls;
+}
+
+TEST(SegmentalTail, AWeakerStationAfterAStrongOneDoesNotTakeItsTail) {
+    // The review of text-tail-2, experiment 1: 60 s of a +30 dB S500 station with a tail, then one with none at +6 to +20 dB S500.
+    // With the tail's level M-bar the stream's alone, the weaker station's text read as rows of E's (CER 0.62 to 4.96); the
+    // absolute form, its level bounded by the belief's (echo_level_margin_db) and M-bar following the weaker runs, reads it as the
+    // proportional form does.
+    SegmentalConfig proportional;
+    proportional.echo_absolute = 0.0;
+    for (const double db : {6.0, 10.0, 15.0, 20.0})
+        for (const unsigned seed : {61u, 62u, 63u}) {
+            const WeakRead absolute = weak_after_strong(SegmentalConfig{}, db, seed);
+            const WeakRead relative = weak_after_strong(proportional, db, seed);
+            EXPECT_NEAR(cer(absolute.text, absolute.read), cer(relative.text, relative.read), 0.01)
+                << "+" << db << " dB S500, seed " << seed << ": " << absolute.read;
+        }
+}
+
+TEST(SegmentalTail, CallersBetweenARunStationsTurnsDoNotTakeItsTail) {
+    // The review of text-tail-2, experiment 2: a +30 dB S500 run station with a tail and four callers with none, turns 0.4 s apart.
+    // With the stream's M-bar 0 to 2 of the 4 calls read; now all 4, as with the proportional form.
+    SegmentalConfig proportional;
+    proportional.echo_absolute = 0.0;
+    for (const double db : {10.0, 15.0, 20.0}) {
+        EXPECT_EQ(calls_read(callers_in_turn(SegmentalConfig{}, db)), 4) << "+" << db << " dB S500";
+        EXPECT_EQ(calls_read(callers_in_turn(proportional, db)), 4) << "+" << db << " dB S500";
+    }
 }
 
 TEST(SegmentalDoppler, AFastFadingCarrierSetsTheFastWalkAndReadsBetter) {

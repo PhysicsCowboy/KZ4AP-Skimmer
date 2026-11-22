@@ -2,6 +2,7 @@
 add_library(kz4ap_app_core
   core/app_settings.cpp
   core/cpu_meter.cpp
+  core/decoded_file.cpp
   core/delivery_watch.cpp
   core/display_feed.cpp
   core/known_call_download.cpp
@@ -25,13 +26,14 @@ add_executable(kz4ap_app_tests
   tests/track_table_test.cpp
   tests/display_feed_test.cpp
   tests/cpu_meter_test.cpp
+  tests/decoded_file_test.cpp
   tests/delivery_watch_test.cpp
   tests/recording_name_test.cpp
   tests/known_call_download_test.cpp
   tests/app_settings_test.cpp
   tests/signal_follow_test.cpp
 )
-target_link_libraries(kz4ap_app_tests PRIVATE kz4ap_app_core GTest::gtest_main)
+target_link_libraries(kz4ap_app_tests PRIVATE kz4ap_app_core nlohmann_json::nlohmann_json GTest::gtest_main)
 gtest_discover_tests(kz4ap_app_tests)
 
 # The desktop app itself, only where Qt 6 Widgets is found: point CMake at it with CMAKE_PREFIX_PATH, for example

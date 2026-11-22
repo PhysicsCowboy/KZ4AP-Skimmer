@@ -42,6 +42,8 @@ public:
     void apply(const std::vector<kz4ap::DecodedSymbol>& chars, const std::vector<kz4ap::TextCorrection>& corrections);
     std::string final_text() const;
     const std::vector<std::string>& final_symbols() const { return final_; }
+    // The final text's characters with their times (stream time, s), as the decoder gave them.
+    const std::vector<kz4ap::DecodedSymbol>& final_timed() const { return timed_; }
     const std::string& immediate_text() const { return immediate_; }
     // Every correction received, in order: when it was made (stream time, s), its reach (s), its reason, and the
     // characters it changed in the final text: the replaced characters (from its index on) and its new ones, less
@@ -58,6 +60,7 @@ public:
 
 private:
     std::vector<std::string> final_;
+    std::vector<kz4ap::DecodedSymbol> timed_;
     std::string immediate_;
     std::vector<Received> corrections_;
 };
