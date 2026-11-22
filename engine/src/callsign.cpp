@@ -344,8 +344,9 @@ bool is_cw_word(std::string_view base) {
     // One or two letters glued to 5NN (R5NN, TU5NN, FN5NN): the report run onto a word, or a call of that form (DJ5NN, W5NN).
     if ((base.size() == 4 || base.size() == 5) && base.ends_with("5NN") && is_letter(base[0]) && (base.size() == 4 || is_letter(base[1])))
         return true;
-    // Rigs, antennas and software that have a call's form.
-    return any_of_word(base, {"G5RV", "K3S", "K4D", "N1MM", "K1EL", "K9AY", "TH7DX", "TH6DX", "TH5DX", "TH3JR", "TH2MK", "HF5B", "HF6V", "HF9V", "HF2V", "W2DU", "W8JK", "W3DZZ"});
+    // No fixed names of rigs, antennas or software (G5RV, N1MM, K9AY and the like, before calls-form-3's review): the owner's ruling,
+    // 2026-11-22 ("No on keeping the list of calls for now"); each is a call of its own shape under that shape's bar.
+    return false;
 }
 
 bool is_locator(std::string_view w) {

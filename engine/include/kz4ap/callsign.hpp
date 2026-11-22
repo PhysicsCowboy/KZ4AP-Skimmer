@@ -45,7 +45,7 @@ struct ParsedCall {
     // No digit but the prefix's (C6AGU, E7DX, J6M, P3X): a letter-digit prefix whose digit is the call's, as administrations issue
     // outside the letter of RR 19.68; unlisted, it needs its own bar (CallSearchConfig::prefix_digit_form).
     bool prefix_digit = false;
-    // A word of CW that has a call's form (is_cw_word: N1MM, K9AY, R5NN, DJ5NN); unlisted, it needs its own bar
+    // A word of CW that has a call's form (is_cw_word: R5NN, TU5NN, DJ5NN); unlisted, it needs its own bar
     // (CallSearchConfig::cw_word_form).
     bool cw_word = false;
     // Around a slash, the other side when it too could be the base (K1A/W1AW: W1AW): the stage takes it when it alone is listed.
@@ -63,10 +63,11 @@ struct ParsedCall {
 std::optional<ParsedCall> parse_call(std::string_view word);
 // The form alone, without the mark of words of CW.
 std::optional<ParsedCall> parse_form(std::string_view word);
-// A word with a call's form that in CW text is mostly something else: rigs, antennas, software (N1MM, K9AY, G5RV), exact; and any
-// one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN, W5NN), the contest report run onto a word. Real calls among them (K9AY,
-// N1MM, K5NN, DJ5NN, W5NN are issued) need more readings when unlisted (CallSearchConfig::cw_word_form). A heuristic (manta's
-// practice of exact matches).
+// A word with a call's form that in CW text is mostly something else: any one or two letters glued to 5NN (R5NN, TU5NN, DJ5NN,
+// W5NN), the contest report run onto a word (measured: UR5NN read 14 times on one recording). Real calls among them (K5NN, DJ5NN,
+// W5NN are issued) need more readings when unlisted (CallSearchConfig::cw_word_form). No fixed names of rigs, antennas or software
+// (G5RV, N1MM, K9AY were, until calls-form-3's review): the owner's ruling, 2026-11-22, "No on keeping the list of calls for now";
+// they are calls of their own shapes.
 bool is_cw_word(std::string_view base);
 // A Maidenhead locator of six characters (FN31PR): two letters A to R, two digits, two letters A to X. Contest exchanges send them;
 // such a word gives no reading of a call, whole, stripped or glued, though some parse as a special form (FN31PR) or, stripped, as
@@ -394,8 +395,7 @@ struct CallSearchConfig {
     double prefix_digit_form = 2.0;
     double prefix_digit_points = 4.0;
     double prefix_digit_points_signed = 3.0;
-    // A word of CW with a call's form (ParsedCall::cw_word: N1MM, K9AY, G5RV, R5NN, DJ5NN): read in text about rigs, antennas and
-    // software, or a report glued to a word, far more often than sent as a call.
+    // A word of CW with a call's form (ParsedCall::cw_word: R5NN, TU5NN, DJ5NN): a report glued to a word far more often than a call.
     double cw_word_form = 2.0;
     double cw_word_points = 4.0;
     double cw_word_points_signed = 3.0;
@@ -482,8 +482,8 @@ struct CallSearchConfig {
     double truncation_hz = 10.0;
     double truncation_s = 120.0;
     double contained_weight = 0.5;
-    // Words of CW (ParsedCall::cw_word: N1MM, K9AY): what goes wrong is the word itself in conversation (USING N1MM LOGGER, K9AY
-    // LOOP). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is also passed when
+    // Words of CW (ParsedCall::cw_word, the 5NN words: R5NN, DJ5NN): what goes wrong is the report run onto a word (UR 5NN read
+    // UR5NN). Every occurrence counts toward the bar (cw_word_points, cw_word_points_signed), and at 1 the bar is also passed when
     // occurrences in a call's place in an ordinary QSO (CallReading::qso_frame: DE before or after it, or sent twice) come from at
     // least cw_word_frame_overs overs: occurrences in a frame that start within over_gap_s of the end of the one before are one
     // over, so a call sent twice in one over counts once. Frames of casual QSOs and contests alike. The owner's ruling (frames of

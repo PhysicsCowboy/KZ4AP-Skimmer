@@ -102,17 +102,18 @@ TEST(CallGrammar, NotCalls) {
 }
 
 TEST(CallGrammar, WordsOfCwWithACallsFormAreMarked) {
-    // Rigs, antennas and software (exact), and one or two letters glued to 5NN: calls' forms, some of them issued (K9AY, N1MM,
-    // K5NN, DJ5NN, W5NN), so marked to be spotted from a list only, not refused.
-    for (const char* word : {"G5RV", "K3S", "N1MM", "K9AY", "K1EL", "W2DU", "W8JK", "W3DZZ", "R5NN", "UR5NN", "TU5NN", "K5NN", "N5NN",
-                             "DJ5NN", "FN5NN", "NN5NN", "W5NN", "E5NN"}) {
+    // One or two letters glued to 5NN: calls' forms, some of them issued (K5NN, DJ5NN, W5NN), so marked for their own bar, not
+    // refused.
+    for (const char* word : {"R5NN", "UR5NN", "TU5NN", "K5NN", "N5NN", "DJ5NN", "FN5NN", "NN5NN", "W5NN", "E5NN"}) {
         const auto p = parse_call(word);
         ASSERT_TRUE(p.has_value()) << word;
         EXPECT_TRUE(p->cw_word) << word;
         EXPECT_TRUE(is_cw_word(word)) << word;
     }
-    // Exact matches and the 5NN form only: manta's lesson. A longer suffix, another digit or three letters before it are calls.
-    for (const char* call : {"K9AYA", "N1MMX", "DJ5NNA", "DJ5NA", "K5NA", "W5NNX", "KC5NNA", "K1ABC"}) {
+    // The 5NN form only. A longer suffix, another digit or three letters before it are calls; and since the owner's ruling
+    // (2026-11-22, the review of calls-form-3) so are the rigs', antennas' and loggers' names once listed (G5RV, N1MM, K9AY).
+    for (const char* call : {"DJ5NNA", "DJ5NA", "K5NA", "W5NNX", "KC5NNA", "K1ABC", "G5RV", "K3S", "N1MM", "K9AY", "K1EL", "W2DU",
+                             "W8JK", "W3DZZ", "HF6V", "TH7DX", "FT8DX"}) {
         const auto p = parse_call(call);
         ASSERT_TRUE(p.has_value()) << call;
         EXPECT_FALSE(p->cw_word) << call;
@@ -716,10 +717,10 @@ TEST(CallSearch, TwoNearCallsFarApartAreTwoStations) {
     EXPECT_NE(s.row("ZL3YV"), nullptr);
 }
 
-// Words of CW with a call's form (G5RV, K3S, N1MM) and the report glued to a keyword (TU5NN): from a list only (cw_word_form 1)
-// never; on their bar (the default since calls-list-1) not below it, bare, and the words read that often are listed, the ruling's
-// cost (a station signing N1MM must be reportable), with the QSO-frame rule (cw_word_evidence 1, calls-form-3) or without, since
-// the rule only lowers the bar; TU5NN, a keyword before 5NN, never without a signed reading.
+// Words with a call's form in conversation (G5RV, K3S, N1MM) are calls of their own shapes since the owner's ruling (2026-11-22:
+// "No on keeping the list of calls for now"): read twice, G5RV and N1MM (1x2 calls' shapes) are reported at the bar of any
+// call, K3S (a 1x1) at three readings: the ruling's cost, with the setting of the 5NN words (cw_word_form) whatever it is. The
+// report glued to a keyword (TU5NN) is never reported without a signed reading, and from a list only (1) never.
 TEST(CallSearch, CommonWordsAreNoCalls) {
     const auto rows = [](double form, int times, double evidence = 1.0) {
         CallSearchConfig config;
@@ -734,11 +735,13 @@ TEST(CallSearch, CommonWordsAreNoCalls) {
         std::sort(out.begin(), out.end());
         return out;
     };
-    const int bar = static_cast<int>(std::max(CallSearchConfig{}.cw_word_points, CallSearchConfig{}.short_points));
-    EXPECT_TRUE(rows(1.0, 6).empty());
-    for (const double evidence : {1.0, 0.0}) {
-        EXPECT_TRUE(rows(2.0, bar - 1, evidence).empty()) << evidence;
-        EXPECT_EQ(rows(2.0, bar, evidence), (std::vector<std::string>{"G5RV", "K3S", "N1MM"})) << evidence;
+    for (const double form : {1.0, 2.0}) {
+        for (const double evidence : {1.0, 0.0}) {
+            EXPECT_TRUE(rows(form, 1, evidence).empty()) << form << evidence;
+            EXPECT_EQ(rows(form, 2, evidence), (std::vector<std::string>{"G5RV", "N1MM"})) << form << evidence;
+            EXPECT_EQ(rows(form, 3, evidence), (std::vector<std::string>{"G5RV", "K3S", "N1MM"})) << form << evidence;
+            EXPECT_EQ(rows(form, 8, evidence), (std::vector<std::string>{"G5RV", "K3S", "N1MM"})) << form << evidence;
+        }
     }
 }
 
@@ -1090,9 +1093,10 @@ TEST(CallSearch, ACallWhoseOnlyDigitIsItsPrefixsIsReportedFromAListOnlyAtOne) {
 }
 
 TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnlyAtOne) {
-    // K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), DJ5NN (listed): with cw_word_form 1 (always, before
-    // calls-list-1) from a list only. FN5NN, a prefix glued to 5NN that no list holds, is never reported, and with no list neither
-    // is any of them. On the bar, the default, each sent three times and signed is reported, FN5NN too (TU FN5NN K signs it).
+    // DJ5NN (listed): with cw_word_form 1 (always, before calls-list-1) from a list only. FN5NN, a prefix glued to 5NN that no list
+    // holds, is never reported, and with no list neither is DJ5NN. On the bar, the default, each sent three times and signed is
+    // reported, FN5NN too (TU FN5NN K signs it). K9AY and N1MM (MASTER.SCP holds both; the FCC's file has them active), words of CW
+    // until the owner's ruling of 2026-11-22, are calls of their own shapes, reported as any call whatever the setting.
     const auto run = [](std::shared_ptr<const KnownCalls> known, double form = 1.0) {
         CallSearchConfig config;
         config.cw_word_form = form;
@@ -1105,13 +1109,13 @@ TEST(CallSearch, AWordOfCwWithACallsFormIsReportedFromAListOnlyAtOne) {
         std::sort(out.begin(), out.end());
         return out;
     };
-    EXPECT_TRUE(run(nullptr).empty());
+    EXPECT_EQ(run(nullptr), (std::vector<std::string>{"K9AY", "N1MM"}));
     auto known = std::make_shared<KnownCalls>();
     for (const char* call : {"K9AY", "N1MM", "DJ5NN"}) known->add(call);
     EXPECT_EQ(run(known), (std::vector<std::string>{"DJ5NN", "K9AY", "N1MM"}));
     EXPECT_EQ(run(nullptr, 2.0), (std::vector<std::string>{"DJ5NN", "FN5NN", "K9AY", "N1MM"}));
-    const auto r = readings("DE K9AY K");
-    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "K9AY"; });
+    const auto r = readings("DE DJ5NN K");
+    const auto it = std::find_if(r.begin(), r.end(), [](const CallReading& x) { return x.base == "DJ5NN"; });
     ASSERT_NE(it, r.end());
     EXPECT_TRUE(it->cw_word);
 }
@@ -2277,7 +2281,7 @@ const FormCase kFormCases[] = {
     {"VK3FABC", &CallSearchConfig::unusual_form, &CallSearchConfig::unusual_points, &CallSearchConfig::unusual_points_signed, nullptr},
     {"C6AGU", &CallSearchConfig::prefix_digit_form, &CallSearchConfig::prefix_digit_points, &CallSearchConfig::prefix_digit_points_signed,
      &CallSearchConfig::truncation_evidence},
-    {"N1MM", &CallSearchConfig::cw_word_form, &CallSearchConfig::cw_word_points, &CallSearchConfig::cw_word_points_signed,
+    {"DJ5NN", &CallSearchConfig::cw_word_form, &CallSearchConfig::cw_word_points, &CallSearchConfig::cw_word_points_signed,
      &CallSearchConfig::cw_word_evidence},
     {"TM100TF", &CallSearchConfig::special_form, &CallSearchConfig::special_points, &CallSearchConfig::special_points_signed, nullptr},
 };
@@ -2495,8 +2499,9 @@ TEST(FormBarsReview, AReportedFormCallIsNotWithdrawnByAWeakerFragment) {
     EXPECT_EQ(s.row("N1M"), nullptr);
 }
 
-// A call of two forms takes the higher bar: E7R (1x1 and prefix-digit), 5N55N (a cut number's shape and a special form), K3S (1x1 and
-// a word of CW); signed, the higher signed bar too: one signed reading and two bare are enough for each, and K3S's one and one not.
+// A call of two forms takes the higher bar: E7R (1x1 and prefix-digit), 5N55N (a cut number's shape and a special form), E5NN (a
+// prefix-digit form and a word of CW); signed, the higher signed bar too: one signed reading and two bare are enough for each, and
+// E5NN's one and one not. K3S, once a word of CW too, is a 1x1 only since the owner's ruling of 2026-11-22: three bare.
 // Every occurrence counted (the evidence rules at 0).
 TEST(FormBarsReview, TwoFormsTakeTheHigherBar) {
     const auto reported = [](const std::string& call, int bare, bool signed_first) {
@@ -2517,17 +2522,19 @@ TEST(FormBarsReview, TwoFormsTakeTheHigherBar) {
     const CallSearchConfig d;
     const int prefix_digit = static_cast<int>(std::max(d.prefix_digit_points, d.short_points));
     const int special = static_cast<int>(std::max(d.special_points, d.cut_number_points));
-    const int cw_word = static_cast<int>(std::max(d.cw_word_points, d.short_points));
+    const int cw_word = static_cast<int>(std::max(d.cw_word_points, d.prefix_digit_points));
     EXPECT_FALSE(reported("E7R", prefix_digit - 1, false));
     EXPECT_TRUE(reported("E7R", prefix_digit, false));
     EXPECT_TRUE(reported("E7R", 2, true));
     EXPECT_FALSE(reported("5N55N", special - 1, false));
     EXPECT_TRUE(reported("5N55N", special, false));
     EXPECT_TRUE(reported("5N55N", 2, true));
-    EXPECT_FALSE(reported("K3S", cw_word - 1, false));
-    EXPECT_TRUE(reported("K3S", cw_word, false));
-    EXPECT_TRUE(reported("K3S", 2, true));
-    EXPECT_FALSE(reported("K3S", 1, true));
+    EXPECT_FALSE(reported("E5NN", cw_word - 1, false));
+    EXPECT_TRUE(reported("E5NN", cw_word, false));
+    EXPECT_TRUE(reported("E5NN", 2, true));
+    EXPECT_FALSE(reported("E5NN", 1, true));
+    EXPECT_FALSE(reported("K3S", static_cast<int>(d.short_points) - 1, false));
+    EXPECT_TRUE(reported("K3S", static_cast<int>(d.short_points), false));
 }
 
 // A keyword before 5NN (K5NN, an issued US call; GM5NN, ES5NN, OM5NN, UR5NN, calls' forms of Scotland, Estonia, Slovakia, Ukraine)
@@ -2651,7 +2658,8 @@ TEST(BkAsAKeyword, TheProsignBkIsTheWordBk) {
     EXPECT_TRUE(has(readings("N1MM <BK>"), "N1MM", Role::Unknown));
 }
 
-// The stage: N1MM signed and sent with <BK> three times is reported exactly as with BK (the cw_word bar, signed: 3 points).
+// The stage: N1MM signed and sent with <BK> three times is reported exactly as with BK (any call's bar; a word of CW's, signed 3
+// points, before the owner's ruling of 2026-11-22).
 TEST(BkAsAKeyword, TheStageReadsBkAndItsProsignAlike) {
     const auto rows = [](const std::string& bk) {
         Stage s;
@@ -2812,9 +2820,9 @@ TEST(FormEvidence, ACallEndingInKWithALongGapNeedsOnlyItsBar) {
     EXPECT_NE(s.row("K1ABC"), nullptr);
 }
 
-// Running text that names a logger and an antenna with a call's form (the owner's ruling: a measurement, not a requirement): every
-// reading counts, as before the frame rule, so read four times (the bar) they are reported and three times they are not, with the
-// rule or without; the rule never takes evidence away.
+// Running text that names a logger and an antenna with a call's form: since the owner's ruling (2026-11-22, "No on keeping the list
+// of calls for now") they are calls of their own shapes, so read twice (any call's bar) they are reported, once not, with the frame
+// rule or without: the ruling's cost, which the false-call checks on casual-QSO recordings measure.
 TEST(FormEvidence, RunningTextCountsAsBefore) {
     const auto run = [](double evidence, int times) {
         CallSearchConfig config;
@@ -2829,17 +2837,17 @@ TEST(FormEvidence, RunningTextCountsAsBefore) {
         return out;
     };
     for (const double evidence : {1.0, 0.0}) {
-        EXPECT_TRUE(run(evidence, 3).empty()) << evidence;
-        EXPECT_EQ(run(evidence, 4), (std::vector<std::string>{"K9AY", "N1MM"})) << evidence;
+        EXPECT_TRUE(run(evidence, 1).empty()) << evidence;
+        EXPECT_EQ(run(evidence, 2), (std::vector<std::string>{"K9AY", "N1MM"})) << evidence;
     }
 }
 
-// N1MM himself, in the frames of an ordinary QSO (CallReading::qso_frame: DE before or after, or sent twice): framed occurrences from
-// two overs (cw_word_frame_overs) are enough, W1AW DE N1MM K and then N1MM DE W1AW on W1AW's carrier; one over is not, however framed
-// (K1ABC DE N1MM N1MM K: DE and the call twice, one over). Calling CQ he passes on the signed bar (3): one CQ CQ DE N1MM N1MM K is
-// 2 signed points, two are 4. Named by a runner with a report (N1MM 5NN) he needs the bar of every reading: four, not two. Without
-// the rule (cw_word_evidence 0) the two overs are not enough.
-TEST(FormEvidence, N1mmInTwoOversOfAQsoIsReportedSooner) {
+// A 5NN word that is a call (DJ5NN, a German call's shape and in MASTER.SCP), in the frames of an ordinary QSO
+// (CallReading::qso_frame: DE before or after, or sent twice): framed occurrences from two overs (cw_word_frame_overs) are enough,
+// W1AW DE DJ5NN K and then DJ5NN DE W1AW on W1AW's carrier; one over is not, however framed (K1ABC DE DJ5NN DJ5NN K). Calling CQ it
+// passes on the signed bar (3): one CQ CQ DE DJ5NN DJ5NN K is 2 signed points, two are 4. Named with a report (DJ5NN 5NN) it needs
+// the bar of every reading: four, not two. Without the rule (cw_word_evidence 0) the two overs are not enough.
+TEST(FormEvidence, A5nnCallInTwoOversOfAQsoIsReportedSooner) {
     const auto run = [](double evidence, const std::vector<std::pair<double, std::string>>& texts) {
         CallSearchConfig config;
         config.cw_word_evidence = evidence;
@@ -2852,53 +2860,56 @@ TEST(FormEvidence, N1mmInTwoOversOfAQsoIsReportedSooner) {
             end += 20.0;
         }
         s.search.advance(end + 40.0);
-        return s.row("N1MM") != nullptr;
+        return s.row("DJ5NN") != nullptr;
     };
     const CallSearchConfig d;
     ASSERT_EQ(d.cw_word_frame_overs, 2.0);
     ASSERT_EQ(d.over_gap_s, 10.0);
-    EXPECT_TRUE(run(1.0, {{1000.0, "W1AW DE N1MM K "}, {1100.0, "N1MM DE W1AW R TNX "}}));
-    EXPECT_FALSE(run(0.0, {{1000.0, "W1AW DE N1MM K "}, {1100.0, "N1MM DE W1AW R TNX "}}));
-    EXPECT_FALSE(run(1.0, {{1000.0, "K1ABC DE N1MM N1MM K "}}));
-    EXPECT_FALSE(run(1.0, {{1000.0, "CQ CQ DE N1MM N1MM K "}}));
-    EXPECT_TRUE(run(1.0, {{1000.0, "CQ CQ DE N1MM N1MM K "}, {1000.0, "CQ CQ DE N1MM N1MM K "}}));
-    EXPECT_FALSE(run(1.0, {{1000.0, "N1MM 5NN 5 "}, {1000.0, "N1MM 5NN 5 "}}));
-    EXPECT_TRUE(run(1.0, {{1000.0, "N1MM 5NN 5 "}, {1000.0, "N1MM 5NN 5 "}, {1000.0, "N1MM 5NN 5 "}, {1000.0, "N1MM 5NN 5 "}}));
+    EXPECT_TRUE(run(1.0, {{1000.0, "W1AW DE DJ5NN K "}, {1100.0, "DJ5NN DE W1AW R TNX "}}));
+    EXPECT_FALSE(run(0.0, {{1000.0, "W1AW DE DJ5NN K "}, {1100.0, "DJ5NN DE W1AW R TNX "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "K1ABC DE DJ5NN DJ5NN K "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "CQ CQ DE DJ5NN DJ5NN K "}}));
+    EXPECT_TRUE(run(1.0, {{1000.0, "CQ CQ DE DJ5NN DJ5NN K "}, {1000.0, "CQ CQ DE DJ5NN DJ5NN K "}}));
+    EXPECT_FALSE(run(1.0, {{1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}}));
+    EXPECT_TRUE(run(1.0, {{1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}, {1000.0, "DJ5NN 5NN 5 "}}));
     // The frames, reading by reading: DE either side, or sent twice; a sign-off after the word alone is none.
     const auto frame = [](const std::string& text) {
         for (const CallReading& r : readings(text))
-            if (r.base == "N1MM") return r.qso_frame;
+            if (r.base == "DJ5NN") return r.qso_frame;
         return false;
     };
-    EXPECT_TRUE(frame("DE N1MM"));
-    EXPECT_TRUE(frame("N1MM DE K1ABC"));
-    EXPECT_TRUE(frame("N1MM N1MM"));
-    EXPECT_FALSE(frame("N1MM BK"));
-    EXPECT_FALSE(frame("N1MM K"));
-    EXPECT_FALSE(frame("N1MM <SK>"));
-    EXPECT_FALSE(frame("LOG IS N1MM LOGGER"));
-    EXPECT_FALSE(frame("N1MM 5NN"));
+    EXPECT_TRUE(frame("DE DJ5NN"));
+    EXPECT_TRUE(frame("DJ5NN DE K1ABC"));
+    EXPECT_TRUE(frame("DJ5NN DJ5NN"));
+    EXPECT_FALSE(frame("DJ5NN BK"));
+    EXPECT_FALSE(frame("DJ5NN K"));
+    EXPECT_FALSE(frame("DJ5NN <SK>"));
+    EXPECT_FALSE(frame("IS DJ5NN LOGGER"));
+    EXPECT_FALSE(frame("DJ5NN 5NN"));
 }
 
-// The review's junk probes (calls-form-3): words of CW in casual conversation, each over on its own carrier a minute apart. None is
-// reported, with the frame rule or without: a word sent twice in one over is one over, a sign-off after it no frame, and DE before
-// it in one over not two.
-TEST(FormEvidence, TheReviewsConversationProbesAreNotReported) {
-    const std::vector<std::pair<std::string, std::vector<std::string>>> cases = {
-        {"G5RV", {"UR RST 579 579 ES ANT G5RV G5RV HW "}},
-        {"G5RV", {"ANT HR IS G5RV K "}},
-        {"G5RV", {"ANT HR IS G5RV K ", "ANT HR ALSO G5RV BK "}},
-        {"K9AY", {"RX ANT K9AY BK ", "TNX FER INFO ON K9AY KN "}},
-        {"N1MM", {"LOG IS N1MM N1MM "}},
-        {"N1MM", {"QSL VIA LOTW DE N1MM "}},
-        {"HF6V", {"ANT IS HF6V AR ", "ANT HF6V SK "}},
-        {"NN5NN", {"UR NN5NN NN5NN "}},
-        {"RR5NN", {"RR5NN K ", "RR5NN K "}},
-        {"E5NN", {"UR E5NN E5NN "}},
-        {"W2DU", {"BALUN IS W2DU W2DU "}},
+// The review's conversation probes (calls-form-3). The 5NN words, sent twice in one over or before a sign-off, are not reported,
+// with the frame rule or without: a word sent twice in one over is one over, a sign-off after it no frame. The rigs', antennas'
+// and loggers' names are calls of their own shapes since the owner's ruling (2026-11-22), so these are measurements, the ruling's
+// cost: sent twice in one over (G5RV G5RV, N1MM N1MM, W2DU W2DU: two readings, framed by the repeat), each is reported at any
+// call's bar of 2, and G5RV, K9AY and HF6V (a Polish call's shape) read once in each of two overs too; once only (ANT HR IS G5RV K,
+// DE N1MM) none is.
+TEST(FormEvidence, TheReviewsConversationProbes) {
+    const std::vector<std::tuple<std::string, std::vector<std::string>, bool>> cases = {
+        {"NN5NN", {"UR NN5NN NN5NN "}, false},
+        {"RR5NN", {"RR5NN K ", "RR5NN K "}, false},
+        {"E5NN", {"UR E5NN E5NN "}, false},
+        {"G5RV", {"UR RST 579 579 ES ANT G5RV G5RV HW "}, true},
+        {"G5RV", {"ANT HR IS G5RV K "}, false},
+        {"G5RV", {"ANT HR IS G5RV K ", "ANT HR ALSO G5RV BK "}, true},
+        {"K9AY", {"RX ANT K9AY BK ", "TNX FER INFO ON K9AY KN "}, true},
+        {"N1MM", {"LOG IS N1MM N1MM "}, true},
+        {"N1MM", {"QSL VIA LOTW DE N1MM "}, false},
+        {"HF6V", {"ANT IS HF6V AR ", "ANT HF6V SK "}, true},
+        {"W2DU", {"BALUN IS W2DU W2DU "}, true},
     };
     for (const double evidence : {1.0, 0.0}) {
-        for (const auto& [call, overs] : cases) {
+        for (const auto& [call, overs, reported] : cases) {
             CallSearchConfig config;
             config.cw_word_evidence = evidence;
             Stage s(config);
@@ -2911,7 +2922,7 @@ TEST(FormEvidence, TheReviewsConversationProbesAreNotReported) {
                 t += 60.0;
             }
             s.search.advance(t + 30.0);
-            EXPECT_EQ(s.row(call), nullptr) << call << " " << overs.front() << " " << evidence;
+            EXPECT_EQ(s.row(call) != nullptr, reported) << call << " " << overs.front() << " " << evidence;
         }
     }
 }
