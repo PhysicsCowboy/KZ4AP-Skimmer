@@ -156,6 +156,14 @@ SegmentalConfig small_config() {
     return config;
 }
 
+// The default configuration with no weights: the fists of speed and stretch alone.
+SegmentalConfig weightless() {
+    SegmentalConfig config;
+    config.fist_weights_dots = {0.0};
+    config.fist_weight_prior = 0.0;
+    return config;
+}
+
 TEST(SegmentalSearch, ReadsMadeUpEvidenceAtAWeakAndAStrongLevel) {
     // gain 100 nats per sample is the level at which pruning on the evidence through j + 10 alone lost the right story, and
     // a window counted twice preferred split marks (stage 1 of the build).
@@ -204,7 +212,7 @@ TEST(ModelTables, ALongGapsSurvivalStaysOptimistic) {
 }
 
 TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const int length = tables.range(0, tables.first_fist(tables.speeds() / 2)).hi;
     std::size_t count = 0;
@@ -224,7 +232,7 @@ TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
 }
 
 TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const viterbi::ViterbiConfig& model = config.model;
     const double ratio = std::pow(model.speed_ratio, config.gap_stretch_speed_steps);
@@ -264,7 +272,7 @@ TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
 }
 
 TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
-    SegmentalConfig config;
+    SegmentalConfig config = weightless();
     config.gap_stretches = 1;
     const ModelTables tables(config);
     EXPECT_EQ(tables.fists(), config.model.speed_count);
@@ -275,10 +283,10 @@ TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
     bad = config;
     bad.gap_stretch_prior = 1.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
-    bad = SegmentalConfig{};
+    bad = weightless();
     bad.gap_stretch_prior = 0.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
-    bad = SegmentalConfig{};
+    bad = weightless();
     bad.gap_unit_max_s = 0.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
 }
@@ -289,8 +297,9 @@ TEST(ModelTables, AWeightIsTheFistsShiftAndWeightZeroIsTheOldFist) {
     SegmentalConfig weighted;
     weighted.fist_weights_dots = {0.2, 0.0, -0.2, 0.4};
     weighted.fist_weight_prior = 0.05;
+    weighted.fist_weight_stretched = true;
     const ModelTables tables(weighted);
-    const ModelTables plain(SegmentalConfig{});
+    const ModelTables plain(weightless());
     EXPECT_EQ(tables.fists(), 4 * plain.fists());
     EXPECT_EQ(tables.groups(), 4 * plain.speeds());
     for (int speed = 0; speed < plain.speeds(); ++speed) {
@@ -310,7 +319,7 @@ TEST(ModelTables, AWeightIsTheFistsShiftAndWeightZeroIsTheOldFist) {
         }
     }
     for (const double w : {0.2, -0.2, 0.4}) {
-        SegmentalConfig shifted;
+        SegmentalConfig shifted = weightless();
         shifted.model.fist_shifts_dots = {{w, w, -w, -w, -w}};
         const ModelTables own(shifted);
         for (const int speed : {0, 9, 20, 31}) {
@@ -354,7 +363,7 @@ TEST(ModelTables, AWeightsLetterGapsAndStretchesAreOptions) {
     config.fist_weight_letter_gaps = false;
     config.fist_weight_stretched = false;
     const ModelTables tables(config);
-    const ModelTables plain(SegmentalConfig{});
+    const ModelTables plain(weightless());
     EXPECT_EQ(tables.fists(), plain.fists() + plain.speeds());
     for (int speed = 0; speed < tables.speeds(); ++speed) {
         const int f = tables.first_fist(speed);
@@ -394,7 +403,7 @@ TEST(SegmentalSearch, ReadsAHeavilyWeightedFist) {
     config.fist_weights_dots = {-0.2, 0.0, 0.2, 0.4};
     config.fist_weight_prior = 0.01;
     const ModelTables tables(config);
-    const ModelTables plain_tables(SegmentalConfig{});
+    const ModelTables plain_tables(weightless());
     const std::string text = "CQ DE W1AW PSE K TEST";
     const Keyed keyed = keyed_text(text, 18, 300, 400, 0, 9);
     for (const double gain : {4.0, 100.0}) {
@@ -403,10 +412,22 @@ TEST(SegmentalSearch, ReadsAHeavilyWeightedFist) {
         feed(keyed, gain, sums, &search);
         EXPECT_EQ(text_of(search.best_text()), text) << "gain " << gain;
         RunningSums plain_sums;
-        Search plain_search(SegmentalConfig{}, plain_tables, plain_sums);
+        Search plain_search(weightless(), plain_tables, plain_sums);
         feed(keyed, gain, plain_sums, &plain_search);
         EXPECT_GT(search.best_score() - plain_search.best_score(), 10.0) << "gain " << gain;
     }
+}
+
+TEST(ModelTables, TheDefaultWeightsAreZeroAndTwoHeavierAtStandardSpacingOnly) {
+    const SegmentalConfig config;
+    EXPECT_EQ(config.fist_weights_dots, (std::vector<double>{0.0, 0.2, 0.4}));
+    EXPECT_DOUBLE_EQ(config.fist_weight_prior, 0.01);
+    EXPECT_TRUE(config.fist_weight_letter_gaps);
+    EXPECT_FALSE(config.fist_weight_stretched);
+    const ModelTables tables(config);
+    const ModelTables plain(weightless());
+    EXPECT_EQ(tables.fists(), plain.fists() + 2 * plain.speeds());
+    EXPECT_EQ(tables.fists(), 242);
 }
 
 TEST(SegmentalSearch, StandardWeightPaysTheWeightsChargeOnceAndReadsTheSame) {
@@ -414,11 +435,11 @@ TEST(SegmentalSearch, StandardWeightPaysTheWeightsChargeOnceAndReadsTheSame) {
     config.fist_weights_dots = {-0.2, 0.0, 0.2, 0.4};
     config.fist_weight_prior = 0.01;
     const ModelTables tables(config);
-    const ModelTables plain_tables(SegmentalConfig{});
+    const ModelTables plain_tables(weightless());
     for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {
         const Keyed keyed = keyed_text(text, 18, 300, 400);
         RunningSums a, b;
-        Search with(config, tables, a), without(SegmentalConfig{}, plain_tables, b);
+        Search with(config, tables, a), without(weightless(), plain_tables, b);
         feed(keyed, 8.0, a, &with);
         feed(keyed, 8.0, b, &without);
         EXPECT_EQ(text_of(with.best_text()), text);
@@ -452,9 +473,9 @@ TEST(SegmentalSearch, ReadsFarnsworthSpacingAsLettersAndWords) {
 }
 
 TEST(SegmentalSearch, StandardSpacingPaysTheChargeOnceAndReadsTheSame) {
-    SegmentalConfig plain;
+    SegmentalConfig plain = weightless();
     plain.gap_stretches = 1;
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const ModelTables plain_tables(plain);
     for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {

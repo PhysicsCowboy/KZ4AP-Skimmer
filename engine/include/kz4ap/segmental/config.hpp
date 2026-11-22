@@ -214,15 +214,20 @@ struct SegmentalConfig {
 
     // dots: the weights w a story may take with its speed. A mark lasts w T_s more and every gap after a mark w T_s less (the
     // model's shifts, added to fist_shifts_dots): a keyer's weighting and VE3NEA's imbalance. It must hold 0, the standard weight.
-    // {0} leaves weights out.
-    std::vector<double> fist_weights_dots = {0.0};
-    // probability: that a new story's weight is not 0, shared alike by the others. Paid once per over, as gap_stretch_prior.
-    double fist_weight_prior = 0.0;
+    // {0} leaves weights out. A heuristic grid chosen by measurement (docs/decision-log.md, 2026-11-22): the step of 0.2 dot costs
+    // a story at most about 0.06 nats per dot or element gap half a step off (derived, at sigma 0.3); +0.4 reads the owner's clips
+    // ear06 and ear09 best at a fixed weight; -0.2 read VE3NEA's hand style better and his paddle worse on DEV2's C2, and no clip.
+    std::vector<double> fist_weights_dots = {0.0, 0.2, 0.4};
+    // probability: that a new story's weight is not 0, shared alike by the others: ln(0.01 / 2) = -5.3 nats once per over for a
+    // weighted story, ln 0.99 = -0.01 nats for any other. A heuristic chosen by measurement: 0.002, 0.01 and 0.05 read ear11 alike
+    // (21 edits to 0), 0.002 ear09 one edit worse.
+    double fist_weight_prior = 0.01;
     // on or off: letter and word gaps shift by -w too (a keyer's and the generator's rule: the space after a mark is shortened,
     // whatever space it is); off, only element gaps do.
     bool fist_weight_letter_gaps = true;
-    // on or off: a weight at every gap stretch; off, weights other than 0 at g = 1 only.
-    bool fist_weight_stretched = true;
+    // on or off: a weight at every gap stretch; off, weights other than 0 at g = 1 only, 242 fists in place of 534 at m = 1. Off read
+    // the clips and C2 as on did, for less memory and CPU (heuristic by measurement).
+    bool fist_weight_stretched = false;
 
     // --- The front filter's widths (segmental_decoder.hpp) ---
 
