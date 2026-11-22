@@ -1732,7 +1732,7 @@ TEST(SegmentalTail, ReadsAKeyedCarrierThroughADiffuseTailThatFillsItsGaps) {
     EXPECT_FALSE(without.echo.on);
     const double cer_with = cer(with.text, with.read), cer_without = cer(without.text, without.read);
     std::cout << "tail: CER " << cer_with << " with the tail learned, " << cer_without << " without\n";
-    // Its first 21 strong runs, about 5 s, are read without it.
+    // Its first 30 runs, about 10 s, are read without it.
     EXPECT_LT(cer_with, 0.25);
     EXPECT_GT(cer_without, 0.5);
 }
