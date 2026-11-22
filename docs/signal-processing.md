@@ -4715,6 +4715,11 @@ are the same in samples (16 and 16 frames of 4 samples). While slow the evidence
   16% (40 m) and 18% (20 m) of the 2026-11-18 CWT recordings' tracks and 1% to 7% of the 2026-11-17 ones' (traced), reading E2 better
   and losing confirmed calls (decision log). A beat within about 28 Hz, a spread whose spectrum is far from smooth, and stations in turn
   whose runs each fade fast still pass or fail the checks wrongly. The tail is on for 0% to 0.8% of those tracks (traced).
+- P₀, P₁ and the noise term subtract F, and where the channel floor sets F (its percentile estimate × 10^(−0.3)) F stands up to 3 dB
+  below the real noise N. That lowers |ρ| by a constant factor at every lag past the front filter's correlation, S/(S + N − F): a steady
+  carrier at +18.3 dB re F, F = N/2, reads |ρ(21.33 ms)| = 0.9854, f_D about 2.6 Hz (derived). Its shape, ln |ρ| the same at every
+  lag, is (τ/8)² of a spread's, 0.14 to 0.39 at 3 to 5 samples, outside the band, so the walk does not go fast on it; but a real
+  spread at modest S/N on a raised floor carries the same constant and can be refused: the conservative direction.
 - The fast walk leaves DEV2's other groups alone: DEV2 holds no fast-fading station above +10 dB S₅₀₀; cells of strong fast fading are in
   the backlog.
 

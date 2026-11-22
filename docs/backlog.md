@@ -760,14 +760,16 @@ ln |ρ| over every pair of a run is a straight line in τ, as pairs across a mar
 estimator, inside the marks only, reads f_D about 4.6 Hz, not 9 to 10 Hz; the tail itself is incoherent with the mark (coherence 0.94
 at the fall, 0.24 at 10 ms) and lasts past 40 ms (−15 dB re the mark there). The decoder now learns the tail per stream and scores a
 gap's first samples against noise plus that power, and sets the level's walk and frame from the spread it measures (decision log,
-2026-11-21; signal-processing.md A.8e, "The channel's tail and the walk set by the Doppler spread"). The clips read 0.341 and 0.234
-against the owner's copy (`text-level-1` 0.443 and 0.766; DeepCW 0.398 and 0.338). Open: the tail in the level filter (a third key
+2026-11-21; signal-processing.md A.8e, "The channel's tail and the walk set by the Doppler spread"). Against the owner's copy, cut to
+38 s so that the track starts fresh as DeepCW's does (the fair comparison), the clips read 0.386 and 0.325 (DeepCW 0.398 and 0.338;
+`text-level-1` 0.693 and 0.766); as whole tracks 0.341 and 0.234 (`text-level-1` 0.443 and 0.766). Open: the tail in the level filter (a third key
 state was tried and cost the clips: 0.659 and 0.584), in the next rise's window, and a tail that changes within a track; the
 generator's two-path option, so that a matched set with a tail exists (the tests' channel is the only synthetic one); more clips of
 the owner's (aurora, long path) to see whether the shape holds; where the remaining errors on the clips are.
-Also open: three licensed, window-confirmed calls lost on the real recordings against `text-level-1` (WA2SCB 40 m 2026-11-17, KE3TW 20 m and
-WB4OSS 40 m 2026-11-18; one gained, WA5DSS), each read once to four times at 1 to 2.5 points; WA2SCB comes back with the Doppler walk
-off (decision log, 2026-11-21). Trace each: which track, whether the walk was fast or a tail on, and what the text read instead.
+Resolved (review of `text-fast-1`, decision log 2026-11-22): the three window-confirmed calls once lost (WA2SCB 40 m 2026-11-17,
+KE3TW 20 m and WB4OSS 40 m 2026-11-18) were lost by the fast walk on run stations' channels, their callers a few Hz apart read as a
+spread; with the run-by-run check all three are back. The one window call lost against main, N8K (40 m 2026-11-18), is judged false:
+a misreading of N8EA ("CQ N8EA CQ N8K CQ N8EA") that one RBN skimmer shares.
 
 Two clips of W1AW's 35 WPM practice text on 80 m (the 2026-11-19 recording, 3581.504 kHz, 1049 to 1080 s and 879 to 910 s, about 26
 to 28 dB re the noise key-down; the owner copied both nearly completely, and hears an auroral feel and fading) read at no-space CER

@@ -214,7 +214,7 @@ EchoEstimator::EchoEstimator(const SegmentalConfig& config, const viterbi::Templ
     if (config.echo_max_s == 0.0) return;
     if (!(std::isfinite(config.echo_run_db) && std::isfinite(config.echo_min_db) && std::isfinite(config.echo_on_db) && std::isfinite(config.echo_end_db) &&
           config.echo_end_db <= config.echo_on_db))
-        throw std::invalid_argument("segmental: echo_run_db, echo_on_db and echo_end_db must be finite, echo_end_db at most echo_on_db (dB)");
+        throw std::invalid_argument("segmental: echo_run_db, echo_min_db, echo_on_db and echo_end_db must be finite, echo_end_db at most echo_on_db (dB)");
     if (!(config.echo_memory_runs >= 1.0 && config.echo_min_runs >= 1.0 && config.echo_min_run_s >= 0.0))
         throw std::invalid_argument("segmental: echo_memory_runs and echo_min_runs must be at least 1 run, echo_min_run_s not negative (s)");
     on_ = true;

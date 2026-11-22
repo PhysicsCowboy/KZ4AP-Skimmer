@@ -1,8 +1,5 @@
 #include "kz4ap/segmental_decoder.hpp"
 
-#include <cstdio>
-#include <cstdlib>
-
 #include "kz4ap/morse.hpp"
 #include "kz4ap/segmental/fast_math.hpp"
 #include "kz4ap/viterbi/observation.hpp"

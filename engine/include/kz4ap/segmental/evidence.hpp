@@ -316,8 +316,8 @@ public:
     DopplerEstimator(const SegmentalConfig& config, const std::array<double, 7>& noise_rho);
     // One sample: y, FS, and the floor, FS^2. True at the end of every run the estimate takes, once it holds doppler_min_runs.
     bool push(std::complex<double> y_fs, double floor_fs2);
-    // Hz: f_D = 2 sigma_D at the longest lag, from the runs summed as vectors; and from each run's |C| summed: 0.62 to 0.76 of it for
-    // a Gaussian spread of 2 to 30 Hz (measured, runs of 100 ms), about 0 where stations a few Hz apart take turns in the channel.
+    // Hz: f_D = 2 sigma_D at the longest lag, from the runs summed as vectors; and from each run's |C| summed: 0.62 to 0.79 of it for
+    // a Gaussian spread of 3 to 30 Hz (measured, runs of 100 ms), about 0 where stations a few Hz apart take turns in the channel.
     double spread_hz() const { return spread_hz_; }
     double runs_hz() const { return runs_hz_; }
     // Whether ln |rho(8)| / ln |rho(tau)| lies within [lo, hi] times (8 / tau)^2 at every lag tau = 3 ... 7.
