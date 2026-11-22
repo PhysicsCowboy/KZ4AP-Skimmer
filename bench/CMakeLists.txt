@@ -110,7 +110,8 @@ add_executable(kz4ap_bench_tests
   tests/scoring_test.cpp
   tests/viterbi_json_test.cpp
 )
-target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib GTest::gtest_main)
+# report_test reads the app's --decoded file as the app writes it (app/core/decoded_file.hpp).
+target_link_libraries(kz4ap_bench_tests PRIVATE kz4ap_bench_lib kz4ap_app_core GTest::gtest_main)
 # bank_json_test reads the bank decoder's golden values with the engine tests' helper; bench_run_test makes its
 # recording with the engine tests' signals (test_signals.hpp).
 target_include_directories(kz4ap_bench_tests PRIVATE ${PROJECT_SOURCE_DIR}/engine/tests/bank

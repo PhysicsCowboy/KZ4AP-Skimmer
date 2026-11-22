@@ -78,6 +78,13 @@ public:
     int sample_rate() const override { return settings_.sample_rate; }
     std::string description() const override { return description_; }
     std::optional<double> center_frequency_hz() const override { return settings_.center_hz; }
+    // None until the first block of samples arrives; then the system clock's time of that block's first sample
+    // (first_sample_unix_ms, utc_time.hpp): late by the radio's and its driver's buffering, a few ms to a few tens of ms (a
+    // heuristic estimate). Stream time after a gap in the stream (dropped_samples) lags this clock by the samples lost.
+    std::optional<std::int64_t> start_unix_ms() const override {
+        const std::int64_t ms = start_unix_ms_.load(std::memory_order_acquire);
+        return ms == kNoStart ? std::nullopt : std::optional<std::int64_t>(ms);
+    }
     IqRead read(std::span<Sample> out, std::chrono::milliseconds timeout) override;
     void interrupt() override { interrupted_ = true; }
     std::uint64_t dropped_samples() const override { return dropped_.load(std::memory_order_relaxed); }
@@ -112,6 +119,8 @@ private:
     IqRecorder recorder_;
     std::vector<Sample> convert_;  // the API thread's
     std::atomic<std::uint64_t> received_{0};
+    static constexpr std::int64_t kNoStart = INT64_MIN;
+    std::atomic<std::int64_t> start_unix_ms_{kNoStart};  // set once, by the API's thread, at the first block
     std::atomic<std::uint64_t> dropped_{0};
     // The ring overflowed. Samples lost a few at a time, every block the pipeline reads, cut a strong station's carrier into
     // a splash of wide clicks that neighboring tracks read as E E E (docs/decision-log.md, 2026-10-31), and read the station itself

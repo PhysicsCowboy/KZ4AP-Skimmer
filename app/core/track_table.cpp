@@ -20,7 +20,8 @@ bool lower(const TrackRow& a, const TrackRow& b) {
 namespace {
 
 // The symbols [first, end) a row shows, in order, into `add`: a stretch left out (heard from a listed neighbor) becomes one word space
-// between the row's own words, none at the start; a row with nothing left out shows every symbol as it is.
+// between the row's own words, none at the start; a row with nothing left out shows every symbol as it is. `add` takes each with its
+// index in the row's symbols, or kAdded for a word space put in place of a stretch.
 template <typename Add>
 void shown(const TrackRow& row, std::size_t first, Add add) {
     bool gap = false, any = false, after_space = false;
@@ -36,14 +37,14 @@ void shown(const TrackRow& row, std::size_t first, Add add) {
             if (s == " ") {
                 // The stretch and this word space: one space.
                 if (space_here) {
-                    add(s);
+                    add(s, i);
                     after_space = true;
                 }
                 continue;
             }
-            if (space_here) add(std::string(" "));
+            if (space_here) add(std::string(" "), TrackRow::kAdded);
         }
-        add(s);
+        add(s, i);
         any = true;
         after_space = s == " ";
     }
@@ -54,13 +55,19 @@ void shown(const TrackRow& row, std::size_t first, Add add) {
 std::string TrackRow::text_tail(std::size_t max_symbols) const {
     const std::size_t first = symbols.size() - std::min(max_symbols, symbols.size());
     std::string out;
-    shown(*this, first, [&](const std::string& s) { out += s; });
+    shown(*this, first, [&](const std::string& s, std::size_t) { out += s; });
     return out;
 }
 
 std::vector<std::string> TrackRow::shown_symbols() const {
     std::vector<std::string> out;
-    shown(*this, 0, [&](const std::string& s) { out.push_back(s); });
+    shown(*this, 0, [&](const std::string& s, std::size_t) { out.push_back(s); });
+    return out;
+}
+
+std::vector<std::pair<std::string, std::size_t>> TrackRow::shown_indexed() const {
+    std::vector<std::pair<std::string, std::size_t>> out;
+    shown(*this, 0, [&](const std::string& s, std::size_t i) { out.emplace_back(s, i); });
     return out;
 }
 

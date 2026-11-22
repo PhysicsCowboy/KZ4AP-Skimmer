@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 
+#include "decoded_file.hpp"
 #include "kz4ap/cpu_time.hpp"
 #include "kz4ap/decoder_name.hpp"
 #include "kz4ap/engine.hpp"
@@ -21,9 +22,6 @@
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QHeaderView>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
@@ -1216,7 +1214,7 @@ void MainWindow::run_transport_steps(const StreamStatus& status) {
             follow_frequency(hz, tr("%1 kHz").arg(action.mid(7)));
         } else if (action == QStringLiteral("quit")) {
             if (!automation_.report_path.isEmpty()) write_report(status);
-            if (!automation_.decoded_path.isEmpty()) write_decoded();
+            if (!automation_.decoded_path.isEmpty()) write_decoded(status.stream_s);
             if (!automation_.calls_path.isEmpty()) write_calls();
             QApplication::quit();
         }
@@ -1241,7 +1239,7 @@ void MainWindow::run_automation(const StreamStatus& status) {
     const bool quit_now = (quitting && ended) || (automation_.quit_at_s && status.stream_s >= *automation_.quit_at_s);
     if ((quit_now || ended) && !report_done_) {
         if (!automation_.report_path.isEmpty()) write_report(status);
-        if (!automation_.decoded_path.isEmpty()) write_decoded();
+        if (!automation_.decoded_path.isEmpty()) write_decoded(status.stream_s);
         if (!automation_.calls_path.isEmpty()) write_calls();
         report_done_ = true;
     }
@@ -1249,36 +1247,33 @@ void MainWindow::run_automation(const StreamStatus& status) {
 }
 
 void MainWindow::write_calls() {
+    take_stream_start();
     // The list as shown: all calls, or the signed ones only; in decoder-only mode, the header alone.
     QFile file(automation_.calls_path);
     if (!file.open(QIODevice::WriteOnly)) return;
     file.write(callsign::calls_csv(calls_->shown_rows(), calls_->center_hz(), stream_start_unix_ms_).c_str());
 }
 
-void MainWindow::write_decoded() {
-    QJsonArray tracks;
-    const auto add = [&](const std::vector<TrackRow>& rows) {
-        for (const TrackRow& row : rows) {
-            QJsonObject track;
-            track[QStringLiteral("id")] = static_cast<qint64>(row.id);
-            track[QStringLiteral("freq_hz")] = row.freq_hz;
-            track[QStringLiteral("last_freq_hz")] = row.freq_hz;
-            track[QStringLiteral("text")] = QString::fromStdString(row.text());
-            tracks.append(track);
-        }
-    };
-    add(model_->table().rows());
-    add(model_->table().retired());
-    QJsonObject root;
-    root[QStringLiteral("front_end")] = QString::fromStdString(decoder_name_);
-    root[QStringLiteral("recording")] = QString::fromStdString(source_name_);
-    root[QStringLiteral("tracks")] = tracks;
+void MainWindow::take_stream_start() {
+    // A live radio's start is known only once its first block has come (SdrplaySource::start_unix_ms), after the stream began.
+    if (!stream_start_unix_ms_ && runner_) stream_start_unix_ms_ = runner_->source().start_unix_ms();
+}
+
+void MainWindow::write_decoded(double stream_s) {
+    take_stream_start();
+    DecodedFileInfo info;
+    info.front_end = decoder_name_;
+    info.recording = source_name_;
+    info.stream_start_unix_ms = stream_start_unix_ms_;
+    info.stream_s = stream_s;
+    const std::string text = decoded_json(info, model_->table().rows(), model_->table().retired());
     QFile file(automation_.decoded_path);
-    if (file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson());
+    if (file.open(QIODevice::WriteOnly)) file.write(text.data(), static_cast<qint64>(text.size()));
 }
 
 void MainWindow::write_report(const StreamStatus& status) {
     report_done_ = true;
+    take_stream_start();
     QFile file(automation_.report_path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) return;
     QTextStream out(&file);

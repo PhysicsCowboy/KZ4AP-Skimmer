@@ -1,4 +1,5 @@
 #include "kz4ap/sdrplay_source.hpp"
+#include "kz4ap/utc_time.hpp"
 
 #if defined(KZ4AP_HAVE_SDRPLAY_HEADERS)
 #if defined(_WIN32)
@@ -401,7 +402,10 @@ SdrplaySource::~SdrplaySource() {
 void SdrplaySource::on_samples(const short* xi, const short* xq, unsigned int count, bool reset) {
     // The API sets reset on its first block as well: only a later one is a restart of the stream.
     if (reset && received_.load(std::memory_order_relaxed) > 0) resets_.fetch_add(1, std::memory_order_relaxed);
-    received_.fetch_add(count, std::memory_order_relaxed);
+    // The stream's start: the system clock at its first block, less that block's length (first_sample_unix_ms; its buffering
+    // delay is not known here).
+    if (received_.fetch_add(count, std::memory_order_relaxed) == 0 && count > 0)
+        start_unix_ms_.store(first_sample_unix_ms(system_unix_ms(), count, settings_.sample_rate), std::memory_order_release);
     recorder_.push(xi, xq, count);
     if (convert_.size() < count) convert_.resize(count);  // once, at the first block larger than any before
     constexpr float kScale = 1.0f / 32768.0f;  // as WavIqReader, so a recording of this reads the same
