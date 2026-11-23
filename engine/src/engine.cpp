@@ -213,7 +213,7 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         segmental_shared_ = std::make_shared<const SegmentalShared>(
             config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                                  config_.channel_cutoff_hz});
-        if (config_.impulse.mode != 0) {
+        if (config_.impulse.on) {
             // The series is kept for a replay's past and its block, and a little more (heuristic).
             blanker_ = std::make_unique<ImpulseBlanker>(config_.impulse, config_.sample_rate, config_.fft_size,
                                                         config_.fft_size / config_.channel_bins, config_.passband_lo_hz,

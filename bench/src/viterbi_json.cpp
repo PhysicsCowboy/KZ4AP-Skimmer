@@ -637,7 +637,14 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "copy_older_only") config.copy_older_only = value != 0.0;
     else if (name == "copy_source_proven") config.copy_source_proven = value != 0.0;
     else if (name == "attribute_source_proven") config.attribute_source_proven = value != 0.0;
-    else if (name == "impulse_mode") config.impulse.mode = static_cast<int>(value);
+    else if (name == "impulse_mode") {
+        // 1: the blanker on (the pulse's power taken as noise), 0: off. The "unknown" mode (once 1, with 2 the noise) was removed.
+        if (value == 2.0)
+            throw std::invalid_argument("--detector impulse_mode=2: the impulse blanker's \"unknown\" mode was removed (2026-11-23); "
+                                        "impulse_mode=1 is the blanker on (the pulse's power as noise, formerly 2), 0 off");
+        if (value != 0.0 && value != 1.0) throw std::invalid_argument("--detector impulse_mode must be 0 (off) or 1 (on)");
+        config.impulse.on = value == 1.0;
+    }
     else if (name == "impulse_threshold_db") config.impulse.threshold_db = value;
     else if (name == "impulse_subband_hz") config.impulse.subband_hz = value;
     else if (name == "impulse_min_subbands") config.impulse.min_subbands = static_cast<int>(value);

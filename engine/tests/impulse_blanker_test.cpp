@@ -79,14 +79,14 @@ struct Outcome {
     std::vector<float> series;      // the whole series, from channel sample 0
 };
 
-// The engine on x: oracle channels at `oracle_hz` (none: the detector's path), the blanker in `mode`.
-Outcome run(const std::vector<Sample>& x, int mode, std::vector<double> oracle_hz, double threshold_db = 0.0) {
+// The engine on x: oracle channels at `oracle_hz` (none: the detector's path), the blanker on or off.
+Outcome run(const std::vector<Sample>& x, bool on, std::vector<double> oracle_hz, double threshold_db = 0.0) {
     EventBus bus;
     EngineConfig config;
     config.sample_rate = kRate;
     config.decoder.front_end = FrontEnd::Segmental;
     config.oracle_frequencies_hz = std::move(oracle_hz);
-    config.impulse.mode = mode;
+    config.impulse.on = on;
     config.impulse.threshold_db = threshold_db;
     std::vector<std::string> list;
     bus.subscribe([&](const Event& e) {
@@ -203,12 +203,12 @@ TEST(ImpulseBlanker, ASubbandCrowdedAtTheStartKeepsItsOwnNoise) {
     EXPECT_GT(0.6 + static_cast<double>(at) * 0.02133, 2.0);
     EXPECT_NEAR(crowded[at] / clear[at], 1.0, 0.15);
     EXPECT_NEAR(crowded.back() / clear.back(), 1.0, 0.15);
-    const Outcome r = run(x, 2, {20000.0});
+    const Outcome r = run(x, true, {20000.0});
     EXPECT_EQ(r.firings, 0u);
 }
 
 TEST(ImpulseBlanker, NoiseAloneNeverFires) {
-    const Outcome r = run(noise(12.0, 1), 1, {20000.0});
+    const Outcome r = run(noise(12.0, 1), true, {20000.0});
     EXPECT_GT(r.slices, 10000u);
     EXPECT_EQ(r.firings, 0u);
 }
@@ -217,7 +217,7 @@ TEST(ImpulseBlanker, FindsACrashWhereItIsAndAsStrongAsItIs) {
     // 1 ms of 30 dB re the noise's power per sample: 192 samples, 1.5 channel samples of 1000 times the noise each.
     auto x = noise(8.0, 2);
     add_crash(x, 5.0, 0.001, 1000.0, 3);
-    const Outcome r = run(x, 1, {20000.0});
+    const Outcome r = run(x, true, {20000.0});
     EXPECT_EQ(r.firings, 1u);
     const auto peak = std::max_element(r.series.begin(), r.series.end()) - r.series.begin();
     EXPECT_NEAR(static_cast<double>(peak), 5.0 * 1500.0, 1.0);
@@ -239,7 +239,7 @@ TEST(ImpulseBlanker, ACrowdedBandOfAHundredCarriersNeverFires) {
         const auto keys = i % 2 == 0 ? together : test::keying(std::string(texts[i % 5]) + " " + texts[(i + 2) % 5], speed(rng), 0.3 + 0.01 * i);
         add_keyed(x, keys, f(rng), amplitude_s500(level(rng)), 0.005, phase(rng));
     }
-    const Outcome r = run(x, 1, {20000.0});
+    const Outcome r = run(x, true, {20000.0});
     EXPECT_EQ(r.firings, 0u) << r.fired_slices << " of " << r.slices << " channel samples";
 }
 
@@ -254,13 +254,13 @@ TEST(ImpulseBlanker, AStrongStationsHardKeyingAndRiseDoNotFire) {
         auto x = noise(12.0, 6);
         add_keyed(x, test::keying("CQ CQ DE W1AW W1AW K", 28.0, 1.5), 30000.0, amplitude_s500(level), 0.0);
         add_keyed(x, test::keying("TEST K1ABC TEST K1ABC", 35.0, 2.2), -45000.0, amplitude_s500(40.0), 0.0);
-        const Outcome on = run(x, 2, {30000.0});
+        const Outcome on = run(x, true, {30000.0});
         if (level == 60.0) {
             EXPECT_EQ(on.firings, 0u) << on.fired_slices << " of " << on.slices << " channel samples";
         } else {
             EXPECT_LE(on.firings, 3u) << on.fired_slices << " of " << on.slices << " channel samples";
         }
-        EXPECT_EQ(on.text, run(x, 0, {30000.0}).text) << level << " dB S500";
+        EXPECT_EQ(on.text, run(x, false, {30000.0}).text) << level << " dB S500";
     }
 }
 
@@ -274,13 +274,11 @@ TEST(ImpulseBlanker, ACrashInAWordGapIsNotReadAsAMark) {
     // The gaps of 7 dits: a crash 3 dits into each.
     for (std::size_t i = 1; i < keys.size(); ++i)
         if (keys[i].first - keys[i - 1].second > 6.0 * dit) add_crash(x, keys[i - 1].second + 3.0 * dit, 0.003, 300.0, 8 + static_cast<unsigned>(i));
-    const Outcome on = run(x, 1, {20000.0});
+    const Outcome on = run(x, true, {20000.0});
     EXPECT_EQ(squeeze(on.text), "CQCQDEK2PDJK2PDJCQCQDEK2PDJK2PDJ") << on.text;
     EXPECT_GE(on.firings, 7u);
-    const Outcome noise_mode = run(x, 2, {20000.0});
-    EXPECT_EQ(squeeze(noise_mode.text), "CQCQDEK2PDJK2PDJCQCQDEK2PDJK2PDJ") << noise_mode.text;
     // Without the blanker a crash is read as a mark (the test's point: ear08-control's CQECQ).
-    const Outcome off = run(x, 0, {20000.0});
+    const Outcome off = run(x, false, {20000.0});
     EXPECT_NE(squeeze(off.text), "CQCQDEK2PDJK2PDJCQCQDEK2PDJK2PDJ") << off.text;
 }
 
@@ -291,11 +289,9 @@ TEST(ImpulseBlanker, AClickTrainThroughAKeyedSignalLeavesItsText) {
     auto x = noise(keys.back().second + 1.5, 9);
     add_keyed(x, keys, -20000.0, amplitude_s500(20.0), 0.005);
     for (double t = 1.01; t < x.size() / static_cast<double>(kRate); t += 0.097) add_crash(x, t, 0.0005, 1000.0, static_cast<unsigned>(t * 1000));
-    for (const int mode : {1, 2}) {
-        const Outcome on = run(x, mode, {-20000.0});
-        EXPECT_EQ(squeeze(on.text), "CQCQDEW1AWW1AWK") << "mode " << mode << ": " << on.text;
-    }
-    const Outcome off = run(x, 0, {-20000.0});
+    const Outcome on = run(x, true, {-20000.0});
+    EXPECT_EQ(squeeze(on.text), "CQCQDEW1AWW1AWK") << on.text;
+    const Outcome off = run(x, false, {-20000.0});
     EXPECT_NE(squeeze(off.text), "CQCQDEW1AWW1AWK") << off.text;
 }
 
@@ -308,8 +304,6 @@ TEST(ImpulseBlanker, AStationKeyingAtTheCrashKeepsItsText) {
         const double at = i % 6 == 0 ? keys[i].first : i % 6 == 2 ? 0.5 * (keys[i].first + keys[i].second) : keys[i].second;
         add_crash(x, at - 0.0015, 0.003, 300.0, 100 + static_cast<unsigned>(i));
     }
-    const Outcome on = run(x, 1, {5000.0});
+    const Outcome on = run(x, true, {5000.0});
     EXPECT_EQ(squeeze(on.text), "TESTK1ABCK1ABCTEST") << on.text;
-    const Outcome noise_mode = run(x, 2, {5000.0});
-    EXPECT_EQ(squeeze(noise_mode.text), "TESTK1ABCK1ABCTEST") << noise_mode.text;
 }

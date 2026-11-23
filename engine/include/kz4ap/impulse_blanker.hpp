@@ -1,7 +1,6 @@
 // The impulse blanker (docs/signal-processing.md, section 4, "Impulse blanker", and A.4): finds the moments when power rises at once
 // across most of the band's quiet bins, a click or a static crash, and gives the decoders, by channel sample, how much power that
-// pulse puts in the band re the band's noise. A decoder then scores the samples the pulse reaches as unknown (no evidence), or takes
-// the pulse's power as noise there (ImpulseBlankerConfig::mode). Standard practice, a noise blanker, moved to where the band's
+// pulse puts in the band re the band's noise. A decoder then takes the pulse's power as noise at the samples it reaches. Standard practice, a noise blanker, moved to where the band's
 // carriers cannot trigger it: a receiver's blanker compares the wideband amplitude with its average and blanks the whole IF, so
 // that a strong station keys it and every channel loses those samples; here the strong stations' bins are taken out first, as
 // SM5BSZ's Linrad does before its blanker detects a pulse, and the test is across frequency: a pulse is broadband, a station's key
@@ -39,11 +38,11 @@
 namespace kz4ap {
 
 struct ImpulseBlankerConfig {
-    // 0: off, the decoders see nothing of it (the decoder before text-blank-1). 1 (a variant): the segmental decoder scores a sample
-    // whose pulse power at its filter's output, P, is at least threshold_db re its noise as unknown, no evidence at all (0 nats key-down
-    // and key-up alike). 2 (the default; chosen by measurement, docs/decision-log.md, 2026-11-22): it adds P to that sample's noise
-    // instead, so that the pulse is noise there: a gap's sample holds no evidence for a mark, a strong mark's still holds its own.
-    int mode = 2;
+    // true (the default; chosen by measurement, docs/decision-log.md, 2026-11-22): the segmental decoder adds a sample's pulse power
+    // at its filter's output, P, to that sample's noise where P is at least threshold_db re the noise, so that the pulse is noise
+    // there: a gap's sample holds no evidence for a mark, a strong mark's still holds its own. false: off, the decoders see nothing
+    // of it (the decoder before text-blank-1).
+    bool on = true;
     double threshold_db = 0.0;     // dB re the sample's noise sigma^2: where the decoder acts on a pulse (heuristic)
     double subband_hz = 12000.0;   // Hz: each subband's width, rounded to a power of two of bins
     int min_subbands = 4;          // subbands with enough quiet bins needed for any reading
@@ -61,7 +60,6 @@ struct ImpulseBlankerConfig {
 struct ImpulseSeries {
     std::uint64_t first = 0;    // the channel sample of values[0] (absolute index from the stream's start)
     std::vector<float> values;  // u: power re the band's noise, linear, of the input samples [D c, D c + D) of channel sample c (D the decimation); 0: none
-    int mode = 0;               // ImpulseBlankerConfig::mode
     double threshold = 1.0;     // ImpulseBlankerConfig::threshold_db, linear
     // One past the last channel sample read so far.
     std::uint64_t end() const { return first + values.size(); }

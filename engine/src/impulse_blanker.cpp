@@ -30,7 +30,6 @@ double median_of(double* values, std::size_t n) {
 ImpulseBlanker::ImpulseBlanker(const ImpulseBlankerConfig& config, int sample_rate, int fft_size, int decimation,
                                double band_lo_hz, double band_hi_hz, double keep_s)
     : config_(config), n_(fft_size), decimation_(decimation) {
-    require(config.mode >= 0 && config.mode <= 2, "impulse blanker: mode must be 0, 1 or 2");
     require(std::isfinite(config.threshold_db), "impulse blanker: threshold_db must be finite (dB re the sample's noise)");
     require(std::isfinite(config.subband_hz) && config.subband_hz > 0.0, "impulse blanker: subband_hz must be positive (Hz)");
     require(config.min_subbands >= 1, "impulse blanker: min_subbands must be at least 1");
@@ -44,7 +43,6 @@ ImpulseBlanker::ImpulseBlanker(const ImpulseBlankerConfig& config, int sample_ra
     require(config.flat_ratio >= 1.0, "impulse blanker: flat_ratio must be at least 1 (linear, power)");
     require(sample_rate > 0 && fft_size >= 8 && fft_size % 4 == 0 && decimation >= 1 && std::isfinite(keep_s) && keep_s >= 0.0,
             "impulse blanker: invalid analyzer parameters");
-    series_.mode = config.mode;
     series_.threshold = std::pow(10.0, config.threshold_db / 10.0);
     const double bin_hz = static_cast<double>(sample_rate) / fft_size;
     // A power of two of bins, the nearest to subband_hz, at most the FFT.
