@@ -521,6 +521,7 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
         {"filter_scale_drop_margin_nats", &config.filter_scale_drop_margin_nats},
         {"filter_scale_switch_nats", &config.filter_scale_switch_nats},
         {"gap_stretch_prior", &config.gap_stretch_prior},
+        {"fist_weight_prior", &config.fist_weight_prior},
     };
     for (const auto& [field, target] : fields) {
         if (name == field) {
@@ -552,6 +553,28 @@ void apply_segmental_setting(segmental::SegmentalConfig& config, const std::stri
     }
     if (name == "gap_stretch_speed_steps") {
         config.gap_stretch_speed_steps = std::stoi(text);
+        return;
+    }
+    if (name == "fist_weights_dots") {  // a JSON list, or one number
+        const ordered_json value = ordered_json::parse(text);
+        config.fist_weights_dots.clear();
+        if (value.is_array()) {
+            for (const auto& item : value) config.fist_weights_dots.push_back(item.get<double>());
+        } else {
+            config.fist_weights_dots.push_back(value.get<double>());
+        }
+        return;
+    }
+    if (name == "fist_weight_letter_gaps") {
+        config.fist_weight_letter_gaps = std::stod(text) != 0.0;
+        return;
+    }
+    if (name == "fist_weight_stretched") {
+        config.fist_weight_stretched = std::stod(text) != 0.0;
+        return;
+    }
+    if (name == "fist_weight_scaled") {
+        config.fist_weight_scaled = std::stod(text) != 0.0;
         return;
     }
     apply_setting(config.model, setting);

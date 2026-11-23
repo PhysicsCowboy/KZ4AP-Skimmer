@@ -891,6 +891,22 @@ grid (120 rows for 60 dB re F, the levels themselves still 1.5 dB apart). Measur
 the strong pairs, and the three replay sets (2026-11-17, 2026-11-18, 2017) with the RBN judge, K4RUM among them. E2's cost of the
 level on the floor is not the rounding's (neither alternative reads it better), so its cause is a question of its own.
 
+### The fist's weight and ratio past text-weight-1 (found 2026-11-22, `text-weight-1`)
+
+The segmental decoder's fist now takes a weight w = 0, +0.2, +0.4 dots per over (`docs/signal-processing.md`, A.8e, "Fists").
+Open:
+- **Negative weights.** −0.2 dot read VE3NEA's hand style on DEV2's C2 better (0.1868 to 0.1842, seed 1) and his paddle worse
+  (0.0404 to 0.0438), so it is off. The conjectured cause is the element/letter-gap boundary, √3 − w dots, moving up into the
+  paddle's short letter gaps. −0.1 in its place reads the same trade on C2 (hand 0.1868 to 0.1811 and 0.1838 to 0.1805, paddle
+  0.0404 to 0.0430 and 0.0443 to 0.0471, seeds 1 and 2; the group 0.0627 to 0.0623 and 0.0623 to 0.0622). To try: a negative
+  weight that shifts element gaps only, or a prior that keeps it for hand-sent overs.
+- **The dash-to-dot ratio** as a fist parameter (a keyer's third setting; VE3NEA's hand style draws dashes of 4.48 dots).
+- **The best fixed weight per clip is not reached** on ear06 and ear09 (16 and 2 edits against 6 and 0 at a fixed +0.4): there
+  the weightless reading scores higher under the model. A σ per kind fitted to real fists might move it.
+- **The scaled form** (`fist_weight_scaled`): the weight moves the medians, not the lengths. It read VE3NEA's conditions a little
+  better at high levels and everything else alike (A.8e's provenance); to take it, run it on the whole set and the replay sets.
+- **The weight within an over** changes only by a rescue.
+
 ### Benchmark scenarios to add first
 
 Done in milestone 2, part 1 (`training/kz4ap_synth/suites.py`).
