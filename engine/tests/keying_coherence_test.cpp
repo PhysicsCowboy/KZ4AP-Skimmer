@@ -228,7 +228,7 @@ namespace {
 
 // A pile-up: two callers 60 Hz apart, 8 dB apart, sending their calls at the same time, each its own text and speed. The weaker one's
 // channel hears the stronger at about -9 dB re its own power, so that their envelopes correlate at 0.5 to 0.6 (measured). B's
-// twelve calls run past the scene's 40 s: about 9.7 of them fit. `seed`: the noise's.
+// twelve calls run past the scene's 40 s: nine fit whole (each 3.65 s, one every 4.04 s from 0.8 s). `seed`: the noise's.
 std::vector<Sample> two_callers(unsigned seed = 9) {
     const double duration_s = 40.0;
     std::vector<Sample> x(static_cast<std::size_t>(duration_s * kRate));
