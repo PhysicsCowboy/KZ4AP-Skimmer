@@ -235,7 +235,7 @@ struct EngineStats {
     EngineStageTimes stages;
     // The impulse blanker (EngineConfig::impulse): channel samples of the band it read, those with a pulse and the runs of them
     // (its firings); and over the segmental decoders' widest streams, the envelope samples pushed and those a pulse reached
-    // (scored as unknown, or with its power as noise), a replay's included.
+    // (with its power as noise), a replay's included.
     std::uint64_t impulse_slices = 0;
     std::uint64_t impulse_fired_slices = 0;
     std::uint64_t impulse_firings = 0;

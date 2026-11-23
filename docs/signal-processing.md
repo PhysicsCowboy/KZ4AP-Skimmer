@@ -118,7 +118,7 @@ the noise in one *equivalent noise bandwidth* (ENBW), 1.5 bins = 35.2 Hz
 192 kHz) is inverted to |y|², and per channel sample u_s = mean |y|²/ν_s − 1, ν_s the 1 s median of the frames' median |y|²/ln 2
 (derived). A pulse: the lower quartile of u_s **≥ 1**, the upper **≤ 4×** it (flat; clicks fall as 1/f²); u, their median, is its
 power re the noise (0 past **0.2 s** of a run). Segmental adds P = N₀B Σ_d G²[d] u(n − d) (G² the filters' |g|², derived) to
-σ² where P ≥ σ² (variant: unknown, 0 nats). Heuristics by measurement.
+σ² where P ≥ σ². Heuristics by measurement.
 
 Appendix: A.4.
 
@@ -987,12 +987,12 @@ past it; N = 8 192 at 192 kHz):
    G²[d] = Σ g(L)² over the input lags L with ⌈L/D⌉ = d, normalized to sum 1, g(L) = Σ_i h_f[i] g_c[L − D i] the cascade of the
    front filter h_f (at the channel rate) and the channel filter g_c (D = 128 input samples a channel sample); d < 14 holds under
    10⁻⁴ of it and is not read. P = X × N₀ σ_y²/N₀ (FS²). Where P ≥ σ² (`threshold_db` 0 dB re σ²; σ² = max(floor, leak floor) as
-   stage 2): mode 2 (the default) takes σ² + P as the sample's noise, its floor unchanged; mode 1 scores it unknown (z = 0 and
-   x_k(l) = 0 at every level, so key-down's term is 1 in both messages, and 0 nats in L1, R, F and the tail; no context for the short
-   elements). Either way the tail's estimator reads e² as the floor and the Doppler estimator y as 0. A sample whose X needs
+   stage 2): σ² + P is the sample's noise, its floor unchanged; the tail's estimator reads e² as the floor and the Doppler
+   estimator y as 0. A sample whose X needs
    channel samples the series does not yet hold waits, with its own block's N₀ and leak floor, for the next block (at the widest
    filter only in a channel's first block: from the second on its block's last sample, n = 32b + 28, needs n − 14 ≤ 32b + 15,
-   which the series holds). Mode 0: no blanker; the decoder is the one before.
+   which the series holds). Off (`ImpulseBlankerConfig::on` false, the bench's `impulse_mode=0`): no blanker; the decoder is the
+   one before.
 
 **Derivations.**
 - *Scale.* Complex white noise of σ_w² FS² per input sample gives E|y[m]|² = N Q σ_w² w² (Q the quiet bins): r/ν reads power re the
@@ -1003,11 +1003,9 @@ past it; N = 8 192 at 192 kHz):
   σ_y² = σ_w² Σ g² = N₀ × 74.50 Hz. Hence P/σ_y² = Σ_d G²[d] u(n − d) when the slice's π is constant over its 128 samples. The
   shares are a flat top 21 to 36 channel samples back (the 12 ms dot with its edges), centered 28.5 channel samples back (10.67 ms
   channel delay + 8 ms front delay = 18.67 ms; test `ResponseSharesSumToOneAndCarryTheFiltersNoise`).
-- *Mode 2* is the pulse taken as what it is in the channel, a zero-mean complex Gaussian of power P beside the noise: key-up's e² is
+- *The pulse as noise* is the pulse taken as what it is in the channel, a zero-mean complex Gaussian of power P beside the noise: key-up's e² is
   then exponential of mean σ² + P, and key-down's Rician about the carrier with that noise. Where P ≫ σ² a gap's sample says nothing
-  for a mark, and a mark of a² ≫ σ² + P still reads as one. Mode 1 is not quite its limit P → ∞: with `level_noise_bottom` on, the
-  levels below the grid's bottom are scored at −6 dB S₅₀₀ re σ² + P, so a sample under a strong pulse keeps a constant bias against
-  key-down of about −0.110 nats an envelope sample on noise alone (derived, the review of `text-blank-1`); no effect of it measured.
+  for a mark, and a mark of a² ≫ σ² + P still reads as one.
 - *Noise alone* reads u_s of mean 0 and sd 1/√8 = 0.35 a slice, so Q₁ ≥ 1 needs 13 of 16 subbands each 2.8 sd up at once: never
   (test `NoiseAloneNeverFires`, 12 s, 0 firings).
 - *Flatness.* For 16 subbands of 8 complex samples' mean each, Q₃/Q₁ is 1.7 at the median and 2.6 at its 99th percentile (4 samples, a
@@ -1027,14 +1025,15 @@ blanker looks for a pulse; impulsive atmospheric noise is characterized by its d
 IF being gated. The subband width, the 6 dB and ±2 bins (the latter Hann's main lobe, derived), the quarter of bins, the 1 s average and
 memory, the 0.5 s warm-up, the gate 1, the ratio 4, the 0.2 s and the 0 dB: heuristics, chosen on the owner's ear clips
 (`build/tb-1/ear/`, git-ignored): blanker off 56 edits in 517 characters; with the first detector (the median alone, no warm-up),
-mode 1 at 0, +3, +6, +10 dB re σ² 55, 55, 51, 50 edits, mode 2 at −10, 0, +3, +6 dB 46, 46, 49, 49, at gate 3 48. ν the 47 frames' median,
+the threshold at −10, 0, +3, +6 dB re σ² 46, 46, 49, 49 edits, at gate 3 48. ν the 47 frames' median,
 this frame's among them, not the larger of this frame's value and that median as first built: ear02-control's crash lasts about 30 ms,
 u 10 to 100 in all 16 subbands, and with the larger it read 1 (the prediction 8.7 against the channel's 54 to 77 re σ²; with the
 median, 48). Q₁ and the ratio added for the strong station's clicks (+60 dB
-S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2, 0 dB, gate 1, Q₁ and ratio 4): 45 edits; mode 1 51;
-with the owner's later rule for a short error sign and main 5783cad merged, 31 to 21 (mode 1 27), and on his second batch, held
-out (nothing chosen on it), 8 to 3 edits in 270 characters (mode 1 7) (`docs/decision-log.md`, 2026-11-22, with the W1AW clips,
-DEV2 and the calls).
+S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (0 dB, gate 1, Q₁ and ratio 4): 45 edits; with the owner's
+later rule for a short error sign and main 5783cad merged, 31 to 21, and on his second batch, held out (nothing chosen on it), 8 to
+3 edits in 270 characters (`docs/decision-log.md`, 2026-11-22, with the W1AW clips, DEV2 and the calls). A variant that scored the
+samples a pulse reaches as unknown (0 nats key-down and key-up alike) measured worse (ear batch 1, 27 against 21 errors; weak
+stations under real crashes, 284 against 116 edits of 2 886) and was removed on the owner's instruction (2026-11-23).
 
 **Limitations.**
 - The pulse is taken as flat over the band: a crash stronger near the channel than across the band is under-read there (ear02's 48
@@ -1042,8 +1041,8 @@ DEV2 and the calls).
   recordings) but count as the others.
 - On a band of heavy atmospherics it fires often: on the ten 2026-11 recordings from 1.7 firings a minute (15 m, 0.000% of the
   decoders' widest-filter samples reached) to 1 858 (80 m, 7.7%), 40 m 200 to 1 080 (0.9 to 2.6%); on the 2017 recordings 3 to
-  25 a minute (under 0.1%); on the owner's clips 0 to 1 845 a minute, up to 8.6% (`docs/decision-log.md`, 2026-11-22). In mode 2
-  that is noise taken as noise; in mode 1 it would be evidence lost. On the generated sets (DEV2, VE3NEA's conditions), which hold
+  25 a minute (under 0.1%); on the owner's clips 0 to 1 845 a minute, up to 8.6% (`docs/decision-log.md`, 2026-11-22). That is
+  noise taken as noise. On the generated sets (DEV2, VE3NEA's conditions), which hold
   no crash, it fires on a single channel sample now and then (DEV2: 191 and 212 times in 708 recordings a seed) and reaches no
   decoder sample: their texts are main's.
 - A pulse is read from a slice's 8 subband samples per subband; one shorter than a slice is read at its mean over the slice, and the
@@ -5085,7 +5084,7 @@ Decisions and their measurements: `docs/decision-log.md`, 2026-10-30 and 2026-10
 | Bin width Δf | ~23 Hz (rule: largest power-of-two N with Δf ≥ 20 Hz) | `choose_fft_size` (engine.cpp) | heuristic |
 | Hop / overlap | N/2, 50% (largest hop keeping Hann constant-sum) | engine.cpp | standard choice |
 | Spectrum window | periodic Hann (ENBW 1.5 bins = 35.2 Hz) | spectrum.cpp | standard choice |
-| Impulse blanker: mode | 2, a pulse's power P added to σ² where P ≥ σ² (`threshold_db` 0 dB re σ²); 1 the sample unknown (0 nats); 0 off; segmental path only | `ImpulseBlankerConfig::mode`, `threshold_db` | mode chosen by measurement; the 0 dB heuristic (no effect from −10 to 0 dB re σ² on the ear clips) |
+| Impulse blanker: on | on, a pulse's power P added to σ² where P ≥ σ² (`threshold_db` 0 dB re σ²); off (bench `impulse_mode=0`); segmental path only | `ImpulseBlankerConfig::on`, `threshold_db` | on chosen by measurement; the 0 dB heuristic (no effect from −10 to 0 dB re σ² on the ear clips) |
 | Impulse blanker: occupied bins | 1 s average ≥ +6 dB re the subband's lower quartile of averages, ±2 bins | `occupied_db`, `occupied_guard_bins`, `average_s` | heuristic (±2 bins Hann's main lobe, derived) |
 | Impulse blanker: subbands | 12 kHz rounded to a power of two of bins (512: 16, 8, 4 subbands at 192, 96, 48 kHz); a subband counts with ≥ 25% of its bins quiet; at least 4 needed | `subband_hz`, `min_quiet_share`, `min_subbands` | heuristic |
 | Impulse blanker: noise | median over 1 s of the frames' median quiet power / ln 2; nothing read in the first 0.5 s | `noise_memory_s` | ln 2 derived; 1 s, 0.5 s heuristic |

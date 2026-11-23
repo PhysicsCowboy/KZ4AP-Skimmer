@@ -85,7 +85,7 @@ public:
     void set_noise_density_fs2_per_hz(double n0_fs2_per_hz) override;
     void set_band_spectrum(std::span<const float> power_fs2, int center_index) override;
     void set_impulse_series(const ImpulseSeries* series) override { impulse_ = series; }
-    // The impulse blanker's work on the widest stream: envelope samples pushed, and those a pulse reached (ImpulseSeries::mode).
+    // The impulse blanker's work on the widest stream: envelope samples pushed, and those a pulse reached.
     std::uint64_t impulse_pushed() const { return impulse_pushed_; }
     std::uint64_t impulse_blanked() const { return impulse_blanked_; }
 

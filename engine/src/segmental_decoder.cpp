@@ -360,7 +360,7 @@ DecodeUpdate SegmentalDecoder::process(std::span<const Sample> samples, double t
         require(std::fabs(t0_s - expected_s) <= 0.5 / rate_,
                 "SegmentalDecoder::process: a block must start where the previous one ended (to within half a sample)");
     }
-    const bool blanking = impulse_ != nullptr && impulse_->mode != 0;
+    const bool blanking = impulse_ != nullptr;
     for (Stream& stream : streams_) {
         stream.envelope.clear();
         stream.sampler.push(samples, next_index_, stream.envelope);
@@ -438,14 +438,13 @@ void SegmentalDecoder::push_sample(Stream& stream, const viterbi::EnvelopeSample
     const double floor = stream.floor->sigma2(sample.e_fs, hiss);
     double sigma2 = std::max(floor, leak_floor);
     // The impulse blanker: the pulse's power here, its excess re the band's noise taken at the hiss, against the sample's noise. A
-    // sample it reaches is unknown (mode 1) or has that power as noise besides (mode 2); the tail and Doppler estimators read it as
-    // the floor.
+    // sample it reaches has that power as noise besides; the tail and Doppler estimators read it as the floor.
     bool hit = false;
     if (pulse > 0.0 && impulse_ != nullptr) {
         const double power = pulse * hiss;
         if (power >= impulse_->threshold * sigma2) {
             hit = true;
-            if (impulse_->mode == 2) sigma2 += power;
+            sigma2 += power;
         }
     }
     if (stream.scale == 1) {
@@ -457,7 +456,7 @@ void SegmentalDecoder::push_sample(Stream& stream, const viterbi::EnvelopeSample
         stream.evidence->set_echo(stream.echo->shape());
     }
     stream.evidence->set_echo_level(stream.echo->level_fs2());
-    stream.evidence->push(sample.e_fs, sigma2, floor, hit && impulse_->mode == 1);
+    stream.evidence->push(sample.e_fs, sigma2, floor);
     stream.search->advance();  // at once: the short elements' context reaches back only so far
     stream.advance_free_key();
     ++stream.pushed;
@@ -536,8 +535,7 @@ DecodeUpdate SegmentalDecoder::flush() {
     for (Stream& stream : streams_) {
         // What the impulse blanker held back, with the series as it stands.
         for (const Stream::Held& h : stream.held)
-            push_sample(stream, h.sample, impulse_ != nullptr && impulse_->mode != 0 ? pulse_at(stream, h.sample.k) : 0.0, h.n0,
-                        h.leak_floor);
+            push_sample(stream, h.sample, impulse_ != nullptr ? pulse_at(stream, h.sample.k) : 0.0, h.n0, h.leak_floor);
         stream.held.clear();
         stream.evidence->finish();
         stream.search->advance();

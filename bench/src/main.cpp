@@ -80,7 +80,7 @@ constexpr const char* kUsage =
     "                   [--record-channels DIR (with --oracle: the oracle channels; without: the detector's)]\n"
     "                   [--set NAME=VALUE ...] [--genie fist|fading ...] [--stats STATS.json [--stats-detail]]\n"
     "                   [--detector NAME=VALUE ...] (a field of DetectorConfig or dc_block_s, over the path's defaults)\n"
-    "                   [--impulse-csv FILE] (with --detector impulse_mode=1 or 2: the impulse blanker's readings)\n"
+    "                   [--impulse-csv FILE] (with the impulse blanker on, impulse_mode=1, the default: its readings)\n"
     "                   [--omega-bar-default-table FILE]\n"
     "                   [--audio] [--audio-channel N] [--passband-hz LO,HI] [--sideband usb|lsb] [--label-shift-hz HZ]\n"
     "                   (receiver audio, as a one-channel WAV is read: docs/signal-processing.md, section 1;\n"
@@ -415,7 +415,7 @@ int run_engine(const Args& args) {
     std::optional<std::ofstream> impulse_csv;
     std::uint64_t impulse_written = 0;
     if (args.impulse_csv) {
-        if (!engine.impulse_blanker()) throw std::runtime_error("--impulse-csv needs the impulse blanker (--detector impulse_mode=1 or 2)");
+        if (!engine.impulse_blanker()) throw std::runtime_error("--impulse-csv needs the impulse blanker on (--detector impulse_mode=1, the default)");
         impulse_csv.emplace(*args.impulse_csv);
         if (!*impulse_csv) throw std::runtime_error("cannot write " + args.impulse_csv->string());
         *impulse_csv << "channel_sample,time_s,excess\n";
