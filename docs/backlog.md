@@ -811,9 +811,53 @@ length, learned per track from the falls the search reads), so that a gap's firs
 mark rather than against noise; standard practice for a dispersive channel (a channel impulse response estimated from decided
 symbols, as in decision-directed equalization). The generator would need a two-path option to make a matched test set.
 
-### A test that differs by compiler: EngineCopies.TwoCallersKeyingAtOnceKeepTheirTracks (noted 2026-11-21, `text-fast-1`)
+### A test that differed by standard library: EngineCopies.TwoCallersKeyingAtOnceKeepTheirTracks (noted 2026-11-21, `text-fast-1`; fixed 2026-11-22, `ci-fix-2`)
 
-It fails on Linux with GCC at main 5eac08d (3 of the 4 calls it asks for) and passes on MSVC; not investigated.
+**Status 2026-11-22 (`ci-fix-2`): fixed; four findings open.** It failed on Linux with GCC from `text-level-1`'s merge on
+(5eac08d: 3 of the 4 calls it asks for; its first parent c621963 and 9c4341d read 5) and passed on MSVC (4 at main f98013a). The
+two CI jobs decoded different scenes, not the same scene with different arithmetic: the noise came from `std::normal_distribution`,
+whose algorithm is each standard library's own (libstdc++ 11 and MSVC 14.51's library both use Marsaglia's polar method but hand
+out a pair's two values in the opposite order: bits/random.tcc lines 1828 to 1830, include/random lines 2685 to 2687), so the
+40 s scene's samples differ (FNV-1a 64 of the samples, seed 9: fed709aa6ccaa6e9 with GCC, 05a133a3d770767e with MSVC), and
+each build given the other's samples reads the other's text (GCC 4 calls on MSVC's, MSVC 3 on GCC's, the same texts). Drawn
+with `test::add_portable_noise` (Box-Muller on std::mt19937's outputs, engine/tests/test_signals.hpp), seeds 1 to 30 give
+bit-identical samples and the same texts with GCC 11.4 on Linux and MSVC 14.51 on Windows, with 1 and 2 worker threads alike;
+ASan and UBSan (GCC 11.4, -O1, halting at the first report) report nothing on the engine's 456 tests and the segmental
+decoder's 64, and on the failing scene that build reads the -O3 build's text. Over those 30 draws B's calls read on its own
+tracks number 3 to 7 a draw: mean 6.20 at c621963 (below the bar of 4 in 1 draw), 5.27 at 5eac08d and f98013a (below 4 in 7),
+standard deviation 1.53 calls. One draw cannot carry a bar of 4, so the test reads eight draws, seeds 1 to 8: no copy in any, at
+least one of B's calls in each, 4 a draw on average, 32 in all. At f98013a they read 42 against that bar (5, 3, 7, 5, 7, 5, 5,
+5). Eight draws from the measured distribution total below 32 with probability 0.007 (a plug-in estimate from the 30 draws;
+bootstrap 90% range 0.0002 to 0.058). The bar guards B's reading against a large loss, not a small one: at a mean of 4.5 calls a
+draw the test fails about 15% of the time, at 4.0 about 45% (normal approximation, standard deviation 1.53 calls). The file's
+other scenes take the same noise and pass on both platforms. Open:
+- **B's tracks are retired as not Morse (high priority).** In every draw (30 of 30 at f98013a; at 9c4341d in the two looked at)
+  B's first track ends `not_morse` at an age of 12.032 s (1.707 to 13.739 s) while reading `KQ2RP KQ2RP` correctly: the judge's
+  timing rule (engine/src/track_evidence.cpp line 135), whose window `TrackJudge::kWindowS` is 12.0 s
+  (engine/include/kz4ap/track_evidence.hpp line 91; no other rule waits 12 s). The second,
+  born at 14.336 s, ends `not_morse` at 26.368 s in 10 draws (and B then has no track until 34.901 s) and at 32.4 to 33.4 s in 6.
+  Meanwhile A's track prints B's keying (after A's last call, in 18 of the 30 draws: `M KQ OA M KQ OA`). A caller beside a
+  stronger neighbor loses the calls it sends while untracked.
+- **`text-level-1`'s cost in this scene.** B's second track reads junk in place of its first two calls in 6 of the 30 draws,
+  against 1 at c621963 (seed 2: `I12RP KQ2RP KQ2RP K` at c621963, `TRC 9YOU000` at 5eac08d, the same junk as on seeds 15 and
+  25): the mean count 6.20 to 5.27 calls.
+  The scene's 60 texts (both noise generators) are the same at 9c4341d and c621963 and the same at 5eac08d and f98013a, so only
+  `text-level-1` changed them; it measured one draw (4 calls with the defaults, as main had).
+- **Other tests' noise.** 17 test files draw noise with `std::normal_distribution` themselves, and the shared helpers draw it too
+  whenever noise_sigma > 0: `test::keyed_signal_of` (engine/tests/test_signals.hpp lines 100 to 109) and its twin
+  `test::keyed_signal_d17` (engine/tests/viterbi/keyed_signals.hpp lines 70 to 78), each with two draws as one constructor call's
+  arguments (an order the language leaves unspecified); `rayleigh_gain` there (line 118) draws it too. That reaches about ten
+  more test files: engine_test.cpp, classical_decoder_test.cpp, bank_decoder_test.cpp, worker_pool_test.cpp,
+  stream_runner_test.cpp, viterbi_decoder_test.cpp and others. So each CI job tests its own realization, and a test near its bar
+  can pass on the desktop and fail on CI as this one did. The cheapest fix, as a later branch: `keyed_signal_of` and its twin on
+  the portable draw (`test::add_portable_noise`), each bar rechecked on both platforms.
+- **Hash order in the call stage (found looking for order dependence; not shown to change any output).** `CallSearch::evaluate`
+  withdraws the reported rivals a call beats in the order `held_at` met them in the `unordered_map` of candidates
+  (engine/src/callsign.cpp, the loop at line 1454 and the withdrawals at line 1583), and withdrawing one can change whether it
+  still holds back the next (`holds_nothing` reads `reported`), so the withdrawals can differ across libraries. The fix: sort
+  `beaten` before withdrawing. And `CallSearch::candidates()` (line 1656, the `--candidates` file) orders rows at one frequency
+  by hash order (an unstable sort by frequency alone). The engine's other hash containers are looked up, never iterated for a
+  result; its worker threads' results go out in track order (1 and 2 threads read the same texts here).
 
 ### Strong fading in the development set: cells above +20 dB S500 (proposed 2026-11-21, `text-level-1`)
 

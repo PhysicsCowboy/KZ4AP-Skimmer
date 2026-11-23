@@ -127,4 +127,24 @@ inline double duration_for(const std::string& text, double wpm, double tail_s = 
     return keying(text, wpm, 0.5).back().second + tail_s;
 }
 
+// Adds complex white Gaussian noise of sigma_fs FS per real component (2 sigma_fs^2 FS^2 a sample) to x, the same samples with
+// every standard library: Box-Muller on std::mt19937's 32-bit outputs, which the C++ standard fixes, the two outputs of one pair
+// the real and imaginary parts of one sample, each draw its own statement. std::normal_distribution's algorithm is the library's
+// own, so libstdc++ and MSVC's library draw different noise from the same seed (a test's two CI jobs then decode two different
+// recordings), and two draws as the arguments of one call run in an order the language leaves unspecified. The same up to libm's
+// last bit in log, cos and sin, which the rounding to float hides: a one-ulp difference in a double changes its float with
+// probability 2^-29 (derived), and the 30 seeds of keying_coherence_test.cpp's pile-up (1.92 million samples each) give
+// bit-identical samples with GCC 11.4 on Linux and with MSVC 14.51 on Windows (measured, ci-fix-2).
+inline void add_portable_noise(std::vector<Sample>& x, double sigma_fs, unsigned seed) {
+    std::mt19937 rng(seed);
+    constexpr double kScale = 1.0 / 4294967296.0;  // 2^-32
+    for (Sample& s : x) {
+        const double u1 = (static_cast<double>(rng()) + 1.0) * kScale;  // (0, 1]
+        const double u2 = static_cast<double>(rng()) * kScale;          // [0, 1)
+        const double r = sigma_fs * std::sqrt(-2.0 * std::log(u1));
+        const double phase = 2.0 * std::numbers::pi * u2;
+        s += Sample(static_cast<float>(r * std::cos(phase)), static_cast<float>(r * std::sin(phase)));
+    }
+}
+
 }  // namespace kz4ap::test
