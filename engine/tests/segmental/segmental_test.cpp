@@ -111,26 +111,27 @@ void feed(const Keyed& keyed, double gain, RunningSums& sums, Search* search = n
 
 // The key for a text at dot samples per dot, exact timing, with lead samples before it and tail after; letter and word gaps
 // on a time base of gap_dot samples (0: the dot).
-Keyed keyed_text(const std::string& text, int dot, int lead, int tail, int gap_dot = 0) {
+// weight: samples added to every mark and taken from every gap after a mark (a keyer's weighting).
+Keyed keyed_text(const std::string& text, int dot, int lead, int tail, int gap_dot = 0, int weight = 0) {
     Keyed keyed;
     if (gap_dot == 0) gap_dot = dot;
     keyed.add(0, lead);
     bool first_word = true;
     std::string word;
     const auto send_word = [&](const std::string& w) {
-        if (!first_word) keyed.add(0, 7 * gap_dot);
+        if (!first_word) keyed.add(0, 7 * gap_dot - weight);
         first_word = false;
         bool first_letter = true;
         for (const char c : w) {
-            if (!first_letter) keyed.add(0, 3 * gap_dot);
+            if (!first_letter) keyed.add(0, 3 * gap_dot - weight);
             first_letter = false;
             const std::string letter(1, c);
             const std::string_view pattern = kz4ap::morse::encode(letter);
             bool first_mark = true;
             for (const char mark : pattern) {
-                if (!first_mark) keyed.add(0, dot);
+                if (!first_mark) keyed.add(0, dot - weight);
                 first_mark = false;
-                keyed.add(1, mark == '-' ? 3 * dot : dot);
+                keyed.add(1, (mark == '-' ? 3 * dot : dot) + weight);
             }
         }
     };
@@ -147,6 +148,30 @@ Keyed keyed_text(const std::string& text, int dot, int lead, int tail, int gap_d
     return keyed;
 }
 
+// The key for a text with each kind's own length, samples: dit, dash, element gap, letter gap, word gap.
+Keyed keyed_lengths(const std::string& text, std::array<int, 5> lengths, int lead, int tail) {
+    Keyed keyed;
+    keyed.add(0, lead);
+    bool first_letter = true;
+    for (const char c : text) {
+        if (c == ' ') {
+            keyed.add(0, lengths[4]);
+            first_letter = true;
+            continue;
+        }
+        if (!first_letter) keyed.add(0, lengths[3]);
+        first_letter = false;
+        bool first_mark = true;
+        for (const char mark : kz4ap::morse::encode(std::string(1, c))) {
+            if (!first_mark) keyed.add(0, lengths[2]);
+            first_mark = false;
+            keyed.add(1, mark == '-' ? lengths[1] : lengths[0]);
+        }
+    }
+    keyed.add(0, tail);
+    return keyed;
+}
+
 std::string text_of(const std::vector<DecodedSymbol>& symbols) {
     std::string out;
     for (const DecodedSymbol& s : symbols) out += s.text;
@@ -155,6 +180,14 @@ std::string text_of(const std::vector<DecodedSymbol>& symbols) {
 
 SegmentalConfig small_config() {
     SegmentalConfig config;
+    return config;
+}
+
+// The default configuration with no weights: the fists of speed and stretch alone.
+SegmentalConfig weightless() {
+    SegmentalConfig config;
+    config.fist_weights_dots = {0.0};
+    config.fist_weight_prior = 0.0;
     return config;
 }
 
@@ -206,7 +239,7 @@ TEST(ModelTables, ALongGapsSurvivalStaysOptimistic) {
 }
 
 TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const int length = tables.range(0, tables.first_fist(tables.speeds() / 2)).hi;
     std::size_t count = 0;
@@ -226,7 +259,7 @@ TEST(ModelTables, ABirthsEndsAreEverySpeedsAtItsLength) {
 }
 
 TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const viterbi::ViterbiConfig& model = config.model;
     const double ratio = std::pow(model.speed_ratio, config.gap_stretch_speed_steps);
@@ -266,7 +299,7 @@ TEST(ModelTables, AFistsGapsAreThoseOfTheSteppedSpeedAndItsMarksItsOwn) {
 }
 
 TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
-    SegmentalConfig config;
+    SegmentalConfig config = weightless();
     config.gap_stretches = 1;
     const ModelTables tables(config);
     EXPECT_EQ(tables.fists(), config.model.speed_count);
@@ -277,12 +310,256 @@ TEST(ModelTables, OneStretchLeavesTheOldTablesAndWhatCannotBeIsRefused) {
     bad = config;
     bad.gap_stretch_prior = 1.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
-    bad = SegmentalConfig{};
+    bad = weightless();
     bad.gap_stretch_prior = 0.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
-    bad = SegmentalConfig{};
+    bad = weightless();
     bad.gap_unit_max_s = 0.0;
     EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+}
+
+TEST(ModelTables, AWeightIsTheFistsShiftAndWeightZeroIsTheOldFist) {
+    // Weights {0, +0.2, -0.2, +0.4} at every stretch: speed s's first fist is the weightless tables' own, and a weight's fist at
+    // stretch n reads the tables of a fist with shifts {w, w, -w, -w / g, -w / g} dots, g = 1.61^n: its letter and word gaps read
+    // the stepped speed's dot g T_s, so that is -w T_s, the keyer's rule (a letter gap (3g - w) T_s at the median), not -w g T_s.
+    SegmentalConfig weighted;
+    weighted.fist_weights_dots = {0.2, 0.0, -0.2, 0.4};
+    weighted.fist_weight_prior = 0.05;
+    weighted.fist_weight_stretched = true;
+    const ModelTables tables(weighted);
+    const ModelTables plain(weightless());
+    EXPECT_EQ(tables.fists(), 4 * plain.fists());
+    EXPECT_EQ(tables.groups(), 4 * plain.speeds());
+    for (int speed = 0; speed < plain.speeds(); ++speed) {
+        const int f = tables.first_fist(speed);
+        const int g = plain.first_fist(speed);
+        EXPECT_EQ(tables.speed_of(f), speed);
+        EXPECT_DOUBLE_EQ(tables.weight_of(f), 0.0);
+        for (int n = 0; n < plain.first_fist(speed + 1) - g; ++n) {
+            for (int kind = 0; kind < 5; ++kind) {
+                ASSERT_EQ(tables.range(kind, f + n).lo, plain.range(kind, g + n).lo);
+                ASSERT_EQ(tables.range(kind, f + n).hi, plain.range(kind, g + n).hi);
+                const int length = (plain.range(kind, g + n).lo + plain.range(kind, g + n).hi) / 2;
+                EXPECT_DOUBLE_EQ(tables.log_end(kind, f + n, length), plain.log_end(kind, g + n, length));
+            }
+            EXPECT_EQ(tables.gap_survival(f + n, 40), plain.gap_survival(g + n, 40));
+            EXPECT_EQ(tables.mark_survival(f + n, 40), plain.mark_survival(g + n, 40));
+        }
+    }
+    const viterbi::ViterbiConfig& model = weighted.model;
+    for (const double w : {0.2, -0.2, 0.4}) {
+      for (int stretch = 0; stretch < weighted.gap_stretches; ++stretch) {
+        const double ratio = std::pow(model.speed_ratio, stretch * weighted.gap_stretch_speed_steps);
+        SegmentalConfig shifted = weightless();
+        shifted.model.fist_shifts_dots = {{w, w, -w, -w / ratio, -w / ratio}};
+        const ModelTables own(shifted);
+        for (const int speed : {0, 9, 20, 31}) {
+            int group = -1;
+            for (int q = 0; q < tables.groups(); ++q)
+                if (tables.speed_of(tables.first_of_group(q)) == speed && std::abs(tables.weight_of(tables.first_of_group(q)) - w) < 1e-12) group = q;
+            ASSERT_GE(group, 0);
+            const int f = tables.first_of_group(group);
+            const int g = own.first_fist(speed);
+            ASSERT_EQ(tables.first_of_group(group + 1) - f, own.first_fist(speed + 1) - g);
+            if (stretch >= own.first_fist(speed + 1) - g) continue;
+            {
+                // The keyer's rule in samples: a letter gap's range is -w T_s + 3 g T_s e^(+-4 sigma).
+                const double dot = model.dot_min_ms * std::pow(model.speed_ratio, speed) / 1000.0 / model.sample_interval_s;
+                const double median = 3.0 * ratio * dot;
+                const double spread = std::exp(weighted.duration_z_max * model.fist_sigmas[3]);
+                EXPECT_EQ(tables.range(3, f + stretch).lo, std::max(1, static_cast<int>(std::floor(-w * dot + median / spread))));
+                EXPECT_EQ(tables.range(3, f + stretch).hi, static_cast<int>(std::ceil(-w * dot + median * spread)));
+            }
+            for (int n = stretch; n == stretch; ++n) {
+                for (int kind = 0; kind < 5; ++kind) {
+                    ASSERT_EQ(tables.range(kind, f + n).lo, own.range(kind, g + n).lo) << w << " " << speed << " " << kind;
+                    ASSERT_EQ(tables.range(kind, f + n).hi, own.range(kind, g + n).hi) << w << " " << speed << " " << kind;
+                    const int length = (own.range(kind, g + n).lo + own.range(kind, g + n).hi) / 2;
+                    EXPECT_DOUBLE_EQ(tables.log_end(kind, f + n, length), own.log_end(kind, g + n, length));
+                }
+                EXPECT_EQ(tables.gap_hi(f + n), own.gap_hi(g + n));
+                EXPECT_EQ(tables.mark_hi(f + n), own.mark_hi(g + n));
+                EXPECT_EQ(tables.gap_survival(f + n, 40), own.gap_survival(g + n, 40));
+                EXPECT_EQ(tables.mark_survival(f + n, 40), own.mark_survival(g + n, 40));
+            }
+        }
+      }
+    }
+    // A birth's ends: every group's g = 1, a weight other than 0 waiting, each with its weight's prior.
+    const int length = tables.range(0, tables.first_fist(tables.speeds() / 2)).hi;
+    for (const ModelTables::OpenEnd& end : tables.open_ends(length)) {
+        EXPECT_EQ(end.fist, tables.first_of_group(end.group));
+        EXPECT_EQ(end.weighted, tables.weight_of(end.fist) != 0.0);
+        const double prior = end.weighted ? std::log(0.05 / 3.0) : std::log(0.95);
+        const int label = tables.child(0, 0) == end.child ? 0 : 1;
+        EXPECT_NEAR(end.log_end, tables.log_end(label, end.fist, length) + prior, 1e-12);
+    }
+    EXPECT_GE(tables.open_hi(), plain.open_hi());
+}
+
+TEST(ModelTables, AScaledWeightMovesTheMediansInstead) {
+    // fist_weight_scaled: a weight's fist reads the tables of a fist with medians {1 + w, 3 + w, 1 - w, 3 - w, 7 - w} dots.
+    SegmentalConfig scaled;
+    scaled.fist_weights_dots = {0.0, 0.4};
+    scaled.fist_weight_prior = 0.01;
+    scaled.fist_weight_scaled = true;
+    const ModelTables tables(scaled);
+    SegmentalConfig own = weightless();
+    own.model.fist_medians_dots = {{1.4, 3.4, 0.6, 2.6, 6.6}};
+    const ModelTables reference(own);
+    for (const int speed : {0, 12, 31}) {
+        const int f = tables.first_of_group(tables.group_of(tables.first_fist(speed)) + 1);
+        ASSERT_DOUBLE_EQ(tables.weight_of(f), 0.4);
+        const int g = reference.first_fist(speed);
+        for (int kind = 0; kind < 5; ++kind) {
+            ASSERT_EQ(tables.range(kind, f).lo, reference.range(kind, g).lo) << speed << " " << kind;
+            ASSERT_EQ(tables.range(kind, f).hi, reference.range(kind, g).hi) << speed << " " << kind;
+            const int length = (reference.range(kind, g).lo + reference.range(kind, g).hi) / 2;
+            EXPECT_DOUBLE_EQ(tables.log_end(kind, f, length), reference.log_end(kind, g, length));
+        }
+        EXPECT_EQ(tables.mark_survival(f, 40), reference.mark_survival(g, 40));
+        EXPECT_EQ(tables.gap_survival(f, 40), reference.gap_survival(g, 40));
+    }
+    // At every stretch: a letter gap's median (3g - w) T_s, a word gap's (7g - w) T_s, that is (3 - w / g) and (7 - w / g) of the
+    // stepped speed's dot.
+    scaled.fist_weight_stretched = true;
+    const ModelTables stretched(scaled);
+    for (int n = 1; n < 4; ++n) {
+        const double ratio = std::pow(scaled.model.speed_ratio, n * scaled.gap_stretch_speed_steps);
+        SegmentalConfig at = weightless();
+        at.model.fist_medians_dots = {{1.4, 3.4, 0.6, 3.0 - 0.4 / ratio, 7.0 - 0.4 / ratio}};
+        const ModelTables reference_n(at);
+        const int speed = 3;
+        const int f = stretched.first_of_group(stretched.group_of(stretched.first_fist(speed)) + 1) + n;
+        ASSERT_DOUBLE_EQ(stretched.weight_of(f), 0.4);
+        const int g = reference_n.first_fist(speed) + n;
+        for (int kind = 0; kind < 5; ++kind) {
+            ASSERT_EQ(stretched.range(kind, f).lo, reference_n.range(kind, g).lo) << n << " " << kind;
+            ASSERT_EQ(stretched.range(kind, f).hi, reference_n.range(kind, g).hi) << n << " " << kind;
+        }
+        EXPECT_EQ(stretched.gap_survival(f, 40), reference_n.gap_survival(g, 40));
+    }
+}
+
+TEST(ModelTables, AWeightsLetterGapsAndStretchesAreOptions) {
+    SegmentalConfig config;
+    config.fist_weights_dots = {0.0, 0.4};
+    config.fist_weight_prior = 0.01;
+    config.fist_weight_letter_gaps = false;
+    config.fist_weight_stretched = false;
+    const ModelTables tables(config);
+    const ModelTables plain(weightless());
+    EXPECT_EQ(tables.fists(), plain.fists() + plain.speeds());
+    for (int speed = 0; speed < tables.speeds(); ++speed) {
+        const int f = tables.first_fist(speed);
+        const int weighted = tables.first_of_group(tables.group_of(f) + 1);
+        EXPECT_DOUBLE_EQ(tables.weight_of(weighted), 0.4);
+        EXPECT_EQ(tables.first_of_group(tables.group_of(weighted) + 1), weighted + 1);  // g = 1 only
+        EXPECT_EQ(tables.first_fist(speed + 1), weighted + 1);
+        for (const int kind : {3, 4}) {  // letter and word gaps as w = 0's
+            EXPECT_EQ(tables.range(kind, weighted).lo, tables.range(kind, f).lo);
+            EXPECT_EQ(tables.range(kind, weighted).hi, tables.range(kind, f).hi);
+        }
+        EXPECT_GT(tables.range(1, weighted).hi, tables.range(1, f).hi);
+        EXPECT_LE(tables.range(2, weighted).lo, tables.range(2, f).lo);
+    }
+    SegmentalConfig bad = config;
+    bad.fist_weights_dots = {0.2, 0.4};
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.fist_weights_dots = {0.0, 0.0, 0.4};
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.fist_weights_dots = {0.0, 1.0};
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.fist_weight_prior = 0.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+    bad = config;
+    bad.fist_weight_prior = 1.0;
+    EXPECT_THROW(ModelTables{bad}, std::invalid_argument);
+}
+
+TEST(SegmentalSearch, ReadsAHeavilyWeightedFist) {
+    // 25 WPM (dot 18 samples) with marks 9 samples (0.5 dot) longer and every gap after a mark 9 samples shorter: the ear11 sender's
+    // kind of fist (+0.48 dit), past the grid's +0.4. With weights the text is exact, and the story stands well above the best
+    // weightless one (on this clean key a weightless story reads the text too, at another speed).
+    SegmentalConfig config;
+    config.fist_weights_dots = {-0.2, 0.0, 0.2, 0.4};
+    config.fist_weight_prior = 0.01;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(weightless());
+    const std::string text = "CQ DE W1AW PSE K TEST";
+    const Keyed keyed = keyed_text(text, 18, 300, 400, 0, 9);
+    for (const double gain : {4.0, 100.0}) {
+        RunningSums sums;
+        Search search(config, tables, sums);
+        feed(keyed, gain, sums, &search);
+        EXPECT_EQ(text_of(search.best_text()), text) << "gain " << gain;
+        RunningSums plain_sums;
+        Search plain_search(weightless(), plain_tables, plain_sums);
+        feed(keyed, gain, plain_sums, &plain_search);
+        EXPECT_GT(search.best_score() - plain_search.best_score(), 10.0) << "gain " << gain;
+    }
+}
+
+TEST(ModelTables, TheDefaultWeightsAreZeroAndTwoHeavierAtStandardSpacingOnly) {
+    const SegmentalConfig config;
+    EXPECT_EQ(config.fist_weights_dots, (std::vector<double>{0.0, 0.2, 0.4}));
+    EXPECT_DOUBLE_EQ(config.fist_weight_prior, 0.01);
+    EXPECT_TRUE(config.fist_weight_letter_gaps);
+    EXPECT_FALSE(config.fist_weight_stretched);
+    const ModelTables tables(config);
+    const ModelTables plain(weightless());
+    EXPECT_EQ(tables.fists(), plain.fists() + 2 * plain.speeds());
+    EXPECT_EQ(tables.fists(), 242);
+}
+
+TEST(SegmentalSearch, TheDefaultFistReadsEar11sWeightedHandWhereTheWeightlessOneReadsDitsAsDashes) {
+    // The owner's clip ear11 (a hand sender, measured): dits 120.6 ms, dashes 287.2 ms, element gaps 42.0 ms, letter gaps 438 ms by
+    // geometric mean, a fit of T = 81.3 ms and w = +0.48 dot. At 2.667 ms a sample: 45, 108, 16, 164 samples, word gaps 360. The
+    // weightless fist's MAP reading takes a faster speed and reads the dits as dashes (QM M QY QMOMY ..., as main read the clip);
+    // the default fist reads every letter. Letters only, as the clip is scored: its long letter gaps read as word spaces either way.
+    const std::string text = "HI A VY BASIC QUESTION HI I DONT KNOW";
+    const Keyed keyed = keyed_lengths(text, {{45, 108, 16, 164, 360}}, 300, 1200);
+    const auto letters = [](std::string t) {
+        t.erase(std::remove(t.begin(), t.end(), ' '), t.end());
+        return t;
+    };
+    const SegmentalConfig config;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(weightless());
+    for (const double gain : {4.0, 100.0}) {
+        RunningSums sums;
+        Search search(config, tables, sums);
+        feed(keyed, gain, sums, &search);
+        EXPECT_EQ(letters(text_of(search.best_text())), letters(text)) << "gain " << gain;
+        RunningSums plain_sums;
+        Search plain_search(weightless(), plain_tables, plain_sums);
+        feed(keyed, gain, plain_sums, &plain_search);
+        const std::string plain = letters(text_of(plain_search.best_text()));
+        EXPECT_NE(plain, letters(text)) << "gain " << gain;
+        // Dits read as dashes: the weightless reading's M's and O's.
+        EXPECT_GE(std::count(plain.begin(), plain.end(), 'M') + std::count(plain.begin(), plain.end(), 'O'), 10) << plain;
+    }
+}
+
+TEST(SegmentalSearch, StandardWeightPaysTheWeightsChargeOnceAndReadsTheSame) {
+    SegmentalConfig config;
+    config.fist_weights_dots = {-0.2, 0.0, 0.2, 0.4};
+    config.fist_weight_prior = 0.01;
+    const ModelTables tables(config);
+    const ModelTables plain_tables(weightless());
+    for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {
+        const Keyed keyed = keyed_text(text, 18, 300, 400);
+        RunningSums a, b;
+        Search with(config, tables, a), without(weightless(), plain_tables, b);
+        feed(keyed, 8.0, a, &with);
+        feed(keyed, 8.0, b, &without);
+        EXPECT_EQ(text_of(with.best_text()), text);
+        EXPECT_EQ(text_of(without.best_text()), text);
+        EXPECT_NEAR(with.best_score() - without.best_score(), std::log(1.0 - config.fist_weight_prior), 1e-6) << text;
+    }
 }
 
 TEST(SegmentalSearch, ReadsFarnsworthSpacingAsLettersAndWords) {
@@ -310,9 +587,9 @@ TEST(SegmentalSearch, ReadsFarnsworthSpacingAsLettersAndWords) {
 }
 
 TEST(SegmentalSearch, StandardSpacingPaysTheChargeOnceAndReadsTheSame) {
-    SegmentalConfig plain;
+    SegmentalConfig plain = weightless();
     plain.gap_stretches = 1;
-    const SegmentalConfig config;
+    const SegmentalConfig config = weightless();
     const ModelTables tables(config);
     const ModelTables plain_tables(plain);
     for (const std::string text : {"CQ CQ DE W1AW W1AW K", "TEST TEST", "TU", "E", "PARIS PARIS PARIS"}) {
