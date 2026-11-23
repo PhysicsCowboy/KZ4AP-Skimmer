@@ -247,10 +247,12 @@ std::vector<Sample> two_callers(unsigned seed = 9) {
 
 TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
     // Over eight noise draws, seeds 1 to 8: no track is retired as a copy, and B's calls are read on its own tracks, at least one in
-    // each draw and 4 a draw on average. One draw's count does not measure the decoder: over seeds 1 to 30 it is 3 to 7 calls, mean
-    // 5.27, standard deviation 1.53 calls, below 4 in 7 draws; the mean of eight draws is below 4 with probability about 0.007 (the
-    // 30 counts resampled with replacement; measured at main f98013a with GCC 11.4 on Linux and MSVC 14.51 on Windows, which read
-    // the same texts; ci-fix-2).
+    // each draw and 4 a draw on average, 32 in all. At main f98013a they read 42 against that bar (5, 3, 7, 5, 7, 5, 5, 5), with
+    // GCC 11.4 on Linux and MSVC 14.51 on Windows alike (the same texts). One draw's count does not measure the decoder: over seeds
+    // 1 to 30 it is 3 to 7 calls, mean 5.27, standard deviation 1.53 calls, below 4 in 7 draws. Eight draws from that distribution
+    // total below 32 with probability 0.007 (a plug-in estimate from the 30 draws; bootstrap 90% range 0.0002 to 0.058). The bar
+    // guards against a large loss, not a small one: at a mean of 4.5 calls a draw the test fails about 15% of the time, at 4.0 about
+    // 45% (normal approximation, standard deviation 1.53 calls; ci-fix-2).
     constexpr unsigned kDraws = 8;
     std::size_t calls = 0;
     std::string texts;
