@@ -299,6 +299,18 @@ int main(int argc, char** argv) {
             }
             engine.finish();
             channel_seconds = engine.stats().channel_seconds;
+            if (engine.impulse_blanker()) {
+                // How often the impulse blanker fired, and what share of the decoders' samples it reached (EngineStats).
+                const EngineStats st = engine.stats();
+                const double minutes = stream_s / 60.0;
+                std::fprintf(stderr, "impulse blanker: %llu firings, %.2f per minute; pulses in %.3f%% of the band's channel samples; %.3f%% of "
+                                     "the decoders' widest-filter samples reached\n",
+                             static_cast<unsigned long long>(st.impulse_firings), minutes > 0 ? static_cast<double>(st.impulse_firings) / minutes : 0.0,
+                             st.impulse_slices > 0 ? 100.0 * static_cast<double>(st.impulse_fired_slices) / static_cast<double>(st.impulse_slices) : 0.0,
+                             st.impulse_pushed_samples > 0
+                                 ? 100.0 * static_cast<double>(st.impulse_blanked_samples) / static_cast<double>(st.impulse_pushed_samples)
+                                 : 0.0);
+            }
             if (log) {
                 // Each track's decoder CPU, s (the thread's clock): --replay ignores it.
                 nlohmann::json cpu = nlohmann::json::object();

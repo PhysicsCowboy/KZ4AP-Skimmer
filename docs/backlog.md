@@ -437,7 +437,17 @@ Standard practice accepts these rather than modeling them (survey,
 - **Static crashes** (impulsive noise): a filtered crash has the shape of a short dot, so a strong one will likely print
   a false E or T. A crash inside a story's key-down samples also enters its long-run power estimate, raising it, the
   safe direction (updated 2026-10-25 to the design of plan D16–D17). A wideband noise blanker ahead of the channelizer,
-  as CW Skimmer offers, is the standard remedy, for later.
+  as CW Skimmer offers, is the standard remedy, for later. **Done for the segmental path (`text-blank-1`, 2026-11-22):**
+  an impulse blanker that tests across the band's quiet bins and gives the decoder the pulse's power as noise
+  (`docs/signal-processing.md`, section 4 and A.4). Open: (a) the pulse's power is the band's median, not the channel's
+  own neighborhood (a crash stronger near the channel is under-read: ear02's 48 re σ² against 54 to 77 measured);
+  (b) its cost, about 13 ms of CPU per s of stream at 192 kHz (the occupied bins every frame, 16 inverse FFTs), could
+  halve with the occupancy taken every other frame; (c) at 48 kHz I/Q it has 4 subbands, its quartiles their extremes,
+  and on VE3NEA's conditions it fired once or twice (a channel sample each) in 22 of 80 recordings of 180 s, reaching no decoder sample (texts identical to the blanker off);
+  (d) the generator still makes no crash, so DEV2 does not measure the gain, only the absence of harm; (e) a weak station's
+  trailing dah eroded under crashes in mode 2 (review of `text-blank-1`, 2026-11-22): on the 2026-11-17 40 m recording
+  EA3IZQ's 3 lost its last dah, and VA3CRL read VA<SN> CRL, both window-confirmed calls main reads; the mechanism is not found
+  (a candidate: a pulse's power taken as noise over a mark's last samples, where the fall's template weighs most).
 
 The test generator has none of these; measuring them needs generator changes, which need the owner's approval.
 

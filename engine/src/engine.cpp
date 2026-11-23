@@ -213,6 +213,12 @@ Engine::Engine(const EngineConfig& config, EventBus& bus)
         segmental_shared_ = std::make_shared<const SegmentalShared>(
             config_.segmental, ChannelizerConfig{config_.sample_rate, config_.fft_size, config_.channel_bins,
                                                  config_.channel_cutoff_hz});
+        if (config_.impulse.mode != 0) {
+            // The series is kept for a replay's past and its block, and a little more (heuristic).
+            blanker_ = std::make_unique<ImpulseBlanker>(config_.impulse, config_.sample_rate, config_.fft_size,
+                                                        config_.fft_size / config_.channel_bins, config_.passband_lo_hz,
+                                                        config_.passband_hi_hz, config_.replay_s + 1.0);
+        }
     } else if (!config_.viterbi_genie.empty()) {
         throw std::invalid_argument("viterbi_genie needs the new decoder (FrontEnd::Viterbi)");
     }
@@ -246,6 +252,19 @@ EngineStats Engine::stats() const {
     s.longest_replay_wait_s = static_cast<double>(longest_replay_wait_blocks_) * hop_ / config_.sample_rate;
     s.decoder_seconds = stages_.decoder_s;
     s.stages = stages_;
+    if (blanker_) {
+        s.impulse_slices = blanker_->slices();
+        s.impulse_fired_slices = blanker_->fired_slices();
+        s.impulse_firings = blanker_->firings();
+        s.impulse_pushed_samples = closed_pushed_;
+        s.impulse_blanked_samples = closed_blanked_;
+        for (const auto& [id, channel] : channels_) {
+            if (const auto* d = dynamic_cast<const SegmentalDecoder*>(channel.decoder.get())) {
+                s.impulse_pushed_samples += d->impulse_pushed();
+                s.impulse_blanked_samples += d->impulse_blanked();
+            }
+        }
+    }
     return s;
 }
 
@@ -350,6 +369,9 @@ void Engine::process_hop(std::span<const Sample> hop) {
         if (hiss_) hiss_->push(frame);  // the new decoder's hiss, before the frame moves on
         if (segmental_shared_) band_power_fs2_ = frame.power_fs2;
         lap(stages_.hiss_s);
+        if (blanker_ && frames.size() == 1)  // one frame a hop: the analyzer's last bins are this frame's
+            blanker_->push(spectrum_.last_bins(), frame.power_fs2, std::llround(frame.time_s * config_.sample_rate));
+        lap(stages_.spectrum_s);
         bus_.publish(Event{std::move(frame)});
         lap(stages_.publish_s);
         apply(update);
@@ -460,6 +482,8 @@ DecodeUpdate Engine::decode_block(std::uint32_t id, Channel& channel, const Chan
     if (tap_) tap_(ChannelBlock{id, first_index, block_center_hz, samples, channel.detector_freq_hz});
     // The new decoder: its N0, the hiss estimator's density at the bin this block was cut at, set before every block.
     if (hiss_) channel.decoder->set_noise_density_fs2_per_hz(hiss_->noise_density_fs2_per_hz(block_bin));
+    // The band's pulses, the whole series held (a replay's past block reads its own time in it).
+    if (blanker_) channel.decoder->set_impulse_series(blanker_->active() ? &blanker_->series() : nullptr);
     // What stands beside the channel now; a replay has no spectrum of its past.
     if (past == nullptr && !band_power_fs2_.empty()) {
         const double bin_hz = static_cast<double>(config_.sample_rate) / config_.fft_size;
@@ -604,6 +628,10 @@ void Engine::close_channel(std::uint32_t id, TrackEnd end) {
     const auto it = channels_.find(id);
     if (it == channels_.end()) return;
     publish_update(id, it->second.decoder->flush());
+    if (const auto* d = dynamic_cast<const SegmentalDecoder*>(it->second.decoder.get())) {
+        closed_pushed_ += d->impulse_pushed();
+        closed_blanked_ += d->impulse_blanked();
+    }
     bus_.publish(Event{TrackEvent{TrackEvent::Kind::Died, it->second.track, end, it->second.judge.proven()}});
     channels_.erase(it);
 }

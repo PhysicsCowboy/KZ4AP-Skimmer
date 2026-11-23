@@ -48,6 +48,7 @@ std::vector<SpectrumFrame> SpectrumAnalyzer::push(std::span<const Sample> in) {
     while (buffer_.size() - start >= n) {
         for (std::size_t i = 0; i < n; ++i) fft_in_[i] = buffer_[start + i] * window_[i];
         detail::fft_forward(fft_in_.data(), fft_out_.data(), n);
+        have_bins_ = true;
         SpectrumFrame frame;
         frame.time_s = static_cast<double>(dropped_ + start + n) / sample_rate_;
         if (decibels_) frame.power_db.resize(n);

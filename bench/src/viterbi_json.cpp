@@ -637,6 +637,18 @@ void apply_detector_setting(EngineConfig& config, const std::string& setting) {
     else if (name == "copy_older_only") config.copy_older_only = value != 0.0;
     else if (name == "copy_source_proven") config.copy_source_proven = value != 0.0;
     else if (name == "attribute_source_proven") config.attribute_source_proven = value != 0.0;
+    else if (name == "impulse_mode") config.impulse.mode = static_cast<int>(value);
+    else if (name == "impulse_threshold_db") config.impulse.threshold_db = value;
+    else if (name == "impulse_subband_hz") config.impulse.subband_hz = value;
+    else if (name == "impulse_min_subbands") config.impulse.min_subbands = static_cast<int>(value);
+    else if (name == "impulse_min_quiet_share") config.impulse.min_quiet_share = value;
+    else if (name == "impulse_occupied_db") config.impulse.occupied_db = value;
+    else if (name == "impulse_guard_bins") config.impulse.occupied_guard_bins = static_cast<int>(value);
+    else if (name == "impulse_average_s") config.impulse.average_s = value;
+    else if (name == "impulse_noise_memory_s") config.impulse.noise_memory_s = value;
+    else if (name == "impulse_gate") config.impulse.gate = value;
+    else if (name == "impulse_max_run_s") config.impulse.max_run_s = value;
+    else if (name == "impulse_flat_ratio") config.impulse.flat_ratio = value;
     else throw std::invalid_argument("--detector: unknown parameter '" + name + "'");
 }
 

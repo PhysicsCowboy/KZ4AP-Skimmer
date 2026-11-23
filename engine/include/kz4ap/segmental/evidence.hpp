@@ -376,7 +376,9 @@ public:
     // (so below() itself for s in [below() - 0.5, below())) and sigma^2 is taken at the floor times 10^(shift x step / 10); from
     // below() steps on, shift = below() and sigma^2 is taken as it is. Level l is scored as level l - shift of the tables.
     // Without a floor, or with level_on_floor 0, the floor is sigma^2.
-    void push(double e_fs, double sigma2_fs2, double floor_fs2);
+    // unknown: the impulse blanker's (impulse_blanker.hpp): the sample holds no evidence, key-down and key-up alike (its key-down
+    // term 1 in the level's messages, 0 nats in every score the search reads); e_fs is not read.
+    void push(double e_fs, double sigma2_fs2, double floor_fs2, bool unknown = false);
     void push(double e_fs, double sigma2_fs2) { push(e_fs, sigma2_fs2, sigma2_fs2); }
     // The stream's end: commits every sample left with the look-ahead there is, then 17 samples (kHorizon + 1) of no evidence,
     // so that the search can reach the last sample.
@@ -425,6 +427,7 @@ private:
     std::vector<float> x_;           // by sample in the ring, then level: x_k(l) less w z^2
     std::vector<double> z_;          // by sample in the ring: e / sigma_y
     std::vector<std::uint8_t> shift_;  // by sample in the ring: grid steps sigma^2 stands above the floor
+    std::vector<std::uint8_t> unknown_;  // by sample in the ring: no evidence (push's unknown)
     std::vector<double> top_;        // by sample in the ring: the largest of 0 and w z^2 + x_k(l), nats
     std::vector<double> beta_;       // backward message: key up by level, then key down by level
     std::vector<double> belief_;     // by frame in the ring, then level: what its samples read
