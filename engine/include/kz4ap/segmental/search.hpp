@@ -116,7 +116,7 @@ public:
     const std::uint8_t* children_at_nodes() const { return has_children_.data(); }
     // A birth's first mark at a length: what it can end as, in the order of the speeds, weights and labels, and the best one's survival.
     struct OpenEnd {
-        double log_end;  // nats: ln P_label(speed, weight, length) + the weight's prior
+        double log_end;  // nats: ln P_label(speed, weight, length) + the weight's prior (+ -ln(1 - pi) for a group with no other stretch)
         int fist;        // the group's first fist, g = 1
         int speed;
         int group;       // (speed, weight)
