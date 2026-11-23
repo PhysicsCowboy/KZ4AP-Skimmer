@@ -975,7 +975,7 @@ past it; N = 8 192 at 192 kHz):
    bins or more are quiet.
 3. *Its noise.* μ_s = median of r over the central half / ln 2 / Q_s (Q_s its quiet bins); ν_s = Q_s × the median of μ_s over the
    subband's last 47 counted frames (1 s), this one's included, each subband with its own ring (a frame where it was too crowded to
-   count adds nothing); a subband is read once 24 are held (0.5 s). |y|² of noise is proportional to Q_s (derived), so a frame with
+   count adds nothing); a subband is read once 24 are held (0.5 s). |y|² of noise is proportional to Q_s (derived for contiguous occupied bins; with scattered occupancy within about 11% on average and ±20% across the central half, computed by the review), so a frame with
    more or fewer bins occupied reads its noise the same.
 4. *The excess.* For channel sample c (input [128c, 128c + 128) at 192 kHz; 8 values of r each), u_s(c) = mean r / ν_s − 1, over the
    counted subbands (at least 4). With Q₁ and Q₃ the lower and upper quartiles of the u_s (sorted ascending, 0-based, the
