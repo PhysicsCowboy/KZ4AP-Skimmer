@@ -1026,8 +1026,10 @@ memory, the 0.5 s warm-up, the gate 1, the ratio 4, the 0.2 s and the 0 dB: heur
 mode 1 at 0, +3, +6, +10 dB re σ² 55, 55, 51, 50 edits, mode 2 at −10, 0, +3, +6 dB 46, 46, 49, 49, at gate 3 48. ν without the frame's
 own value: ear02-control's crash lasts about 30 ms, u 10 to 100 in all 16 subbands, and with the frame's own median in ν it read 1
 (the prediction 8.7 against the channel's 54 to 77 re σ²; without, 48). Q₁ and the ratio added for the strong station's clicks (+60 dB
-S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2, 0 dB, gate 1, Q₁ and ratio 4): 45 edits; mode 1 51
-(`docs/decision-log.md`, 2026-11-22).
+S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2, 0 dB, gate 1, Q₁ and ratio 4): 45 edits; mode 1 51;
+on main f98013a merged the same; with the owner's later rule for a short error sign, 53 to 42 (mode 1 48), and on his second batch,
+held out (nothing chosen on it), 8 to 3 edits in 270 characters (mode 1 7) (`docs/decision-log.md`, 2026-11-22, with the W1AW
+clips, DEV2 and the calls).
 
 **Limitations.**
 - The pulse is taken as flat over the band: a crash stronger near the channel than across the band is under-read there (ear02's 48
