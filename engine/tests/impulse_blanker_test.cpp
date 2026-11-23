@@ -28,21 +28,20 @@ constexpr double kSigma = 0.02;  // FS: complex white noise, N0 = sigma^2 / rate
 // The amplitude of a carrier of `db` dB S500 against kSigma at kRate.
 double amplitude_s500(double db) { return std::sqrt(std::pow(10.0, db / 10.0) * 500.0 * kSigma * kSigma / kRate); }
 
+// Complex white noise of kSigma^2 FS^2 a sample, the same on every platform (test::add_portable_noise).
 std::vector<Sample> noise(double duration_s, unsigned seed) {
-    std::mt19937 rng(seed);
-    std::normal_distribution<float> g(0.0f, static_cast<float>(kSigma / std::sqrt(2.0)));
     std::vector<Sample> x(static_cast<std::size_t>(duration_s * kRate));
-    for (Sample& s : x) s = Sample(g(rng), g(rng));
+    test::add_portable_noise(x, kSigma / std::sqrt(2.0), seed);
     return x;
 }
 
 // A crash: complex white noise of `ratio` times the noise's power per sample for `length_s`, from `start_s`, flat over the band.
 void add_crash(std::vector<Sample>& x, double start_s, double length_s, double ratio, unsigned seed) {
-    std::mt19937 rng(seed);
-    std::normal_distribution<float> g(0.0f, static_cast<float>(std::sqrt(ratio) * kSigma / std::sqrt(2.0)));
-    const auto first = static_cast<std::size_t>(start_s * kRate);
+    const auto first = std::min(x.size(), static_cast<std::size_t>(start_s * kRate));
     const auto last = std::min(x.size(), first + static_cast<std::size_t>(length_s * kRate));
-    for (std::size_t i = first; i < last; ++i) x[i] += Sample(g(rng), g(rng));
+    std::vector<Sample> crash(last - first);
+    test::add_portable_noise(crash, std::sqrt(ratio) * kSigma / std::sqrt(2.0), seed);
+    for (std::size_t i = first; i < last; ++i) x[i] += crash[i - first];
 }
 
 // A carrier keyed by intervals (s) at freq_hz, amplitude a, with raised-cosine edges of rise_s (0: hard keying, a click at
@@ -132,11 +131,21 @@ std::string squeeze(std::string s) {
 }  // namespace
 
 TEST(ImpulseBlanker, ResponseSharesSumToOneAndCarryTheFiltersNoise) {
-    // The cascade's |g|^2 summed is sigma_y^2 / N0 / rate (derived: white noise of N0 FS^2/Hz has N0 rate FS^2 a sample).
+    // The cascade's |g|^2 summed, times the rate, is sigma_y^2 / N0 (derived: white noise of N0 FS^2/Hz has N0 rate FS^2 a sample),
+    // the shares normalized to 1. The cascade at the tables' stand-in rate, as SegmentalParts builds it.
     const SegmentalShared shared(segmental::SegmentalConfig{}, ChannelizerConfig{kRate, 8192, 64, 150.0});
     double total = 0.0;
     for (double share : shared.impulse_response) total += share;
     EXPECT_NEAR(total, 1.0, 1e-12);
+    const ChannelizerConfig tables = segmental_tables_channel(ChannelizerConfig{kRate, 8192, 64, 150.0});
+    const std::vector<double> cut = channel_filter_taps(tables);
+    const auto d = static_cast<std::size_t>(tables.fft_size / tables.channel_bins);
+    std::vector<double> g(cut.size() + d * (shared.front_taps.size() - 1), 0.0);
+    for (std::size_t i = 0; i < shared.front_taps.size(); ++i)
+        for (std::size_t l = 0; l < cut.size(); ++l) g[d * i + l] += shared.front_taps[i] * cut[l];
+    double g2 = 0.0;
+    for (double v : g) g2 += v * v;
+    EXPECT_NEAR(g2 * tables.sample_rate, shared.output_noise.sigma2_per_n0_hz, 0.005 * shared.output_noise.sigma2_per_n0_hz);
     EXPECT_GT(shared.impulse_lead, 10);
     // Its center at the two filters' delays, 10.67 ms + 8 ms = 28 channel samples, and its width the front filter's dot and edge
     // with the channel filter's main lobe: 12 ms + 4.2 ms + about 3 ms, some 29 channel samples (derived).
@@ -157,6 +166,45 @@ TEST(ImpulseBlanker, ResponseSharesSumToOneAndCarryTheFiltersNoise) {
     for (std::size_t d = 0; d < shared.narrower.at(0).impulse_response.size(); ++d)
         narrow_centroid += static_cast<double>(d) * shared.narrower.at(0).impulse_response[d];
     EXPECT_GT(narrow_centroid, centroid + 10.0);
+}
+
+TEST(ImpulseBlanker, ASubbandCrowdedAtTheStartKeepsItsOwnNoise) {
+    // Review of text-blank-1: a subband too crowded to count for its first frames (a carrier on every 4th bin, so that its quiet bins
+    // are under a quarter) adds no value to its noise's median then; once its carriers stop it reads the noise as an uncrowded
+    // subband does. With one ring position for all subbands its skipped frames' slots kept the start's 0 in the median.
+    constexpr int kN = 8192;
+    const double bin_hz = static_cast<double>(kRate) / kN;
+    auto x = noise(6.0, 21);
+    const double a = amplitude_s500(5.0);  // +16.5 dB re the noise in its bin, its neighbors +10.5: occupied, every bin with the guard
+    // Subband 3 holds bins 1536 ... 2047 from the lowest, -96 kHz + 1536 bins; its carriers end at 1.5 s.
+    for (int k = 1536 + 2; k < 2048; k += 4) add_keyed(x, {{0.0, 1.5}}, (k - kN / 2) * bin_hz, a, 0.005, 0.37 * k);
+    SpectrumAnalyzer analyzer(kRate, kN, kN / 2);
+    ImpulseBlanker blanker(ImpulseBlankerConfig{}, kRate, kN, 128, 0.0, 0.0, 3.0);
+    ASSERT_EQ(blanker.subbands(), 16);
+    std::vector<double> crowded, clear;
+    for (std::size_t i = 0; i + kN / 2 <= x.size(); i += kN / 2) {
+        const auto frames = analyzer.push(std::span<const Sample>(x).subspan(i, kN / 2));
+        for (const SpectrumFrame& f : frames) {
+            blanker.push(analyzer.last_bins(), f.power_fs2, std::llround(f.time_s * kRate));
+            if (f.time_s < 0.6) continue;
+            crowded.push_back(blanker.subband_noise(3));
+            clear.push_back(blanker.subband_noise(8));
+        }
+    }
+    // Crowded: not read. Its carriers gone at 1.5 s, it counts again once a quarter of its bins' 1 s averages have fallen under the
+    // +6 dB, and from then on 24 of its own frames are held before it is read: at its first reading it holds its own frames only, and
+    // its noise per quiet bin is a clear subband's within 15% (each frame's median of 256 samples has a relative sd of 0.18, the
+    // median of 24 of them about 0.05), though more of its bins are still taken as occupied. With the stale slots its first
+    // reading took the smallest of 24 fresh values beside 23 zeros.
+    for (std::size_t i = 0; i < 30; ++i) EXPECT_EQ(crowded[i], 0.0) << i;
+    const auto first = std::find_if(crowded.begin(), crowded.end(), [](double v) { return v > 0.0; });
+    ASSERT_NE(first, crowded.end());
+    const std::size_t at = static_cast<std::size_t>(first - crowded.begin());
+    EXPECT_GT(0.6 + static_cast<double>(at) * 0.02133, 2.0);
+    EXPECT_NEAR(crowded[at] / clear[at], 1.0, 0.15);
+    EXPECT_NEAR(crowded.back() / clear.back(), 1.0, 0.15);
+    const Outcome r = run(x, 2, {20000.0});
+    EXPECT_EQ(r.firings, 0u);
 }
 
 TEST(ImpulseBlanker, NoiseAloneNeverFires) {

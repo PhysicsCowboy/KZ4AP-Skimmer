@@ -14,9 +14,11 @@
 // 2. The quiet band in time. The frame's bins, occupied ones zeroed, are inverted subband by subband: B bins give the subband's
 //    windowed signal at every N / B-th input sample. Divided by the window, |y|^2 is the quiet part of the subband's power in
 //    time, over the window's central half (where the window is 0.5 to 1), which tiles the stream frame after frame.
-// 3. Its noise. Per subband, nu = the median, over the last noise_memory_s of frames, of each frame's median of |y|^2 over its
-//    central half / ln 2: ln 2 the median of an exponential of mean 1 (derived: |y|^2 of complex Gaussian noise). Not the frame's own
-//    value: a crash of 15 ms or more fills most of a central half (21.33 ms) and would be its own noise (ear02-control's, 30 ms).
+// 3. Its noise. Per subband, nu = Q times the median, over its last noise_memory_s of frames where it counted (its own ring), this
+//    frame's included, of each frame's median of |y|^2 over its central half / ln 2 / its quiet bins: ln 2 the median of an
+//    exponential of mean 1 (derived: |y|^2 of complex Gaussian noise), Q this frame's quiet bins (|y|^2 of noise is proportional to
+//    them, derived), so that a frame with more or fewer bins occupied reads its noise the same. Not the frame's value alone, nor the larger of it and that median (as first built): a crash of
+//    15 ms or more fills most of a central half (21.33 ms) and would be its own noise (ear02-control's, 30 ms).
 // 4. The excess. For each channel sample's slice of the input (N / channel_bins input samples), each subband's mean |y|^2 / nu less
 //    1, over the subbands with min_quiet_share of their bins quiet (at least min_subbands of them, else nothing is read). A pulse
 //    is there when the lower quartile of those excesses reaches `gate`, three quarters of the subbands risen at once, and their upper
@@ -91,6 +93,9 @@ public:
     std::uint64_t fired_slices() const { return fired_slices_; }
     std::uint64_t firings() const { return firings_; }
     int subbands() const { return subbands_; }
+    // The last frame's noise of subband s (0 ... subbands() - 1, from the band's lowest), per quiet bin, |y|^2 units; 0 where it did
+    // not count.
+    double subband_noise(int s) const { return nu_.at(static_cast<std::size_t>(s)); }
     int subband_bins() const { return subband_bins_; }
 
 private:
@@ -103,15 +108,16 @@ private:
     int step_ = 1;         // input samples between a subband's time samples, N / B
     int per_slice_ = 1;    // a subband's time samples per channel sample, D / step_
     std::size_t memory_ = 1;  // frames in the noise's median
-    std::size_t warm_ = 1;    // frames before anything is read: half of memory_
+    std::size_t warm_ = 1;    // a subband's counted frames before it is read: half of memory_
     std::size_t keep_ = 0;    // channel samples kept in the series
     double alpha_ = 1.0;
     bool started_ = false;
     std::vector<double> average_;            // by bin, lowest first
     std::vector<float> inverse_window_sq_;   // 1 / w^2 at a subband's time samples of the central half
-    std::vector<std::vector<double>> noise_ring_;  // by subband: the last memory_ frames' values
-    std::size_t noise_next_ = 0;
-    std::size_t noise_count_ = 0;
+    std::vector<std::vector<double>> noise_ring_;  // by subband: the last memory_ values, per quiet bin, of the frames where it counted
+    std::vector<std::size_t> noise_next_;           // by subband: the ring's next position
+    std::vector<std::size_t> noise_held_;           // by subband: the values held, at most memory_
+    std::vector<double> nu_;                        // by subband: the last frame's noise nu, 0 where it did not count
     std::vector<Sample> in_, out_;
     std::vector<double> sorted_;
     std::vector<std::uint8_t> occupied_;

@@ -973,8 +973,10 @@ past it; N = 8 192 at 192 kHz):
    `SpectrumAnalyzer::last_bins`), y = IFFT_B(Y): y[m] is the subband's windowed quiet signal at input sample E − N + m N/B, up to a
    phase. For m in [B/4, 3B/4), the window's central half (w ≥ 0.5), r[m] = |y[m]|²/w(mN/B)². A subband counts when a quarter of its
    bins or more are quiet.
-3. *Its noise.* μ_s = median of r over the central half / ln 2; ν_s = the median of μ_s over the last 47 frames (1 s), this one's
-   included; nothing is read until 24 are held (0.5 s).
+3. *Its noise.* μ_s = median of r over the central half / ln 2 / Q_s (Q_s its quiet bins); ν_s = Q_s × the median of μ_s over the
+   subband's last 47 counted frames (1 s), this one's included, each subband with its own ring (a frame where it was too crowded to
+   count adds nothing); a subband is read once 24 are held (0.5 s). |y|² of noise is proportional to Q_s (derived), so a frame with
+   more or fewer bins occupied reads its noise the same.
 4. *The excess.* For channel sample c (input [128c, 128c + 128) at 192 kHz; 8 values of r each), u_s(c) = mean r / ν_s − 1, over the
    counted subbands (at least 4). With Q₁ and Q₃ the lower and upper quartiles of the u_s (sorted ascending, 0-based, the
    ⌊(n − 1)/4⌋-th from either end): a pulse when Q₁ ≥ 1 and Q₃ ≤ 4 Q₁; then u(c) = their median, else 0. From the 301st channel
@@ -1003,7 +1005,9 @@ past it; N = 8 192 at 192 kHz):
   channel delay + 8 ms front delay = 18.67 ms; test `ResponseSharesSumToOneAndCarryTheFiltersNoise`).
 - *Mode 2* is the pulse taken as what it is in the channel, a zero-mean complex Gaussian of power P beside the noise: key-up's e² is
   then exponential of mean σ² + P, and key-down's Rician about the carrier with that noise. Where P ≫ σ² a gap's sample says nothing
-  for a mark, and a mark of a² ≫ σ² + P still reads as one; mode 1 is the limit P → ∞.
+  for a mark, and a mark of a² ≫ σ² + P still reads as one. Mode 1 is not quite its limit P → ∞: with `level_noise_bottom` on, the
+  levels below the grid's bottom are scored at −6 dB S₅₀₀ re σ² + P, so a sample under a strong pulse keeps a constant bias against
+  key-down of about −0.110 nats an envelope sample on noise alone (derived, the review of `text-blank-1`); no effect of it measured.
 - *Noise alone* reads u_s of mean 0 and sd 1/√8 = 0.35 a slice, so Q₁ ≥ 1 needs 13 of 16 subbands each 2.8 sd up at once: never
   (test `NoiseAloneNeverFires`, 12 s, 0 firings).
 - *Flatness.* For 16 subbands of 8 complex samples' mean each, Q₃/Q₁ is 1.7 at the median and 2.6 at its 99th percentile (4 samples, a
@@ -1023,9 +1027,10 @@ blanker looks for a pulse; impulsive atmospheric noise is characterized by its d
 IF being gated. The subband width, the 6 dB and ±2 bins (the latter Hann's main lobe, derived), the quarter of bins, the 1 s average and
 memory, the 0.5 s warm-up, the gate 1, the ratio 4, the 0.2 s and the 0 dB: heuristics, chosen on the owner's ear clips
 (`build/tb-1/ear/`, git-ignored): blanker off 56 edits in 517 characters; with the first detector (the median alone, no warm-up),
-mode 1 at 0, +3, +6, +10 dB re σ² 55, 55, 51, 50 edits, mode 2 at −10, 0, +3, +6 dB 46, 46, 49, 49, at gate 3 48. ν without the frame's
-own value: ear02-control's crash lasts about 30 ms, u 10 to 100 in all 16 subbands, and with the frame's own median in ν it read 1
-(the prediction 8.7 against the channel's 54 to 77 re σ²; without, 48). Q₁ and the ratio added for the strong station's clicks (+60 dB
+mode 1 at 0, +3, +6, +10 dB re σ² 55, 55, 51, 50 edits, mode 2 at −10, 0, +3, +6 dB 46, 46, 49, 49, at gate 3 48. ν the 47 frames' median,
+this frame's among them, not the larger of this frame's value and that median as first built: ear02-control's crash lasts about 30 ms,
+u 10 to 100 in all 16 subbands, and with the larger it read 1 (the prediction 8.7 against the channel's 54 to 77 re σ²; with the
+median, 48). Q₁ and the ratio added for the strong station's clicks (+60 dB
 S₅₀₀ fired 98 channel samples in 12 s on the median alone). Final (mode 2, 0 dB, gate 1, Q₁ and ratio 4): 45 edits; mode 1 51;
 on main f98013a merged the same; with the owner's later rule for a short error sign, 53 to 42 (mode 1 48), and on his second batch,
 held out (nothing chosen on it), 8 to 3 edits in 270 characters (mode 1 7) (`docs/decision-log.md`, 2026-11-22, with the W1AW

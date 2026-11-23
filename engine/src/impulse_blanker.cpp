@@ -74,6 +74,9 @@ ImpulseBlanker::ImpulseBlanker(const ImpulseBlankerConfig& config, int sample_ra
         inverse_window_sq_[static_cast<std::size_t>(m - bins / 4)] = static_cast<float>(1.0 / (w * w));
     }
     noise_ring_.assign(static_cast<std::size_t>(subbands_), std::vector<double>(memory_, 0.0));
+    noise_next_.assign(static_cast<std::size_t>(subbands_), 0);
+    noise_held_.assign(static_cast<std::size_t>(subbands_), 0);
+    nu_.assign(static_cast<std::size_t>(subbands_), 0.0);
     in_.resize(static_cast<std::size_t>(bins));
     out_.resize(static_cast<std::size_t>(bins));
     sorted_.resize(static_cast<std::size_t>(std::max(bins, static_cast<int>(memory_)) + subbands_));
@@ -125,22 +128,32 @@ void ImpulseBlanker::push(std::span<const Sample> bins, std::span<const float> p
                 ++quiet;
             }
         }
-        valid_[static_cast<std::size_t>(s)] = static_cast<double>(quiet) >= config_.min_quiet_share * static_cast<double>(b) && quiet > 0;
-        if (!valid_[static_cast<std::size_t>(s)]) continue;
+        const auto us = static_cast<std::size_t>(s);
+        valid_[us] = static_cast<double>(quiet) >= config_.min_quiet_share * static_cast<double>(b) && quiet > 0;
+        nu_[us] = 0.0;
+        if (!valid_[us]) continue;
         detail::fft_inverse(in_.data(), out_.data(), b);
         for (std::size_t i = 0; i < central; ++i) work[i] = static_cast<double>(std::norm(out_[b / 4 + i])) * inverse_window_sq_[i];
         // ln 2: the median of an exponential of mean 1 (derived)
         const double now = median_of(work.data(), central) / std::numbers::ln2;
-        std::vector<double>& ring = noise_ring_[static_cast<std::size_t>(s)];
-        ring[noise_next_] = now;
-        const std::size_t held = std::min(noise_count_ + 1, memory_);
+        // Each subband's own ring: a frame where it was too crowded to count leaves no value there (review of text-blank-1: with one
+        // ring position for all, such a frame's slot kept a stale value, or the start's 0, in its median).
+        // Per quiet bin, so that a frame with more or fewer bins occupied than the frames before it reads its noise the same.
+        std::vector<double>& ring = noise_ring_[us];
+        ring[noise_next_[us]] = now / static_cast<double>(quiet);
+        noise_next_[us] = (noise_next_[us] + 1) % memory_;
+        noise_held_[us] = std::min(noise_held_[us] + 1, memory_);
+        const std::size_t held = noise_held_[us];
+        // The median over the last held frames, this one's included: not this frame's value alone, which a crash of 15 ms or more,
+        // filling most of the central half, would set.
         std::copy_n(ring.begin(), held, work.begin());
-        // Not the frame's own value alone: a crash of 15 ms or more fills most of the central half and would read as its own noise.
-        const double nu = median_of(work.data(), held);
-        if (!(nu > 0.0)) {
-            valid_[static_cast<std::size_t>(s)] = 0;
+        const double per_bin = median_of(work.data(), held);
+        const double nu = per_bin * static_cast<double>(quiet);
+        if (held < warm_ || !(nu > 0.0)) {
+            valid_[us] = 0;  // read only once its median holds half its frames
             continue;
         }
+        nu_[us] = per_bin;
         std::vector<float>& excess = excess_[static_cast<std::size_t>(s)];
         for (std::size_t j = 0; j < slices; ++j) {
             double sum = 0.0;
@@ -151,8 +164,6 @@ void ImpulseBlanker::push(std::span<const Sample> bins, std::span<const float> p
             excess[j] = static_cast<float>(sum / per_slice_ / nu - 1.0);
         }
     }
-    noise_next_ = (noise_next_ + 1) % memory_;
-    noise_count_ = std::min(noise_count_ + 1, memory_);
     started_ = true;
     // 4. The subbands' excess by channel sample, into the series: the central half is the input [E - 3 N / 4, E - N / 4).
     const std::int64_t first_input = end_input - static_cast<std::int64_t>(3 * n / 4);
@@ -168,7 +179,7 @@ void ImpulseBlanker::push(std::span<const Sample> bins, std::span<const float> p
         // Found where the subbands' lower quartile reaches the gate (three quarters of them risen at once) and their upper quartile
         // stands at most flat_ratio above it (the spectrum flat, not a click's 1 / f^2); read as their median.
         double u = 0.0;
-        if (count >= static_cast<std::size_t>(config_.min_subbands) && noise_count_ >= warm_) {
+        if (count >= static_cast<std::size_t>(config_.min_subbands)) {
             std::sort(work.begin(), work.begin() + static_cast<std::ptrdiff_t>(count));
             const double lower = work[(count - 1) / 4], upper = work[count - 1 - (count - 1) / 4];
             if (lower >= config_.gate && upper <= config_.flat_ratio * lower)
