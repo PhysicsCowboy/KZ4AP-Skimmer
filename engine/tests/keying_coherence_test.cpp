@@ -117,11 +117,10 @@ void add_to(std::vector<Sample>& a, const std::vector<Sample>& b) {
     for (std::size_t i = 0; i < a.size(); ++i) a[i] += b[i];
 }
 
+// Complex white noise of N0 n0_fs2_per_hz FS^2/Hz, the same samples on every standard library (test::add_portable_noise): with
+// std::normal_distribution the two CI jobs decoded two different scenes.
 void add_noise(std::vector<Sample>& x, double n0_fs2_per_hz, unsigned seed) {
-    std::mt19937 rng(seed);
-    const double sigma = std::sqrt(n0_fs2_per_hz * kRate / 2.0);
-    std::normal_distribution<float> normal(0.0f, static_cast<float>(sigma));
-    for (Sample& s : x) s += Sample(normal(rng), normal(rng));
+    test::add_portable_noise(x, std::sqrt(n0_fs2_per_hz * kRate / 2.0), seed);
 }
 
 struct Scene {
@@ -228,8 +227,9 @@ TEST(EngineCopies, TheAnsweringStationsTrackIsRetiredAsACopyAndTheCallersIsNot) 
 namespace {
 
 // A pile-up: two callers 60 Hz apart, 8 dB apart, sending their calls at the same time, each its own text and speed. The weaker one's
-// channel hears the stronger at about -9 dB re its own power, so that their envelopes correlate at 0.5 to 0.6 (measured).
-std::vector<Sample> two_callers() {
+// channel hears the stronger at about -9 dB re its own power, so that their envelopes correlate at 0.5 to 0.6 (measured). B's
+// twelve calls run past the scene's 40 s: about 9.7 of them fit. `seed`: the noise's.
+std::vector<Sample> two_callers(unsigned seed = 9) {
     const double duration_s = 40.0;
     std::vector<Sample> x(static_cast<std::size_t>(duration_s * kRate));
     std::string a, b;
@@ -239,24 +239,37 @@ std::vector<Sample> two_callers() {
     }
     add_to(x, test::keyed_signal_of(test::keying(a, 26, 0.5), kRate, duration_s, 2000.0, 0.02));
     add_to(x, test::keyed_signal_of(test::keying(b, 22, 0.8), kRate, duration_s, 2060.0, 0.008));
-    add_noise(x, 1e-9, 9);
+    add_noise(x, 1e-9, seed);
     return x;
 }
 
 }  // namespace
 
 TEST(EngineCopies, TwoCallersKeyingAtOnceKeepTheirTracks) {
-    const Scene r = run(two_callers());
-    for (const auto& [id, end] : r.ended) EXPECT_NE(end, TrackEnd::Copy) << "track " << id << " at " << r.freq_hz.at(id) << " Hz";
-    // B's calls are read on its own tracks (how many differs by a call or two with the compiler's arithmetic).
+    // Over eight noise draws, seeds 1 to 8: no track is retired as a copy, and B's calls are read on its own tracks, at least one in
+    // each draw and 4 a draw on average. One draw's count does not measure the decoder: over seeds 1 to 30 it is 3 to 7 calls, mean
+    // 5.27, standard deviation 1.53 calls, below 4 in 7 draws; the mean of eight draws is below 4 with probability about 0.007 (the
+    // 30 counts resampled with replacement; measured at main f98013a with GCC 11.4 on Linux and MSVC 14.51 on Windows, which read
+    // the same texts; ci-fix-2).
+    constexpr unsigned kDraws = 8;
     std::size_t calls = 0;
     std::string texts;
-    for (const auto& [id, text] : r.text) {
-        if (!near(r.freq_hz.at(id), 2060.0)) continue;
-        calls += count(text, "KQ2RP");
-        texts += " [" + text + "]";
+    for (unsigned seed = 1; seed <= kDraws; ++seed) {
+        const Scene r = run(two_callers(seed));
+        for (const auto& [id, end] : r.ended)
+            EXPECT_NE(end, TrackEnd::Copy) << "seed " << seed << ": track " << id << " at " << r.freq_hz.at(id) << " Hz";
+        std::size_t own = 0;
+        std::string seed_texts;
+        for (const auto& [id, text] : r.text) {
+            if (!near(r.freq_hz.at(id), 2060.0)) continue;
+            own += count(text, "KQ2RP");
+            seed_texts += " [" + text + "]";
+        }
+        EXPECT_GE(own, 1u) << "seed " << seed << ":" << seed_texts;
+        calls += own;
+        texts += "\n  seed " + std::to_string(seed) + ", " + std::to_string(own) + " calls:" + seed_texts;
     }
-    EXPECT_GE(calls, 4u) << texts;
+    EXPECT_GE(calls, 4u * kDraws) << texts;
 }
 
 TEST(EngineCopies, WithoutItsOwnPowerTheWeakerCallerWouldBeTakenForACopy) {
