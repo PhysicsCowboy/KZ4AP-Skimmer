@@ -1,6 +1,6 @@
 # KZ4AP Skimmer — Design
 
-- **Author:** Kenton Randolph Brown, KZ4AP
+- **Author:** KZ4AP
 - **Date:** 2026-09-25
 - **Status:** Draft for review
 - **Revised 2026-09-27:** owner's decisions on the development order after

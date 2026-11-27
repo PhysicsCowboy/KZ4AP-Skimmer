@@ -7,8 +7,8 @@
 > derivation script `numbers.py`, and could not read step 1's downloaded source texts or reference-lookup files.
 > The folder paths below are those of the working copy in `build/`.
 
-You are an independent reviewer for KZ4AP Skimmer, an open-source CW (Morse code) skimmer. The owner, Kenton Brown
-(KZ4AP; a physicist who copies Morse by ear up to 50 WPM), and Claude are designing a new model-based probabilistic
+You are an independent reviewer for KZ4AP Skimmer, an open-source CW (Morse code) skimmer. The owner, KZ4AP
+(a physicist who copies Morse by ear up to 50 WPM), and Claude are designing a new model-based probabilistic
 decoder for it, topic by topic.
 
 ## The owner's request, in his own words

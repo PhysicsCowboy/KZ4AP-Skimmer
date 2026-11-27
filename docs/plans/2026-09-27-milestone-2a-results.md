@@ -131,10 +131,10 @@ since, and Tasks 15–17 changed no Python).
 | `%TEMP%\kz4ap-m2a-plan-summary.md` | Owner-facing summary of the option-1 plan revision |
 | `%TEMP%\kz4ap-option1-plan-review.md` | Review of the option-1 plan revision (I1–I3, M1–M12) |
 | `%TEMP%\kz4ap-addendum-review.md` | Review of the addendum 082f56d (I1, I2, M1–M5) |
-| `C:\Users\kbrow\.claude-personal\jobs\163ae915\tmp\diag\` | Scratch builds used by [RD] (per [RD] "Scope") |
-| `C:\Users\kbrow\.claude-personal\projects\C--KZ4APSkimmer\memory\project-matched-filter-rethink.md` | The owner's 2026-09-30 direction and the revisit list (assistant memory, outside the repository; not temporary, but not in git) |
+| The assistant's temporary job folder (`jobs\163ae915\tmp\diag\`) | Scratch builds used by [RD] (per [RD] "Scope") |
+| The assistant's memory note `project-matched-filter-rethink.md` | The owner's 2026-09-30 direction and the revisit list (assistant memory, outside the repository; not temporary, but not in git) |
 
-`%TEMP%` = `C:\Users\kbrow\AppData\Local\Temp`. GitHub Actions runs
+`%TEMP%` is the Windows user's temporary folder. GitHub Actions runs
 36722406454 and 36725430221 are on GitHub (external; retention set by
 GitHub).
 

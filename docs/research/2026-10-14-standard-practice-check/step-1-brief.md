@@ -9,8 +9,8 @@
 > method or earlier decoder; its dispatch message repeated the rules below and also barred the session's temporary
 > files. The reviewer's own folder paths below are those of the working copy in `build/`.
 
-You are an independent reviewer for KZ4AP Skimmer, an open-source CW (Morse code) skimmer. The owner, Kenton Brown
-(KZ4AP; a physicist who copies Morse by ear up to 50 WPM), and Claude are designing a new decoder for it.
+You are an independent reviewer for KZ4AP Skimmer, an open-source CW (Morse code) skimmer. The owner, KZ4AP
+(a physicist who copies Morse by ear up to 50 WPM), and Claude are designing a new decoder for it.
 
 ## The owner's request, in his own words
 
